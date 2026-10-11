@@ -79,8 +79,14 @@ final class RemoteServer {
         guard let tmuxPath else { sessionCache = []; return [] }
         // Capped like every other tmux call: this one is on the `/state` path, so a tmux that
         // stops answering would otherwise freeze the dashboard as well as the board.
-        let out = Self.spawnTmux(tmuxPath, ["list-sessions", "-F", "#{session_name}"],
-                                 timeout: Self.tmuxTimeout, capture: true)
+        // A list-sessions that timed out is "don't know", not "no sessions". Every headless card polls
+        // this set and takes absence as its exit, and that exit is final: one slow call on a Mac mini at
+        // load 200 once marked 26 live agents "exited" at the same instant. Keep the last answer instead.
+        guard let out = Self.runTmux(tmuxPath, ["list-sessions", "-F", "#{session_name}"],
+                                     timeout: Self.tmuxTimeout, capture: true) else {
+            FV.log("liveSessions: tmux list-sessions timed out; keeping the previous \(sessionCache.count)")
+            return sessionCache
+        }
         let names = out.split(separator: "\n").map(String.init)
         sessionCache = Set(names)
         return sessionCache
@@ -411,13 +417,21 @@ final class RemoteServer {
     @discardableResult
     nonisolated private static func spawnTmux(_ tmuxPath: String, _ args: [String],
                                   timeout: TimeInterval, capture: Bool = false) -> String {
+        runTmux(tmuxPath, args, timeout: timeout, capture: capture) ?? ""
+    }
+
+    /// `spawnTmux` that tells "tmux answered" from "tmux never answered": nil when it could not be
+    /// started or was killed at the time limit. A tmux that ran and printed nothing (no server, so no
+    /// sessions) is still an answer, "".
+    nonisolated private static func runTmux(_ tmuxPath: String, _ args: [String],
+                                            timeout: TimeInterval, capture: Bool) -> String? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tmuxPath)
         p.arguments = ["-L", RemoteServer.socket] + args
         let pipe = capture ? Pipe() : nil
         p.standardOutput = pipe ?? FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
-        guard let waitForExit = try? p.runForExit() else { return "" }
+        guard let waitForExit = try? p.runForExit() else { return nil }
         let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
         var out = ""
@@ -427,7 +441,7 @@ final class RemoteServer {
         }
         waitForExit()
         killer.cancel()
-        return out
+        return p.terminationReason == .uncaughtSignal ? nil : out
     }
 
     /// Ordering within one terminal is the whole contract of `send-keys` + `Enter`; see `writeQueue`.
