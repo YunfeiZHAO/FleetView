@@ -180,11 +180,24 @@ enum SessionForge {
                               cwd: String? = nil, command: String = "claude") -> String {
         var parts = [command, "--resume", sessionId]
         if forkSession { parts.append("--fork-session") }
-        parts.append(contentsOf: skipPermissions ? forcingSkipPermissions(inheritedFlags)
-                                                 : inheritedFlags)
+        parts.append(contentsOf: (skipPermissions ? forcingSkipPermissions(inheritedFlags)
+                                                  : inheritedFlags).map(shellWord))
         let cmd = parts.joined(separator: " ")
         guard let cwd, !cwd.isEmpty else { return cmd }
         return "cd \(shellQuote(cwd)) && \(cmd)"
+    }
+
+    /// An inherited flag as the shell must see it to pass it through unchanged.
+    ///
+    /// They are read off another process's argv and typed into zsh, so they are data, not syntax.
+    /// A claude that has relaunched itself shows `--model claude-opus-5-5[1m]` in its argv even
+    /// though nobody typed it; a fork inherited that bare, zsh read `[1m]` as a glob — "no matches
+    /// found", exit 1 — and the fork never started. Left bare when nothing in it is special, so the line still reads like one
+    /// someone would type.
+    private static func shellWord(_ s: String) -> String {
+        let plain = CharacterSet(charactersIn:
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./=:,@%+")
+        return !s.isEmpty && s.unicodeScalars.allSatisfy(plain.contains) ? s : shellQuote(s)
     }
 
     /// Append the flag exactly once, dropping any inherited `--permission-mode`. The CLI accepts
