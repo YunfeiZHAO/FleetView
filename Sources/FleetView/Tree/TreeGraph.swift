@@ -25,6 +25,10 @@ struct SlimRecord {
     /// the conversation it continues in `logicalParentUuid` instead. Without reading it, everything
     /// before the compaction is a separate tree in the same directory that nothing points at.
     let logicalParent: String?
+    /// Also only on a `compact_boundary`: the records the compaction kept verbatim
+    /// (`compactMetadata.preservedMessages`), oldest first. The fallback when `logicalParent`
+    /// cannot be followed — see `continuesFrom` in `build`.
+    let preserved: [String]
 }
 
 /// One user-prompt node of the tree.
@@ -227,6 +231,11 @@ enum SessionTreeBuilder {
                     text = clip(userText(content), answerCap)   // same extraction: text blocks joined
                 }
                 let boundary = (obj["subtype"] as? String) == "compact_boundary"
+                var preserved: [String] = []
+                if boundary,
+                   let kept = (obj["compactMetadata"] as? [String: Any])?["preservedMessages"] as? [String: Any] {
+                    preserved = (kept["allUuids"] as? [String]) ?? (kept["uuids"] as? [String]) ?? []
+                }
                 records.append(SlimRecord(uuid: uuid,
                                           parent: obj["parentUuid"] as? String,
                                           isPrompt: isPrompt,
@@ -235,7 +244,8 @@ enum SessionTreeBuilder {
                                           ts: (obj["timestamp"] as? String) ?? "",
                                           text: text,
                                           logicalParent: boundary ? obj["logicalParentUuid"] as? String
-                                                                  : nil))
+                                                                  : nil,
+                                          preserved: preserved))
             }
         }
 
@@ -365,6 +375,41 @@ enum SessionTreeBuilder {
         }
         guard !byUuid.isEmpty else { return tree }
 
+        /// Is `record` below `boundary` — written in the compacted session rather than before it?
+        /// Raw `parentUuid` only, never through another boundary: the question is about one chain.
+        func isBelow(_ record: String, _ boundary: String) -> Bool {
+            var cur: String? = record
+            var seen = Set<String>()
+            while let c = cur, !seen.contains(c) {
+                if c == boundary { return true }
+                seen.insert(c)
+                cur = byUuid[c]?.parent
+            }
+            return false
+        }
+
+        // Boundary → the record its conversation left off at, for each boundary that has one on
+        // disk. `logicalParentUuid` used to be that record, and still is when it can be followed.
+        // But compaction keeps the newest few records verbatim, and Claude Code points the link at
+        // the last of them — which, when it had not been flushed yet (an attachment, usually), is
+        // written *after* the boundary, parented onto the new summary. Followed, that leads back
+        // down into the compacted session, so it was rejected and there was no pill: 2.1.237 did
+        // it now and then, 2.1.280 does it at 154 of the 162 boundaries on this machine, and a
+        // session compacted four times showed only the 8 turns after the last one. The other kept
+        // records are still above the boundary in their original chain; the newest of those is
+        // where the conversation left off.
+        //
+        // Validated here, and `climb` follows nothing else — clicking a pill is the only way a
+        // uuid reaches `expandedCompactions`, and only a boundary in this map gets one that can
+        // be clicked — so a link that points into its own future can never become an edge.
+        var continuesFrom: [String: String] = [:]
+        for (u, r) in byUuid where r.parent == nil {
+            guard let logical = r.logicalParent else { continue }
+            if let c = ([logical] + r.preserved.reversed()).first(where: {
+                byUuid[$0] != nil && !isBelow($0, u)
+            }) { continuesFrom[u] = c }
+        }
+
         // Nearest user-prompt ancestor, walking up through assistant and tool records — and, for a
         // compaction the user has expanded, on through the boundary into the conversation it
         // continues. An unexpanded boundary ends the walk, which is what keeps the earlier half out
@@ -376,29 +421,13 @@ enum SessionTreeBuilder {
                 seen.insert(c)
                 guard let r = byUuid[c] else { return nil }
                 if r.isPrompt { return c }
-                if let logical = r.logicalParent, r.parent == nil {
-                    cur = (throughCompactions && expandedCompactions.contains(c)) ? logical : nil
+                if r.logicalParent != nil, r.parent == nil {
+                    cur = (throughCompactions && expandedCompactions.contains(c)) ? continuesFrom[c] : nil
                 } else {
                     cur = r.parent
                 }
             }
             return nil
-        }
-
-        /// Does this link point at the turn's own future rather than at a previous conversation?
-        ///
-        /// Two of the boundaries in this directory resolve to a record *below* themselves, so the
-        /// turn would come out its own parent. The walk is over raw `parentUuid` only — never
-        /// through another boundary — because the question is about one unbroken chain.
-        func pointsIntoOwnFuture(_ ancestor: String, of turn: String) -> Bool {
-            var cur: String? = ancestor
-            var seen = Set<String>()
-            while let c = cur, !seen.contains(c) {
-                if c == turn { return true }
-                seen.insert(c)
-                cur = byUuid[c]?.parent
-            }
-            return false
         }
         func userParent(_ uuid: String) -> String? { climb(from: byUuid[uuid]?.parent) }
 
@@ -435,12 +464,13 @@ enum SessionTreeBuilder {
         // a real parent, and a boundary further up is already somebody else's pill.
         for (u, n) in tree.nodes where n.parent == nil {
             guard let b = boundaryAbove(u), let logical = b.logicalParent else { continue }
-            let ancestor = climb(from: logical, throughCompactions: false)
-            // Validated before it is ever offered, which is also what makes following it safe:
-            // clicking a pill is the only way a uuid reaches `expandedCompactions`, so a link
-            // rejected here can never become an edge.
-            if let a = ancestor, pointsIntoOwnFuture(a, of: u) { continue }
-            tree.compactedFrom[u] = CompactLink(boundary: b.uuid, ancestor: ancestor, turns: 0)
+            let from = continuesFrom[b.uuid]
+            // Nothing to follow although what it names is on disk: all of it is below the
+            // boundary, so there is no earlier half to offer — and "not here" would be untrue.
+            if from == nil, ([logical] + b.preserved).contains(where: { byUuid[$0] != nil }) { continue }
+            tree.compactedFrom[u] = CompactLink(boundary: b.uuid,
+                                                ancestor: climb(from: from, throughCompactions: false),
+                                                turns: 0)
         }
 
         // answer_text aggregation.
