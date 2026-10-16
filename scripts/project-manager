@@ -14,6 +14,10 @@ auto-discovers the local server via ~/.fleetview/web-port.
   project-manager tail <sel> [-l N]        recent output only
   project-manager send <sel> <text...>     inject a prompt, submit it, confirm it left the input box
                                            (-N types it without Enter)
+                                           (-w then waits for the reply, like `wait --new`)
+  project-manager wait <sel>... [--new]    block until a terminal's turn is over, print its reply
+                                           (exit 0 done · 10 needs you · 11 never started ·
+                                            12 agent gone · 124 timed out)
   project-manager key  <sel> <key>         send a key: esc enter up down left right tab bspace c-c ...
   project-manager choose <sel> <n>         answer a menu: send digit <n> then Enter
   project-manager check [<sel>]            flag conversations that look error-terminated / stuck
@@ -695,7 +699,7 @@ def _confirm_submit(t, text, tries=4):
     return False
 
 def cmd_send(a):
-    t = resolve(state(), a.sel)
+    t = resolve(state(), a.sel)      # also the "before" a --wait measures the new turn against
     text = " ".join(a.text)
     verdict = _type(t["id"], text, enter=not a.no_enter)
     if a.no_enter:
@@ -710,7 +714,239 @@ def cmd_send(a):
     note = {"submitted": "submitted",
             "sent": "Enter pressed, not verified",
             "superseded": "another input reached it before this one could be confirmed"}
-    print("sent to %s — %s" % (t["name"], note.get(verdict, verdict)))
+    print("sent to %s — %s" % (t["name"], note.get(verdict, verdict)), flush=True)
+    if a.wait:
+        sys.exit(_wait_turns([t["id"]], a, before={t["id"]: dict(t, sent=text)}))
+
+# ---- waiting for a turn to end ----
+#
+# "Has it answered" is a question FleetView already answers: Claude's UserPromptSubmit hook sets a
+# card `working` and its Stop hook `idle`; a Codex card is settled from its rollout every second.
+# So waiting is polling /state, and the answer is read from the transcript the card is bound to —
+# the file `log` names — not scraped off a TUI that wraps, scrolls and redraws it. What callers
+# did before this existed was `sleep 60; show` in a loop: late when the turn was short, early when
+# it was long, and a screenful of TUI to dig the reply out of either way.
+
+WAIT_POLL = 1.0       # the web dashboard reads /state every 1.5s; this is the same order of load
+# How long not-working has to hold before it is the end. A Codex card's status comes from a
+# once-a-second rollout poll, and a Claude turn can end in a Stop that its continuation (a stop
+# hook, a queued prompt) follows straight away — either reads as a finished turn for a moment.
+WAIT_SETTLE = 3.0
+# How long a turn that was just sent may take to show up as `working`. The hook lands within the
+# second; Codex's poll and a resumed CLI still loading take longer.
+WAIT_START = 30.0
+REPLY_CAP = 4000
+EXIT_NEEDS_YOU, EXIT_NOT_STARTED, EXIT_ENDED, EXIT_TIMEOUT = 10, 11, 12, 124
+_WAIT_RC = {"done": 0, "needs-you": EXIT_NEEDS_YOU, "not-started": EXIT_NOT_STARTED,
+            "ended": EXIT_ENDED}
+
+
+def _dur(sec):
+    if sec is None or sec < 0:
+        return "?"
+    sec = int(sec)
+    if sec < 60:
+        return "%ds" % sec
+    if sec < 3600:
+        return "%dm%02ds" % (sec // 60, sec % 60)
+    return "%dh%02dm" % (sec // 3600, sec % 3600 // 60)
+
+
+def _ran_since(before, t):
+    """A run started and finished between two looks, never seen `working` — a two-second turn fits
+    between polls. FleetView records a run's length as the run ends, so a new length is a run that
+    ended. The last prompt changing is not, on its own: a CLI starting up or resuming rewrites it
+    too, and reading that as a finished turn hands back whatever answer was there before. It
+    counts only when it became the very text `send -w` just typed."""
+    if t.get("lastRun") != before.get("lastRun"):
+        return True
+    sent = _squeeze(before.get("sent") or "")[:60]
+    now = _squeeze(t.get("prompt") or "")[:60]
+    return bool(sent) and now == sent and _squeeze(before.get("prompt") or "")[:60] != sent
+
+
+def _wait_step(w, t, now, settle):
+    """Advance one terminal's wait by one look at its card. Returns an outcome or None.
+
+    `start` phase: a turn is expected but not yet seen. An idle card here has not finished — it
+    has not begun — which is exactly the misreading that makes `send; wait` return the previous
+    answer. Ended states are not final yet either: a card just opened, or an agent still loading,
+    sits on `shell` until its CLI reports in.
+    """
+    s = t["status"]
+    if w["phase"] == "start":
+        w["first"] = False
+        before = w["before"]
+        if s == "working" or _ran_since(before, t):
+            w["phase"] = "run"
+        elif s == "needsYou" and before.get("status") != "needsYou":
+            return "needs-you"                         # began, and stopped at once to ask
+        elif now >= w["start_by"]:
+            return "needs-you" if s == "needsYou" else "not-started"
+        else:
+            return None
+    if s == "working":
+        w["calm"] = None
+        return None
+    if s == "needsYou":
+        return "needs-you"
+    if s in ("closed", "exited", "shell"):
+        return "ended"
+    if w["calm"] is None:
+        # Already quiet when first seen (a plain `wait` on an idle card): no need to watch it
+        # stay that way — FleetView has been watching for us.
+        if w.get("first") and (t.get("idle") or 0) >= settle:
+            return "done"
+        w["calm"] = now
+    w["first"] = False
+    return "done" if now - w["calm"] >= settle else None
+
+
+def _transcript_tail(t, nbytes=2 << 20):
+    """The last `nbytes` of the card's transcript, read on the machine that holds it."""
+    if not t.get("transcript"):
+        return None
+    if is_remote():
+        code, out, _ = pm_remote(["log", t["id"], "--bytes-from=-%d" % nbytes])
+        return out.encode("utf-8") if code == 0 else None
+    try:
+        return _read_chunk(t["transcript"], -nbytes, False)[0]
+    except OSError:
+        return None
+
+
+def _last_turn(data, src):
+    """(prompt, replies) of the newest turn in a transcript tail. The prompt is None when that turn
+    began before the tail does; its replies are still the newest ones."""
+    prompt, replies = None, []
+    for role, _, body in _rows(data, src):
+        if role == 0:
+            if not _injected(body):
+                prompt, replies = body, []
+        else:
+            replies.append(body)
+    return prompt, replies
+
+
+def _show_reply(t, a):
+    data = None
+    prompt, replies = None, []
+    src = 1 if os.path.basename(t.get("transcript") or "").startswith("rollout-") else 0
+    for i in range(4):
+        data = _transcript_tail(t)
+        if data is None:
+            break
+        prompt, replies = _last_turn(data, src)
+        if replies:
+            break
+        time.sleep(0.7)          # the last message can land a beat after the Stop hook
+    if data is None:
+        print(c("90", "(this card's transcript cannot be read — its screen instead)"))
+        sys.stdout.write(_recent(t["id"], 30))
+        return
+    if prompt:
+        print("%s %s" % (c("36", "prompt:"), _clip(prompt, 160)))
+    if not replies:
+        print(c("90", "(no reply text — the turn ended in a tool call, or was interrupted)"))
+        return
+    body = replies[-1]
+    if not a.full and len(body) > REPLY_CAP:
+        body = body[:REPLY_CAP] + c("90", "\n[… %d more characters — --full]" % (len(body) - REPLY_CAP))
+    print(c("36", "reply:") + (c("90", "  (last of %d messages this turn)" % len(replies))
+                               if len(replies) > 1 else ""))
+    print(body)
+
+
+def _wait_report(outcome, t, a):
+    tid = t["id"][:8].lower()
+    head = {"done": c("32", "done"), "needs-you": c("33", "needs-you"),
+            "not-started": c("31", "not-started"), "ended": c("31", "ended"),
+            "timeout": c("33", "timeout")}[outcome]
+    if outcome == "done":
+        took = t.get("lastRun")
+        print("%s  %s  %s%s" % (head, tid, c("1", t["name"]),
+                                " · ran %s" % _dur(took) if took is not None and took >= 0 else ""))
+        if not a.quiet:
+            _show_reply(t, a)
+    elif outcome == "timeout":
+        print("%s  %s  %s · still %s, running %s" % (head, tid, c("1", t["name"]),
+                                                    t["statusLabel"], _dur(t.get("running"))))
+        print(c("90", _cmd("wait again: project-manager wait %s") % tid))
+    else:
+        why = {"needs-you": "is waiting on a menu or a permission prompt",
+               "not-started": "never started the turn (still %s after %ds)" % (t["statusLabel"], a.start),
+               "ended": "is no longer running an agent (%s)" % t["statusLabel"]}[outcome]
+        print("%s  %s  %s %s" % (head, tid, c("1", t["name"]), why))
+        if t.get("canOpen"):
+            sys.stdout.write(_recent(t["id"], 25 if outcome == "needs-you" else 12))
+        if outcome == "needs-you":
+            print(c("90", _cmd("answer: project-manager choose %s <n>  ·  key %s esc  ·  send %s …")
+                    % (tid, tid, tid)))
+    sys.stdout.flush()
+
+
+def _wait_turns(tids, a, before=None):
+    """Block until each terminal's turn is over, reporting each as it ends. Returns the exit code.
+
+    `before` (id → the card as it was before a prompt went in) says a turn is on its way, and
+    makes each terminal wait for it to start before an idle card can count as finished.
+    Returns at once on needs-you, whatever else is still running: that one is waiting on the
+    caller, and nothing else will move it.
+    """
+    for k, v in (("settle", WAIT_SETTLE), ("start", WAIT_START), ("quiet", False), ("any", False),
+                 ("full", False)):
+        if getattr(a, k, None) is None:
+            setattr(a, k, v)
+    settle = a.settle
+    now = time.time()
+    deadline = now + a.timeout if a.timeout else None
+    w = {tid: {"phase": "start" if before else "run", "before": (before or {}).get(tid),
+               "start_by": now + a.start, "calm": None, "first": True, "t": None} for tid in tids}
+    worst = 0
+    try:
+        while True:
+            now = time.time()
+            by = {t["id"]: t for t in state()["terminals"]}
+            for tid in list(w):
+                t = by.get(tid)
+                if t is None:          # removed from the board while we waited
+                    t = dict(w[tid]["t"] or {"id": tid, "name": tid[:8]}, status="closed",
+                             statusLabel="removed", canOpen=False)
+                    outcome = "ended"
+                else:
+                    if w[tid]["t"] is None:
+                        print(c("90", "waiting for %s %s (%s)…" % (tid[:8].lower(), t["name"],
+                                                                     t["statusLabel"])),
+                              file=sys.stderr, flush=True)
+                    w[tid]["t"] = t
+                    outcome = _wait_step(w[tid], t, now, settle)
+                if not outcome:
+                    continue
+                del w[tid]
+                _wait_report(outcome, t, a)
+                rc = _WAIT_RC[outcome]
+                if outcome == "needs-you" or a.any:
+                    if w:
+                        print(c("90", "still waiting on: %s" % ", ".join(
+                            x["t"]["name"] if x["t"] else k[:8] for k, x in w.items())))
+                    return rc
+                worst = max(worst, rc)
+            if not w:
+                return worst
+            if deadline and now >= deadline:
+                for tid, x in w.items():
+                    _wait_report("timeout", x["t"] or {"id": tid, "name": tid[:8], "statusLabel": "?"}, a)
+                return EXIT_TIMEOUT
+            time.sleep(WAIT_POLL)
+    except KeyboardInterrupt:
+        return 130
+
+
+def cmd_wait(a):
+    st = state()
+    ts = [resolve(st, s) for s in a.sel]
+    ids = list(dict.fromkeys(t["id"] for t in ts))
+    sys.exit(_wait_turns(ids, a, before={t["id"]: t for t in ts} if a.new else None))
 
 def cmd_key(a):
     t = resolve(state(), a.sel)
@@ -1372,13 +1608,18 @@ def _parse_rows(path, src, start=0, cap=96 << 20):
     Used only for what the index has not reached yet — a tail written since its last refresh, or a
     conversation newer than it. Stops before a partial last line, as the indexer does.
     """
-    rows = []
     try:
         with open(path, "rb") as f:
             f.seek(start)
             data = f.read(cap)
     except OSError:
-        return rows
+        return []
+    return _rows(data, src)
+
+def _rows(data, src):
+    """`_parse_rows` over bytes already read — `wait` gets a transcript's tail from whichever
+    machine holds it."""
+    rows = []
     end = data.rfind(b"\n")
     for line in data[:end + 1].split(b"\n") if end >= 0 else []:
         if src == 0:
@@ -2571,7 +2812,23 @@ def main():
     for name, fn, hlp in (("show", cmd_show, "one terminal: status, cwd, transcript, recent output"),
                           ("tail", cmd_tail, "a terminal's recent output only")):
         s = sub.add_parser(name, help=hlp); s.add_argument("sel"); s.add_argument("-l", "--lines", type=int, default=200); s.set_defaults(fn=fn)
-    s = sub.add_parser("send", help="inject a prompt"); s.add_argument("sel"); s.add_argument("-N", "--no-enter", action="store_true"); s.add_argument("text", nargs="+"); s.set_defaults(fn=cmd_send)
+    s = sub.add_parser("send", help="inject a prompt"); s.add_argument("sel"); s.add_argument("-N", "--no-enter", action="store_true"); s.add_argument("text", nargs="+")
+    s.add_argument("-w", "--wait", action="store_true",
+                   help="then block until that turn is over and print the reply (see `wait`)")
+    s.add_argument("-t", "--timeout", type=float, default=0, help="with -w: give up after SEC (exit 124)")
+    s.add_argument("--full", action="store_true", help="with -w: the whole reply, not the first %d characters" % REPLY_CAP)
+    s.set_defaults(fn=cmd_send)
+    s = sub.add_parser("wait", help="block until a terminal's turn is over, then print its reply")
+    s.add_argument("sel", nargs="+", help="one or more terminals; waits for all of them")
+    s.add_argument("-t", "--timeout", type=float, default=0, help="give up after SEC (exit 124); default: never")
+    s.add_argument("--new", action="store_true",
+                   help="the turn has not started yet (just sent, just spawned): wait for it to start first")
+    s.add_argument("--start", type=float, default=WAIT_START,
+                   help="with --new: how long it may take to start (default %ds, then exit 11)" % WAIT_START)
+    s.add_argument("--any", action="store_true", help="return when the first of them is over")
+    s.add_argument("--full", action="store_true", help="the whole reply, not the first %d characters" % REPLY_CAP)
+    s.add_argument("-q", "--quiet", action="store_true", help="only the outcome line, no reply")
+    s.set_defaults(fn=cmd_wait)
     s = sub.add_parser("key", help="send a key"); s.add_argument("sel"); s.add_argument("key"); s.set_defaults(fn=cmd_key)
     s = sub.add_parser("choose", help="answer a numbered menu"); s.add_argument("sel"); s.add_argument("n"); s.set_defaults(fn=cmd_choose)
     s = sub.add_parser("check", help="find error-terminated sessions"); s.add_argument("sel", nargs="?"); s.set_defaults(fn=cmd_check)

@@ -53,7 +53,9 @@ once. Every command in the [[project-manager]] skill works against a remote inst
 ones (`ls`, `watch`, `show`, `tail`, `send`, `key`, `choose`, `check`, `new`, `rename`, `rm`,
 `notes`, `open` for a folder in *that* Mac's `~/PycharmProjects`, `restore` for a conversation on
 *that* Mac) through the HTTP API, and the ones that read files through `/pm`, below. A peer whose
-FleetView predates `restore` says so instead of restoring.
+FleetView predates `restore` says so instead of restoring. `wait` (and `send -w`) is both: the
+status comes through the API, and the reply is read from the transcript on that machine through
+`/pm`, the same way `log` reads it.
 
 `send` reports whether the prompt actually left the agent's input box. A peer running an older
 FleetView cannot answer that, so the CLI checks the pane itself — same verdicts, same exit codes.

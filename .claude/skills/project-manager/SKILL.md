@@ -3,14 +3,16 @@ name: project-manager
 description: >-
   Inspect and control the OTHER running FleetView agent terminals from the shell via the `project-manager`
   CLI: list every agent's live status/tokens/last prompt, read a terminal's recent output or locate
-  its conversation transcript, inject a prompt, answer a Claude/Codex permission or menu prompt,
-  and detect sessions that ended in an error. Also the way into the user's PAST work on this Mac (or,
+  its conversation transcript, inject a prompt, wait for a terminal to finish its reply and read
+  that reply, answer a Claude/Codex permission or menu prompt, and detect sessions that ended in
+  an error. Also the way into the user's PAST work on this Mac (or,
   with -u, on another one):
   which projects they worked on recently, each project's Claude/Codex conversations with their
   transcript paths, what a conversation covered turn by turn, and search across all of it. Use
   whenever asked to monitor, supervise, coordinate, or drive other agents/terminals in the FleetView
   fleet — e.g. "check on the other agents", "is any session stuck or errored", "tell the X terminal
-  to…", "approve/answer the prompt in Y", "what is the fleet doing", "where is agent Z's chat log" —
+  to…", "wait until X has answered / tell me when it is done", "等 X 回复完再…", "approve/answer
+  the prompt in Y", "what is the fleet doing", "where is agent Z's chat log" —
   and whenever the user refers to earlier work: "what was I doing lately", "我最近做了 X 项目",
   "find the conversation where we…", "where is the session file for…".
 ---
@@ -53,7 +55,8 @@ project-manager ls        # or:  python3 ~/PycharmProjects/FleetView/scripts/pro
 | `project-manager watch [-n SEC] [-p PROJ] [-g] [-m]` | Live-refreshing `ls` (Ctrl-C to stop) |
 | `project-manager show <id> [-l N]` | One terminal: status, cwd, transcript path, and the last N lines of output |
 | `project-manager tail <id> [-l N]` | Just the recent output (default 200 lines; blank padding at the bottom of a TUI is not counted) |
-| `project-manager send <id> <text…>` | Inject a prompt, submit it, and **confirm it left the input box** (see below). `-N` types without Enter |
+| `project-manager send <id> <text…>` | Inject a prompt, submit it, and **confirm it left the input box** (see below). `-N` types without Enter. **`-w` then waits for that turn to end and prints the reply** |
+| `project-manager wait <id>… [--new] [-t SEC]` | **Block until a terminal's turn is over, then print its reply** — see "Waiting for a reply". Several ids wait for all; `--any` for the first. Exit 0 done · 10 needs you · 11 never started · 12 agent gone · 124 timed out |
 | `project-manager key <id> <key>` | Send one key: `esc enter up down left right tab bspace c-c c-d …` |
 | `project-manager choose <id> <n>` | Answer a numbered menu: sends digit `<n>` then Enter |
 | `project-manager check [<id>]` | Flag sessions that look error-terminated (API errors, tracebacks, exited, …) |
@@ -185,8 +188,9 @@ either way, and one you cannot name is one nobody can finish by hand. That uuid 
 
 ```bash
 SUB=$(project-manager subagent --id "重跑 07 号任务的评分")   # uuid alone on stdout
-project-manager show "$SUB" -l 40                            # watch it
-project-manager send "$SUB" "改用 v2 的 rubric"               # steer it
+project-manager wait "$SUB" --new                            # block until it has answered; prints the answer
+project-manager show "$SUB" -l 40                            # or look at it mid-way
+project-manager send "$SUB" -w "改用 v2 的 rubric"            # steer it, and wait for that answer too
 ```
 
 With `--id` the uuid is the only thing on stdout and the status line moves to stderr, so `$(...)`
@@ -228,6 +232,62 @@ Claude drops it too on long text. FleetView leaves a gap, looks, and presses Ent
 still there (up to 4 times); against an older FleetView (a peer on another Mac) the CLI does the same
 check itself. So a `send` that exits 0 has either landed or says plainly that it could not tell.
 
+## Waiting for a reply
+
+"Submitted" is not "answered". To know when a terminal has finished — and what it said — use
+`wait`, or `send -w` to send and wait in one go:
+
+```bash
+project-manager send 7233abcc -w "跑一下测试，告诉我结果"     # send, block until that turn ends, print the reply
+project-manager wait 7233abcc                                # whatever it is doing now: block until it ends
+project-manager wait "$SUB" --new                            # a turn you started some other way (subagent, choose, key)
+project-manager wait a1b2c3d4 e5f6a7b8 c9d0e1f2              # several: each is reported as it finishes
+project-manager wait a1b2c3d4 e5f6a7b8 --any                 # …or return at the first one
+```
+
+It prints one outcome line per terminal, then — when the turn is done — the prompt and the
+agent's **last message of that turn**, read from its transcript (first 4000 characters; `--full`
+for all, `-q` for the outcome line alone). The first word of the outcome line and the exit code say
+what happened:
+
+| Outcome | Exit | Meaning — and what to do |
+|---|---|---|
+| `done` | 0 | The turn ended and the agent is idle. The reply follows |
+| `needs-you` | 10 | It stopped on a menu, a question (AskUserQuestion) or a permission prompt. The screen is printed; answer with `choose`/`key`/`send`, then `wait <id> --new` |
+| `not-started` | 11 | With `--new` / `send -w`: no turn began within 30s (`--start`). The prompt did not run — `show` it |
+| `ended` | 12 | No agent there any more: the card was closed or removed, or the CLI exited to the shell |
+| `timeout` | 124 | `-t` ran out and it is still working. Nothing is wrong; wait again |
+
+With several terminals it returns at once on the first `needs-you` — that one is waiting on you
+and nothing else will move it — and names the ones still running.
+
+**It is a signal, not a poll you write.** Do not `sleep 60; show` in a loop: that is late when the
+turn is short, early when it is long, and leaves you digging the reply out of a TUI. `wait` reads
+the status FleetView already tracks (Claude's hooks; a Codex card's rollout, every second), which
+moves the moment the turn ends.
+
+**Mind your own tool's time limit.** `wait` has no timeout of its own by default, and a turn can
+run for an hour.
+- **Claude Code:** run it as a background Bash command (`run_in_background: true`). You are woken
+  when it exits, and its output is the reply. Waiting on several subagents is one background
+  `wait` with all their ids.
+- **Anything with a hard per-command limit (Codex, or a foreground Bash call):** pass `-t` below
+  that limit — e.g. `-t 540` under a 10-minute cap — and on exit 124 simply run `wait <id>` again.
+
+Things to know:
+
+- **`--new` is what makes "send, then wait" safe.** Right after a prompt goes in, the card can
+  still read `idle` for a moment — and a plain `wait` takes an idle card as finished and hands you
+  the *previous* answer. `--new` (implied by `send -w`) waits for the new turn to begin first, and
+  also catches a turn so short it started and ended between two looks.
+- **Done means the turn ended**, not that the work is finished. An agent that left background
+  jobs running starts another turn when they report back; `wait` again if you expect that. It
+  lets a turn sit quiet for 3s before calling it done, so a turn that hands straight on to the
+  next does not end the wait early.
+- The reply is the agent's **last message**. Earlier messages of the same turn are its running
+  commentary; `session <card id> -t <N>` shows them all.
+- No transcript to read (a card whose file is gone): it prints the screen instead, and says so.
+
 ## How to answer an agent's prompt
 
 Both Claude Code and Codex show **numbered select lists** (e.g. `❯ 1. Yes  2. No`). Always **look
@@ -263,6 +323,8 @@ few seconds; use it for genuine questions, not routine polling (use `ls`/`show` 
 - **Triage errors**: `project-manager check` — then `project-manager show <id>` on anything flagged to read what
   failed before deciding to resend, interrupt, or restart it.
 - **Unblock a waiting agent**: `project-manager show <id>` to see the question → `choose`/`key`/`send`.
+- **Delegate and collect**: `subagent --id` per task → one background `wait <id> <id> …` → read each
+  reply as it lands; `send <id> -w` for follow-ups.
 - **Read/locate a conversation**: `project-manager log <id>` (path to the Claude/Codex `.jsonl`), or
   `project-manager show <id> -l 400` to read recent turns inline. For a *past* conversation or one
   whose terminal is gone, use the history commands below (`session <card id>` works too).
@@ -372,6 +434,7 @@ and the safety notes: there's no auth, so `send` lands in someone's live, permis
 
 - `send`/`choose`/`key` **inject real keystrokes** into a live session. Before acting on a terminal
   that is `working`, prefer to `show` it first — don't interrupt an in-progress turn unless asked.
+  If you only need to know when it is done, `wait` it — that touches nothing.
 - **Read `send`'s verdict and exit status** — `submitted` means the agent has it; exit 1 means the
   text is stuck in its input box. Don't write `send … && echo ok` and trust it: a failed send just
   skips the `&&`, so it looks silent. (This is how the zsh `$PM` bug above hid — the send returned
