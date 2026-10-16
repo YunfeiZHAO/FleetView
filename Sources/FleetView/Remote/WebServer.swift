@@ -199,6 +199,10 @@ final class WebServer {
         if path == "/upload" {                                         // writes a file; no app state
             handleUpload(conn, request, body, params, scope); return
         }
+        if path == "/save" {                                           // writes a file; no app state
+            handleSave(conn, request, body, params, scope); return
+        }
+        if path.hasPrefix("/raw/") { handleRaw(conn, path, params, scope); return }
         if path == "/files" { handleFileList(conn, params, scope); return }
         if path == "/file" { handleFileGet(conn, params, scope); return }
         if path == "/browse" { handleBrowse(conn, params, scope); return }
@@ -602,10 +606,11 @@ final class WebServer {
     private func handleRead(_ conn: NWConnection, _ query: [String: String], _ scope: WebAudit.Scope) {
         projectRoots(conn) { [weak self] roots in
             guard let self else { return }
-            func answer(_ status: String, _ type: String, _ data: Data, disposition: String? = nil) {
+            func answer(_ status: String, _ type: String, _ data: Data, disposition: String? = nil,
+                        headers: [(String, String)] = []) {
                 WebAudit.shared.finish(scope, status: status, bytes: data.count, query: query)
                 self.send(conn, status: status, type: type, body: data, setCookie: scope.setCookie,
-                          disposition: disposition)
+                          disposition: disposition, headers: headers)
             }
             guard let raw = query["path"], let target = Self.confine(raw, roots: roots) else {
                 answer("403 Forbidden", "text/plain; charset=utf-8",
@@ -651,7 +656,145 @@ final class WebServer {
                 text += "\n\n… truncated at \(limit / 1024) KB of \(size / 1024) KB"
                      + " — open it on the Mac for the rest\n"
             }
-            answer("200 OK", "text/plain; charset=utf-8", Data(text.utf8))
+            // What the web editor needs to save this text back (see handleSave): which version of the
+            // file it is, and whether it can be edited at all. Only a whole file can — a truncated one
+            // saved back would cut it off at 512 KB — and only valid UTF-8, or the replacement
+            // characters the decoding above put in would be written over the real bytes.
+            var headers: [(String, String)] = []
+            if Self.editable.contains(url.pathExtension.lowercased()) {
+                let why = size > limit ? "large"
+                    : String(data: head, encoding: .utf8) == nil ? "encoding"
+                    : !FileManager.default.isWritableFile(atPath: url.path) ? "readonly" : nil
+                headers.append(("X-FV-Editable", why ?? "1"))
+                if why == nil { headers.append(("X-FV-Version", AuditDigest.sha256(data: head))) }
+            }
+            answer("200 OK", "text/plain; charset=utf-8", Data(text.utf8), headers: headers)
+        }
+    }
+
+    /// What the web editor may write: notes, plans and docs. Not source — an edit to a script from a
+    /// phone is one an agent should be making, with a diff and a test run behind it.
+    static let editable: Set<String> = ["md", "markdown"]
+
+    /// POST /save?path=<file>&base=<version> — a markdown file written back from the web editor.
+    ///
+    /// Only a file that already exists, inside a project, with an `editable` extension: this is for
+    /// editing what agents and you keep in a project, not a way to put new files on the Mac (that is
+    /// /upload, into a folder of its own). `base` is the version /read handed out with the text. If
+    /// the file has changed since — an agent wrote to it while you were typing — the save is refused
+    /// with 409 and the current version, and the page asks before `force=1` overwrites. Last writer
+    /// wins silently would throw away whichever edit landed first without either side knowing.
+    private func handleSave(_ conn: NWConnection, _ head: HTTPRequestHead?, _ body: Data,
+                            _ query: [String: String], _ scope: WebAudit.Scope) {
+        projectRoots(conn) { [weak self] roots in
+            guard let self else { return }
+            func answer(_ status: String, _ payload: [String: Any], facts: [String: AuditValue] = [:]) {
+                let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
+                WebAudit.shared.finish(scope, status: status, bytes: data.count, query: query,
+                                       facts: facts)
+                self.send(conn, status: status, type: "application/json", body: data,
+                          setCookie: scope.setCookie)
+            }
+            guard head?.method.uppercased() == "POST" else {
+                answer("405 Method Not Allowed", ["error": "POST only"]); return
+            }
+            guard let raw = query["path"], let target = Self.confine(raw, roots: roots) else {
+                answer("403 Forbidden", ["error": "that path is not inside a project"]); return
+            }
+            let url = target.url
+            guard Self.editable.contains(url.pathExtension.lowercased()) else {
+                answer("403 Forbidden", ["error": "only markdown files can be edited here"]); return
+            }
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue,
+                  let current = try? Data(contentsOf: url) else {
+                answer("404 Not Found", ["error": "no such file"]); return
+            }
+            guard String(data: body, encoding: .utf8) != nil else {
+                answer("400 Bad Request", ["error": "not UTF-8 text"]); return
+            }
+            let was = AuditDigest.sha256(data: current), now = AuditDigest.sha256(data: body)
+            let forced = query["force"] == "1"
+            let facts = AuditValue.compact(["path": .string(url.path),
+                                            "file.bytes": .int(body.count),
+                                            "file.bytes_before": .int(current.count),
+                                            "file.sha256": .string(now),
+                                            "file.sha256_before": .string(was),
+                                            "file.base": query["base"].map { .string($0) },
+                                            "forced": .bool(forced)])
+            if !forced, query["base"] != was {
+                answer("409 Conflict", ["error": "changed", "version": was], facts: facts); return
+            }
+            // Atomic, so a reader never sees half a file — but a rename makes a new file, which would
+            // come back with default permissions, so the old ones are put back on it.
+            let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
+            do {
+                try body.write(to: url, options: .atomic)
+                if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms],
+                                                                      ofItemAtPath: url.path) }
+            } catch {
+                FV.log("save failed: \(url.path): \(error.localizedDescription)")
+                answer("500 Internal Server Error", ["error": "could not write it"], facts: facts); return
+            }
+            FV.log("save: \(body.count) bytes → \(url.path)")
+            answer("200 OK", ["version": now, "bytes": body.count], facts: facts)
+        }
+    }
+
+    /// GET /raw/<absolute path> — a project file as the browser itself shows it, for "open in a new
+    /// tab": an HTML report rendered rather than listed as source, an image or a PDF at full size.
+    ///
+    /// The path is in the URL's path, not its query, so that a page's relative references resolve:
+    /// `style.css` beside `report.html` is `/raw/…/style.css`, served by this same route and confined
+    /// the same way. HTML and SVG come with a CSP `sandbox` that leaves out `allow-same-origin`. A
+    /// file in a project is not the dashboard and must not run as it: on this origin its scripts
+    /// could read /state and type into any terminal. Its own scripts still run, in an origin of
+    /// their own.
+    private func handleRaw(_ conn: NWConnection, _ path: String, _ query: [String: String],
+                           _ scope: WebAudit.Scope) {
+        let file = String(path.dropFirst("/raw".count)).removingPercentEncoding ?? ""
+        projectRoots(conn) { [weak self] roots in
+            guard let self else { return }
+            let facts: [String: AuditValue] = ["path": .string(file)]
+            func answer(_ status: String, _ type: String, _ data: Data, headers: [(String, String)] = []) {
+                WebAudit.shared.finish(scope, status: status, bytes: data.count, query: query,
+                                       facts: facts)
+                self.send(conn, status: status, type: type, body: data, setCookie: scope.setCookie,
+                          headers: [("X-Content-Type-Options", "nosniff")] + headers)
+            }
+            guard let target = Self.confine(file, roots: roots) else {
+                answer("403 Forbidden", "text/plain; charset=utf-8",
+                       Data("that path is not inside a project".utf8)); return
+            }
+            let url = target.url
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else {
+                answer("404 Not Found", "text/plain; charset=utf-8", Data("no such file".utf8)); return
+            }
+            let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int) ?? 0
+            guard size <= Self.maxBody else {
+                answer("413 Payload Too Large", "text/plain; charset=utf-8",
+                       Data("\(size / 1_048_576) MB is too large to send".utf8)); return
+            }
+            guard let body = try? Data(contentsOf: url) else {
+                answer("500 Internal Server Error", "text/plain; charset=utf-8",
+                       Data("could not read it".utf8)); return
+            }
+            let ext = url.pathExtension.lowercased()
+            // Untyped is shown as text when it reads as text (a NUL says it does not): source,
+            // configs and extensionless scripts are most of what a project holds.
+            let type = Self.mimeType(forExtension: ext)
+                ?? (body.prefix(4096).contains(0) ? "application/octet-stream" : "text/plain; charset=utf-8")
+            var headers: [(String, String)] = []
+            if ["html", "htm", "svg"].contains(ext) {
+                headers.append(("Content-Security-Policy",
+                                "sandbox allow-scripts allow-popups allow-forms allow-modals allow-downloads"))
+            }
+            if type == "application/octet-stream" {
+                headers.append(("Content-Disposition",
+                                "attachment; filename=\"\(Self.headerSafe(url.lastPathComponent))\""))
+            }
+            answer("200 OK", type, body, headers: headers)
         }
     }
 
@@ -697,6 +840,12 @@ final class WebServer {
         case "csv": return "text/csv; charset=utf-8"
         case "json": return "application/json"
         case "html", "htm": return "text/html; charset=utf-8"
+        // What a rendered HTML page pulls in beside it, through /raw.
+        case "css": return "text/css; charset=utf-8"
+        case "js", "mjs": return "text/javascript; charset=utf-8"
+        case "woff2": return "font/woff2"
+        case "woff": return "font/woff"
+        case "ttf": return "font/ttf"
         case "mp4", "mov": return "video/mp4"
         case "mp3": return "audio/mpeg"
         default: return nil
@@ -727,20 +876,23 @@ final class WebServer {
     }
 
     private func send(_ conn: NWConnection, status: String = "200 OK", type: String, body: Data,
-                      setCookie: String? = nil, disposition: String? = nil) {
+                      setCookie: String? = nil, disposition: String? = nil,
+                      headers: [(String, String)] = []) {
         Self.write(conn, status: status, type: type, body: body, setCookie: setCookie,
-                   disposition: disposition)
+                   disposition: disposition, headers: headers)
     }
 
     /// `send` without the instance, for replies composed off every queue this server owns.
     private static func write(_ conn: NWConnection, status: String, type: String, body: Data,
-                              setCookie: String? = nil, disposition: String? = nil) {
+                              setCookie: String? = nil, disposition: String? = nil,
+                              headers: [(String, String)] = []) {
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(type)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Cache-Control: no-store\r\n"
         if let disposition { head += "Content-Disposition: \(disposition)\r\n" }
         if let setCookie { head += "Set-Cookie: \(setCookie)\r\n" }   // identifies this browser's visit
+        for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "Connection: close\r\n\r\n"
         var out = Data(head.utf8); out.append(body)
         conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })

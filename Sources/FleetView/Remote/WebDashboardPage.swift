@@ -764,6 +764,27 @@ enum WebDashboardPage {
     background:var(--codeBg);border:1px solid var(--stroke);border-radius:10px;padding:12px 13px}
   img.fbimg{max-width:100%;display:block;margin:0 auto;border-radius:10px;background:var(--card)}
   iframe.fbpdf{width:100%;height:78vh;border:1px solid var(--stroke);border-radius:10px;background:#fff}
+  #fbbar{gap:8px}
+  /* A markdown file: rendered by default, editable in place. The bar stays in view over a long
+     document, because Save is the button you need wherever you have scrolled to. */
+  .fbtools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:sticky;top:-10px;z-index:1;
+    background:var(--bg);padding:6px 0 8px}
+  .fbtools button{font-size:12px;font-weight:600;color:var(--text);background:var(--card);
+    border:1px solid var(--stroke);border-radius:7px;padding:6px 10px;cursor:pointer}
+  .fbtools button[disabled]{opacity:.35;cursor:default}
+  .fbtools button.on{color:var(--onAccent);background:var(--accent);border-color:transparent}
+  .fbtools button.save:not([disabled]){color:var(--onAccent);background:var(--accent);border-color:transparent}
+  .fbtools .fbstate{flex:1;min-width:0;text-align:right;font-size:11px;color:var(--sub)}
+  .fbtools .fbstate.dirty{color:var(--amber)}
+  .fbmd{font-size:14px;line-height:1.65;padding:2px 2px 30px}
+  .fbmd h1{font-size:19px}.fbmd h2{font-size:16px}.fbmd h3{font-size:14.5px}
+  textarea.fbedit{display:block;width:100%;box-sizing:border-box;height:calc(100dvh - 210px);min-height:240px;
+    resize:vertical;margin:0;padding:12px 13px;font-size:13px;line-height:1.6;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);background:var(--codeBg);
+    border:1px solid var(--stroke);border-radius:10px;outline:none;tab-size:4}
+  textarea.fbedit:focus{border-color:var(--accent)}
+  /* iOS zooms the page into any field under 16px the moment it is focused. */
+  @media (pointer:coarse){ textarea.fbedit{font-size:16px} }
 </style>
 </head>
 <body>
@@ -866,6 +887,8 @@ enum WebDashboardPage {
   <div id="fbbar">
     <button onclick="fbClose()">‹</button>
     <span class="fbname" id="fbname"></span>
+    <button id="fbreload" onclick="fbRefresh()" title="Reload from disk">↻</button>
+    <button id="fbtab" onclick="fbNewTab()" title="Open in a new tab">↗</button>
     <button id="fbup" onclick="fbUp()" title="Up one level">↑</button>
   </div>
   <div id="fbpath"><span id="fbcrumbs"></span><button class="fbcopy" onclick="fbCopyHere()">⧉ path</button></div>
@@ -1088,7 +1111,7 @@ swipeBack('term','chat','pre.code,.mbody,#presets,#keys,#inputbar,#drawer,#tabs'
 /* The file browser is the other full-screen overlay, and it was the one place on the phone with no
    way back but the ‹ button. Its exclusions are its own: the crumb bar is selectable text you
    long-press to copy, a code preview scrolls sideways, and a PDF is an iframe that pans itself. */
-swipeBack('fb','fbbody','#fbpath,#fbcrumbs,pre,iframe',()=>fbClose());
+swipeBack('fb','fbbody','#fbpath,#fbcrumbs,pre,iframe,textarea,.fbtools,table',()=>fbClose());
 function closeTerm(){
   closeDrawer(); showTermHead();
   document.getElementById('stickyq').classList.remove('on');
@@ -2359,8 +2382,9 @@ document.getElementById('inputtext').addEventListener('input',e=>{autoGrow(e.tar
 
 /* ---------- project file browser ----------
    The project's own directory, walked from the phone. What it is for: an agent cites a file, and
-   until now the only way to look at it was to be at the Mac. Read-only by construction — the server
-   confines every path to a project root (see WebServer.confine). */
+   until now the only way to look at it was to be at the Mac. Every path is confined to a project
+   root by the server (see WebServer.confine); the one thing it writes is a markdown file opened in
+   the editor below, and only through /save. */
 let fbDir='',fbRoot='',fbFile='';
 const extOf=s=>{const i=s.lastIndexOf('.');return i>0?s.slice(i+1).toLowerCase():'';};
 const IMGEXT=['png','jpg','jpeg','gif','webp','avif','svg','heic'];
@@ -2395,15 +2419,25 @@ function fbOpen(path){
   lockBoard();
   fbList(path);
 }
+/* A folder or a file, from a link (`/#fb=<path>`, what ↗ opens): /browse says which, since a folder
+   may have a dot in its name and a file need not. */
+async function fbOpenPath(p){
+  document.getElementById('fb').classList.add('show');
+  lockBoard();
+  if(await fbList(p)) return;
+  if(await fbList(p.replace(/\/+$/,'').split('/').slice(0,-1).join('/')||'/')) fbShow(p);
+}
 function fbClose(){
+  if(!fbLeaveOk()) return;
   document.getElementById('fb').classList.remove('show');
   unlockBoard('');
-  fbDir=fbRoot=fbFile='';
+  fbDir=fbRoot=fbFile=''; fbDoc=null;
+  fbSyncHash();
 }
 /* Up: out of a preview back to its directory first, then one level towards the project root —
    which is where it stops, because that is where the server's confinement stops too. */
 function fbUp(){
-  if(fbFile){ fbList(fbDir); return; }
+  if(fbFile){ if(fbLeaveOk()) fbList(fbDir); return; }
   if(!fbDir||fbDir===fbRoot) return;
   fbList(fbDir.replace(/\/+$/,'').split('/').slice(0,-1).join('/')||'/');
 }
@@ -2412,6 +2446,7 @@ function fbHead(){
   const full=fbFile||fbDir;
   document.getElementById('fbname').textContent=fbBase(full);
   document.getElementById('fbup').disabled=!fbFile&&(!fbDir||fbDir===fbRoot);
+  fbSyncHash();
   // Every ancestor inside the project is a link back to it; the part above the root is context and
   // is deliberately dead — you cannot go there, so it must not look like you can.
   let acc='',html='';
@@ -2432,8 +2467,8 @@ async function fbList(dir){
     const r=await fetch('/browse?path='+encodeURIComponent(dir),{cache:'no-store'});
     j=await r.json();
     if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||'could not list that folder')+'</div>'; return; }
-  fbFile=''; fbDir=j.path; fbRoot=j.root;
+  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||'could not list that folder')+'</div>'; return false; }
+  fbFile=''; fbDir=j.path; fbRoot=j.root; fbDoc=null;
   fbHead();
   let html='';
   if(j.truncated) html+='<div class="fbnote">showing the first '+j.entries.length+' entries of this folder</div>';
@@ -2447,11 +2482,13 @@ async function fbList(dir){
   if(!j.entries.length) html+='<div class="fbnote">this folder is empty</div>';
   body.innerHTML=html;
   body.scrollTop=0;
+  return true;
 }
 async function fbShow(path){
-  fbFile=path; fbHead();
+  fbFile=path; fbDoc=null; fbHead();
   const body=document.getElementById('fbbody');
   const e=extOf(path), url='/read?path='+encodeURIComponent(path);
+  if(MDEXT.includes(e)) return fbLoadMd(path,'view');
   if(IMGEXT.includes(e)){ body.innerHTML='<img class="fbimg" src="'+att(url)+'">'; body.scrollTop=0; return; }
   if(e==='pdf'){ body.innerHTML='<iframe class="fbpdf" src="'+att(url)+'"></iframe>'; return; }
   body.innerHTML='<div class="fbnote">Loading…</div>';
@@ -2478,8 +2515,159 @@ document.getElementById('fbbody').addEventListener('click',e=>{
   if(row.dataset.d==='1') fbList(row.dataset.p); else fbShow(row.dataset.p);
 });
 document.getElementById('fbcrumbs').addEventListener('click',e=>{
-  const b=e.target.closest('b'); if(b) fbList(b.dataset.p);
+  const b=e.target.closest('b'); if(b&&fbLeaveOk()) fbList(b.dataset.p);
 });
+
+/* ↻ is "what is on disk now": the folder listed again, or the file read again — an agent may have
+   just written it. Over unsaved edits it asks first, since reading the disk replaces them. */
+function fbRefresh(){
+  if(fbDoc){ if(fbDirty()&&!confirm('放弃没保存的修改，重新读取磁盘上的版本？')) return;
+    const top=document.getElementById('fbbody').scrollTop;
+    fbLoadMd(fbDoc.path,fbDoc.mode,top); return; }
+  if(fbFile){ fbShow(fbFile); return; }
+  if(fbDir) fbList(fbDir);
+}
+/* ↗: what the browser shows better on its own — a page rendered (its stylesheets and scripts
+   resolve beside it, through /raw), an image, a PDF, a video — opens as itself. A folder, a
+   markdown file and source open as this browser in a tab of their own, where markdown can still be
+   edited and a folder still walked. */
+const RAWEXT=['html','htm','pdf','svg','mp4','mov','mp3'];
+function fbNewTab(){
+  const p=fbFile||fbDir; if(!p) return;
+  const e=extOf(p);
+  const raw=fbFile&&(RAWEXT.includes(e)||IMGEXT.includes(e));
+  window.open(raw?'/raw'+p.split('/').map(encodeURIComponent).join('/')
+                 :'/#fb='+encodeURIComponent(p),'_blank','noopener');
+}
+/* Where the browser is, kept in the address bar — so reloading the tab, or a tab opened by ↗,
+   comes back to the same folder or file. replaceState: walking a folder is not history. */
+function fbSyncHash(){
+  const p=document.getElementById('fb').classList.contains('show')?(fbFile||fbDir):'';
+  const want=p?'#fb='+encodeURIComponent(p):'';
+  if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+}
+
+/* ---------- markdown editor ----------
+   Rendered by default; ✎ swaps in a plain textarea over the same text. Undo is ours, not the
+   textarea's: a phone has no ⌘Z, and the field's own history dies the first time a script sets its
+   value — which undo, redo and reload all do. A step is taken when typing pauses, so one undo takes
+   back a burst of typing rather than a single character.
+   Saving sends the version /read handed out (X-FV-Version). If the file changed on disk meanwhile —
+   an agent writing the same plan — the server refuses, and the choice to overwrite is yours. */
+const MDEXT=['md','markdown'];
+let fbDoc=null, fbSnapT=0;
+const FB_WHY={large:'文件太大（超过 512 KB），这里只读',encoding:'不是 UTF-8 文本，这里只读',
+              readonly:'这个文件没有写权限'};
+async function fbLoadMd(path,mode,scrollTo){
+  const body=document.getElementById('fbbody');
+  if(!fbDoc) body.innerHTML='<div class="fbnote">Loading…</div>';
+  let r,text;
+  try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store'}); text=await r.text(); }
+  catch(e){ body.innerHTML='<div class="fbnote">could not read that file</div>'; return; }
+  if(fbFile!==path) return;                      // walked away while it loaded
+  if(!r.ok){ body.innerHTML='<div class="fbnote">'+esc(text)+'</div>'; return; }
+  const ed=r.headers.get('X-FV-Editable')||'';
+  // The textarea hands back \n whatever the file used; a CRLF file is written back as CRLF.
+  const lf=text.replace(/\r\n/g,'\n');
+  fbDoc={path,disk:lf,crlf:lf!==text,version:r.headers.get('X-FV-Version')||'',
+         editable:ed==='1',why:ed==='1'?'':(FB_WHY[ed]||'这里只读'),mode:'view',hist:[lf],hi:0};
+  fbRenderMd(fbDoc.editable&&mode==='edit'?'edit':'view');
+  if(scrollTo) body.scrollTop=scrollTo;
+}
+const fbTA=()=>document.querySelector('#fbbody textarea.fbedit');
+function fbCur(){ const ta=fbDoc&&fbDoc.mode==='edit'&&fbTA(); return ta?ta.value:fbDoc.hist[fbDoc.hi]; }
+function fbDirty(){ return !!fbDoc&&fbCur()!==fbDoc.disk; }
+function fbLeaveOk(){ return !fbDirty()||confirm('有没保存的修改，确定离开？离开后修改会丢失。'); }
+function fbRenderMd(mode){
+  fbDoc.mode=mode;
+  const body=document.getElementById('fbbody'), d=fbDoc;
+  body.innerHTML='<div class="fbtools">'
+    +'<button data-a="view"'+(mode==='view'?' class="on"':'')+'>预览</button>'
+    +'<button data-a="edit"'+(mode==='edit'?' class="on"':'')+(d.editable?'':' disabled')+'>✎ 编辑</button>'
+    +'<button data-a="undo" title="撤销 (⌘Z)">↶ 撤销</button>'
+    +'<button data-a="redo" title="重做 (⇧⌘Z)">↷ 重做</button>'
+    +'<span class="fbstate"></span>'
+    +'<button data-a="save" class="save" title="保存 (⌘S)">保存</button></div>'
+    +(mode==='edit'?'<textarea class="fbedit" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>'
+                   :'<div class="md fbmd">'+(md(d.hist[d.hi])||'<div class="fbnote">（空文件）</div>')+'</div>');
+  const ta=fbTA();
+  if(ta){ ta.value=d.hist[d.hi]; ta.addEventListener('input',()=>{ clearTimeout(fbSnapT); fbSnapT=setTimeout(fbSnap,500); fbSync(); }); }
+  fbSync();
+}
+/* The text in the field as one undo step, if it differs from the last one. Capped, because each
+   step is the whole document. */
+function fbSnap(){
+  clearTimeout(fbSnapT);
+  const d=fbDoc, ta=fbTA(); if(!d||!ta) return;
+  const v=ta.value; if(v===d.hist[d.hi]) return;
+  d.hist=d.hist.slice(0,d.hi+1); d.hist.push(v);
+  if(d.hist.length>100) d.hist.shift();
+  d.hi=d.hist.length-1; fbSync();
+}
+function fbStep(by){
+  const d=fbDoc; if(!d) return;
+  if(d.mode==='edit') fbSnap();                 // typing not yet a step becomes one, then is undone
+  const to=d.hi+by; if(to<0||to>=d.hist.length) return;
+  const was=d.hist[d.hi]; d.hi=to;
+  const ta=fbTA();
+  if(ta){
+    const v=d.hist[to]; ta.value=v;
+    // Put the caret where the change was, which is where the eye already is.
+    let i=0; while(i<v.length&&i<was.length&&v[i]===was[i]) i++;
+    ta.focus(); ta.setSelectionRange(i,i);
+  }else fbRenderMd('view');
+  fbSync();
+}
+function fbSync(){
+  const d=fbDoc, bar=document.querySelector('#fbbody .fbtools'); if(!d||!bar) return;
+  const dirty=fbDirty(), ta=fbTA();
+  const pending=ta&&ta.value!==d.hist[d.hi];
+  bar.querySelector('[data-a=undo]').disabled=!(d.hi>0||pending);
+  bar.querySelector('[data-a=redo]').disabled=pending||d.hi>=d.hist.length-1;
+  bar.querySelector('[data-a=save]').disabled=!d.editable||!dirty;
+  const st=bar.querySelector('.fbstate');
+  st.textContent=!d.editable?d.why:dirty?'未保存':'已保存';
+  st.classList.toggle('dirty',dirty);
+}
+async function fbSave(force){
+  const d=fbDoc; if(!d||!d.editable) return;
+  if(d.mode==='edit') fbSnap();
+  const text=fbCur();
+  if(!force&&text===d.disk) return;
+  let r,j={};
+  try{
+    r=await fetch('/save?path='+encodeURIComponent(d.path)+'&base='+encodeURIComponent(d.version)+(force?'&force=1':''),
+                  {method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},
+                   body:d.crlf?text.replace(/\n/g,'\r\n'):text});
+    j=await r.json().catch(()=>({}));
+  }catch(e){ toast('保存失败：连不上 Mac'); return; }
+  if(fbDoc!==d) return;
+  if(r.status===409){
+    if(confirm('这个文件在你编辑期间被改过了（可能是 agent 写的）。\n\n确定：用你的版本覆盖它\n取消：先不保存（点 ↻ 可以看磁盘上的新版本，但你的修改会丢）'))
+      return fbSave(true);
+    return;
+  }
+  if(!r.ok){ toast('保存失败：'+(j.error||('HTTP '+r.status))); return; }
+  d.version=j.version||''; d.disk=text; fbSync(); toast('已保存');
+}
+document.getElementById('fbbody').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtools button'); if(!b||b.disabled||!fbDoc) return;
+  const a=b.dataset.a;
+  if(a==='view'&&fbDoc.mode!=='view'){ fbSnap(); fbRenderMd('view'); }
+  else if(a==='edit'&&fbDoc.mode!=='edit'){ fbRenderMd('edit'); const ta=fbTA(); if(ta) ta.focus(); }
+  else if(a==='undo') fbStep(-1);
+  else if(a==='redo') fbStep(1);
+  else if(a==='save') fbSave(false);
+});
+// On the document, not the overlay: in preview nothing inside #fb has focus, and ⌘S there is the
+// browser's "save page" otherwise.
+document.addEventListener('keydown',e=>{
+  if(!fbDoc||!(e.metaKey||e.ctrlKey)||e.altKey||!document.getElementById('fb').classList.contains('show')) return;
+  const k=e.key.toLowerCase();
+  if(k==='s'){ e.preventDefault(); fbSave(false); }
+  else if(fbDoc.mode==='edit'&&(k==='z'||k==='y')){ e.preventDefault(); fbStep(k==='y'||e.shiftKey?1:-1); }
+});
+window.addEventListener('beforeunload',e=>{ if(fbDirty()){ e.preventDefault(); e.returnValue=''; } });
 
 // ---------- create / actions ----------
 async function newTerm(pid){try{await fetch('/new?projectId='+encodeURIComponent(pid));setTimeout(tick,300);}catch(e){}}
@@ -2830,6 +3018,8 @@ async function tick(){
   }catch(e){}                // the signal indicator says offline; ping() is what decides that
 }
 tick();setInterval(tick,1500);
+// A tab opened by the file browser's ↗, or one reloaded while it was open, lands on that folder or file.
+{ const m=location.hash.match(/^#fb=(.+)$/); if(m){ try{ fbOpenPath(decodeURIComponent(m[1])); }catch(e){} } }
 
 /* ---------- connection: signal bars and latency ----------
    A tiny request every 2 s, answered off the Mac's main thread, so the number is the network's and

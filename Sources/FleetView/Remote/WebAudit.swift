@@ -87,7 +87,9 @@ final class WebAudit: @unchecked Sendable {
 
     func begin(request: HTTPRequestHead?, ip: String, port: Int?) -> Scope {
         let now = Date()
-        let path = request?.path ?? "/"
+        // `/raw/<file>` carries a file path in the URL's path, so every file read that way would be a
+        // path of its own in the session's per-path counts. One route, one name; the file is in facts.
+        let path = (request?.path ?? "/").hasPrefix("/raw/") ? "/raw" : (request?.path ?? "/")
         // A proxy hop wins over the socket address, but only when we are actually behind one.
         let clientIP = request?.forwardedFor ?? ip
 
@@ -291,6 +293,19 @@ final class WebAudit: @unchecked Sendable {
             return event("fleetview.web.file_read", "read \(query["path"] ?? "?")",
                          AuditValue.compact(["path": query["path"].map { .string($0) },
                                              "download": .bool(query["dl"] == "1")]))
+
+        case "/raw":
+            // The same disclosure as /read, opened in a tab of its own — and a rendered page pulls
+            // its stylesheets and scripts through here too, each one a file read.
+            let path = facts["path"]?.displayString ?? "?"
+            return event("fleetview.web.file_read", "read \(path) (raw)",
+                         ["path": .string(path), "raw": .bool(true)], categories: ["web", "file"])
+
+        case "/save":
+            // A file on the Mac rewritten from a browser. The app state never changes, so this record
+            // is the only trace of who wrote what into it — before and after, by hash.
+            let path = facts["path"]?.displayString ?? query["path"] ?? "?"
+            return event("fleetview.web.file_saved", "saved \(path)", facts, categories: ["web", "file"])
 
         // The four below changed no app state, so the diff never saw them; until 2026-10-01 they
         // were only a count in the five-minute rollup, with no file name or command attached.
