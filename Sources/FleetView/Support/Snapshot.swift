@@ -46,9 +46,9 @@ enum Snapshot {
             state.dialog = .closeAll
             shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                   to: "\(dir)/dialog-close-\(suffix).png")
-            // Mid-drag: FleetView-1 lifted over the code_sense-1 card's neighbourhood, the dock up.
+            // Mid-drag: FleetView-1 lifted over the web-store-1 card's neighbourhood, the dock up.
             if let dragged = state.terminals.first(where: { $0.name == "FleetView-1" }),
-               let target = state.terminals.first(where: { $0.name == "code_sense-1" }) {
+               let target = state.terminals.first(where: { $0.name == "web-store-1" }) {
                 state.dialog = nil
                 state.draggingTerminalId = dragged.id
                 state.dragLocation = CGPoint(x: 900, y: 560)
@@ -60,7 +60,7 @@ enum Snapshot {
             }
             // The session tree, when a real transcript is named (read only): FV_SNAPSHOT_TRANSCRIPT.
             if let path = ProcessInfo.processInfo.environment["FV_SNAPSHOT_TRANSCRIPT"],
-               let i = state.terminals.firstIndex(where: { $0.name == "手表app" }) {
+               let i = state.terminals.firstIndex(where: { $0.name == treeTerminal }) {
                 state.dialog = nil
                 state.terminals[i].transcriptPath = path
                 state.openSessionTree(state.terminals[i].id)
@@ -70,9 +70,12 @@ enum Snapshot {
                 }
                 shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                       to: "\(dir)/tree-\(suffix).png")
-                // A pinned turn: the last one on the path that has an answer.
-                if let u = state.treeModel.rows.compactMap(\.nodeUuid)
-                    .last(where: { !(state.treeModel.tree.nodes[$0]?.answer.isEmpty ?? true) }) {
+                // A pinned turn: the one before the current leaf, so there are rows on both sides of
+                // it; the root when the path is a single turn.
+                let tree = state.treeModel.tree
+                let leaf = tree.activeLeafNode ?? state.treeModel.rows.compactMap(\.nodeUuid).first
+                if let leaf, case let u = tree.nodes[leaf]?.parent ?? leaf,
+                   !(tree.nodes[u]?.answer.isEmpty ?? true) {
                     state.treeModel.selected = u
                     state.treeModel.focus.focusY = 420
                     shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
@@ -112,15 +115,24 @@ enum Snapshot {
         window.orderOut(nil)
     }
 
+    /// The terminal the session tree is drawn for when `FV_SNAPSHOT_TRANSCRIPT` names a transcript.
+    private static let treeTerminal = "ride-tracker"
+
     /// A board with one of everything: needs-you, running, idle, shell, exited, closed, a cluster,
-    /// a marked card, a hidden window, notes.
+    /// a marked card, dormant projects, notes.
+    ///
+    /// Also what the README's screenshots are drawn from, so it is invented, worded in the language
+    /// the UI is drawn in, and names nothing on this machine: run it with `-AppleLanguages "(en)"`
+    /// or `"(zh-Hans)"` for each README.
     @MainActor private static func fill(_ s: AppState) {
         let now = Date()
-        let fv = Project(name: "FleetView", path: "/tmp/FleetView", isGit: true)
-        let cs = Project(name: "code_sense", path: "/tmp/code_sense", isGit: true)
-        let home = Project(name: "home_puzhen", path: "/tmp/home_puzhen", isGit: true)
-        let tmp = Project(name: "临时", path: "/tmp/临时", isGit: false)
-        s.projects = [fv, cs, home, tmp]
+        func w(_ en: String, _ zh: String) -> String { Lang.current == .zh ? zh : en }
+        let fv = Project(name: "FleetView", path: "/Users/me/dev/FleetView", isGit: true)
+        let shop = Project(name: "web-store", path: "/Users/me/dev/web-store", isGit: true)
+        let data = Project(name: "data-pipeline", path: "/Users/me/dev/data-pipeline", isGit: true)
+        let rides = Project(name: "ride-tracker", path: "/Users/me/dev/ride-tracker", isGit: true)
+        let tmp = Project(name: "scratch", path: "/Users/me/scratch", isGit: false)
+        s.projects = [fv, shop, data, rides, tmp]
 
         func t(_ p: Project, _ name: String, _ status: TermStatus, _ agent: AgentKind, ago: Double,
                prompt: String, tokens: Int = 0, running: Double? = nil) -> TerminalSession {
@@ -133,41 +145,55 @@ enum Snapshot {
             if let running { x.runningSince = now.addingTimeInterval(-running) }
             return x
         }
-        var fv1 = t(fv, "FleetView-1", .idle, .claude, ago: 1500, prompt: "部署 push", tokens: 412_000)
+        var fv1 = t(fv, "FleetView-1", .idle, .claude, ago: 1500, prompt: w("Deploy and push", "部署并 push"),
+                    tokens: 412_000)
         fv1.subtaskDone = true
-        let cluster = Cluster(name: "home_puzhen-1")
-        var h1 = t(home, "home_puzhen-1", .idle, .claude, ago: 345_600,
-                   prompt: "把 Mac mini 上 qc150 的结果拉回来，按领域汇总分数", tokens: 9_300_000)
-        h1.clusterId = cluster.id
-        var h2 = t(home, "home_puzhen-1 ⑂", .idle, .claude, ago: 432_000,
-                   prompt: "同一任务的第二种做法：只重跑低于 7 分的题", tokens: 3_700_000)
-        h2.clusterId = cluster.id
+        let cluster = Cluster(name: "backfill")
+        var d1 = t(data, "backfill-a", .idle, .claude, ago: 345_600,
+                   prompt: w("Backfill September's events into the warehouse, one partition per day",
+                             "把九月的事件回填到数仓，按天分区"), tokens: 9_300_000)
+        d1.clusterId = cluster.id
+        var d2 = t(data, "backfill-b", .idle, .codex, ago: 432_000,
+                   prompt: w("Same task, another way: re-run only the days that failed",
+                             "同一个任务换个做法：只重跑失败的那几天"), tokens: 3_700_000)
+        d2.clusterId = cluster.id
         s.clusters = [cluster]
         s.terminals = [
-            t(fv, "FleetView-3", .needsYou, .codex, ago: 60, prompt: "允许运行 swift build？需要写入 .build/ 目录",
+            t(fv, "FleetView-3", .needsYou, .codex, ago: 60,
+              prompt: w("Allow swift build? It needs to write to .build/", "允许运行 swift build？需要写入 .build/ 目录"),
               tokens: 230_000),
             t(fv, "FleetView-2", .working, .claude, ago: 5,
-              prompt: "现在帮我看看 fleetview 的配色，设计，以及标签名称，很多地方都不规范，不好看，帮我研究一下看看",
+              prompt: w("Rework the colours and labels so a card's state reads from its shape and colour alone",
+                        "重新设计配色和标签，让卡片的状态只看形状和颜色就能分辨"),
               tokens: 64_000, running: 132),
             fv1,
-            t(fv, "web-check", .exited, .claude, ago: 7200, prompt: "把 Web 面板的断线重连改成指数退避", tokens: 38_000),
-            t(fv, "release-notes", .closed, .claude, ago: 259_200, prompt: "整理 0.9 版本的更新说明", tokens: 12_000),
-            t(cs, "CS104 astra r1", .working, .codex, ago: 2,
-              prompt: "跑完第一轮 astra 评测，把失败用例按模块归类，写到 report.md", tokens: 1_200_000, running: 847),
-            t(cs, "code_sense-1", .idle, .claude, ago: 60,
-              prompt: "Monitor 事件：continuous fleet tracking 已就绪，下一步对比两轮结果", tokens: 3_100_000),
-            t(cs, "code_sense-4", .shell, .unknown, ago: 3600, prompt: "tail -f logs/relay.log"),
-            h1, h2,
-            t(home, "手表app", .idle, .claude, ago: 518_400, prompt: "我发现最近两套的轨迹，gps经常不准确，看看",
+            t(fv, "web-check", .exited, .claude, ago: 7200,
+              prompt: w("Make the web panel reconnect with exponential backoff", "把 Web 面板的断线重连改成指数退避"),
+              tokens: 38_000),
+            t(fv, "release-notes", .closed, .claude, ago: 259_200,
+              prompt: w("Draft the 0.9 release notes", "整理 0.9 版本的更新说明"), tokens: 12_000),
+            t(shop, "checkout-e2e", .working, .codex, ago: 2,
+              prompt: w("Run the checkout e2e suite and group the failures by module in report.md",
+                        "跑完结账流程的端到端测试，把失败用例按模块归类，写到 report.md"),
+              tokens: 1_200_000, running: 847),
+            t(shop, "web-store-1", .idle, .claude, ago: 60,
+              prompt: w("Add a loading skeleton to the product grid", "给商品网格加一个加载骨架屏"),
+              tokens: 3_100_000),
+            t(shop, "dev-server", .shell, .unknown, ago: 3600, prompt: "npm run dev"),
+            d1, d2,
+            t(rides, treeTerminal, .idle, .claude, ago: 518_400,
+              prompt: w("The GPS tracks from my last two rides keep drifting — take a look",
+                        "最近两次骑行的 GPS 轨迹总是漂，帮我看看"),
               tokens: 3_900_000),
-            t(tmp, "probe4", .shell, .unknown, ago: 18_000,
-              prompt: "ipconfig getifaddr en0; nmap -p 22,8080 192.168.2.0/24"),
-            t(tmp, "hawait", .closed, .unknown, ago: 18_000, prompt: "for i in 1 2 3 4 5; do curl -s localhost:8123; done"),
+            t(tmp, "probe", .shell, .unknown, ago: 18_000,
+              prompt: "curl -s localhost:8080/state | jq '.terminals | length'"),
+            t(tmp, "load-test", .closed, .unknown, ago: 18_000,
+              prompt: "for i in $(seq 50); do curl -s localhost:8123/health; done"),
         ]
         s.notes = [Note(text: "claude --dangerously-skip-permissions"),
-                   Note(text: "claude --dangerously-skip-permissions --resume"),
-                   Note(text: ".claude/skills/experiential-demo-to-fwdg-task/SKILL.md"),
-                   Note(text: "~/PycharmProjects/datagen_vision2web/template_generation/docs")]
+                   Note(text: "claude --resume"),
+                   Note(text: "~/dev/FleetView/docs/design"),
+                   Note(text: "ssh mini.local 'tmux -L fleetview ls'")]
         s.showRecentStrip = true
     }
 }

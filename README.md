@@ -11,7 +11,7 @@ sessions from a phone.
 
 ![FleetView desktop board showing running and recently used agent terminals](docs/screenshots/desktop-board.png)
 
-*Project names, terminal names, and paths in the screenshots are anonymized.*
+*The screenshots show sample data. The interface is in English or Chinese, following the system language.*
 
 ## Conversation history and branches
 
@@ -33,7 +33,7 @@ terminals on the board, the current conversation, and all history. Drag a search
 board to continue the conversation from that point. The new card takes the name of the card the
 conversation was in, marked ` ⑂` when it continues from an earlier point as a new branch.
 
-Removed cards are kept per project. The clock button in a project's header lists them in the same
+Removed cards are kept per project. The archive button in a project's header lists them in the same
 panel; drag one back onto the board to resume it.
 
 The search index retains indexed conversations even after their source transcripts have been
@@ -45,7 +45,7 @@ Each terminal has a card showing its status, last prompt, token usage, and run t
 grouped by project. Drag one card onto another to group related terminals into a cluster, or move
 a card to another project with its conversation.
 
-A terminal you are not watching can be hidden with the 隐藏 button in its title bar. The window
+A terminal you are not watching can be hidden with the **Hide** button in its title bar. The window
 closes and the agent keeps running in the background: the card shows its status as before, with an
 eye-slash mark, and clicking the card opens the window again where it was, on the same session. A
 hidden terminal costs no drawing and no window memory, and stays hidden across restarts. Closing a
@@ -164,7 +164,7 @@ Mac. `~/.fleetview/logging.json` changes what is kept, for example `"promptPrevi
 
 FleetView installs status hooks for Claude Code and Codex. Codex runs them only after you have
 trusted them in Codex, and FleetView keeps that trust when it rewrites its hook entries. To remove
-the hooks, use **FleetView → Uninstall Status Hooks**.
+the hooks, use **FleetView → Uninstall Status Hooks (Claude + Codex)**.
 
 ## Network access
 

@@ -7,16 +7,16 @@
 FleetView 把多个 agent 会话放在同一个看板上，按项目分组。哪个还在运行、哪个在等你回复、上次交给它什么任务，
 都能直接看到。你也可以查看和恢复对话分支，让 agent 生成自定义的 Generative UI 面板，或在手机上继续操作。
 
-![FleetView 桌面看板，展示正在运行和最近使用的 agent 终端](docs/screenshots/desktop-board.png)
+![FleetView 桌面看板，展示正在运行和最近使用的 agent 终端](docs/screenshots/desktop-board.zh-CN.png)
 
-*配图中的项目名、终端名和路径已匿名化。*
+*配图使用示例数据。界面语言跟随系统，中文或英文。*
 
 ## 对话历史与分支
 
 会话树展示 Claude Code 和 Codex 对话中的 prompt 和分支，包括之前没有继续的分支。
 选中一个节点可以阅读历史，也可以在新终端中从那里接着聊。正在运行的会话同样可以复制一份，保留上下文，尝试另一个方向。
 
-![会话树中的对话分支，以及选中节点的内容预览](docs/screenshots/session-tree.png)
+![会话树中的对话分支，以及选中节点的内容预览](docs/screenshots/session-tree.zh-CN.png)
 
 从历史节点继续时，FleetView 会优先恢复已有会话；如果需要新建分支，就生成一份包含该节点之前历史的会话文件，
 原始记录保持不变。Claude 的实现内置在应用中，移植自
@@ -25,7 +25,7 @@ FleetView 把多个 agent 会话放在同一个看板上，按项目分组。哪
 按 **⌘K** 搜索本机的 Claude Code 和 Codex 对话记录，按 **Tab** 在看板终端、当前对话和全部历史之间切换搜索范围。
 把搜索结果拖到看板上，就能从对应位置继续对话。新卡片沿用这段对话原来所在卡片的名字；从较早的位置另开分支时，名字后面加 ` ⑂`。
 
-删除的卡片按项目保留。点项目标题栏上的时钟按钮，会在同一个面板里列出它们，拖回看板即可继续。
+删除的卡片按项目保留。点项目标题栏上的归档按钮，会在同一个面板里列出它们，拖回看板即可继续。
 
 搜索索引会保留已收录的对话内容。即使原始记录后来被删除，仍然可以搜索、阅读，并重建成可继续使用的会话。
 
@@ -96,8 +96,8 @@ FleetView 在 Mac 上提供 Web 仪表盘，通过局域网或 Tailscale 就能�
 则会把文件放入仪表盘的文件托盘，方便在手机上查看 agent 生成的报告或其他产物。
 
 <p>
-  <img src="docs/screenshots/mobile-board.png" width="320" alt="手机尺寸的 FleetView Web 仪表盘，展示各 agent 的状态">
-  <img src="docs/screenshots/mobile-chat.png" width="320" alt="手机尺寸的 FleetView 聊天视图，展示对话历史和回复输入框">
+  <img src="docs/screenshots/mobile-board.zh-CN.png" width="320" alt="手机尺寸的 FleetView Web 仪表盘，展示各 agent 的状态">
+  <img src="docs/screenshots/mobile-chat.zh-CN.png" width="320" alt="手机尺寸的 FleetView 聊天视图，展示对话历史和回复输入框">
 </p>
 
 *Web 仪表盘与一段对话，使用手机尺寸的浏览器窗口截图。*
@@ -135,7 +135,7 @@ FleetView 将应用状态、搜索索引、日志、传输的文件和自定义�
 例如 `"promptPreview": false` 或 `"shellCommand": "argv0"`，只写需要修改的项即可。
 
 FleetView 会为 Claude Code 和 Codex 安装状态 hook。Codex 要在你信任这些 hook 之后才会运行它们，
-FleetView 重写 hook 配置时会保留这份信任。可以通过 **FleetView → Uninstall Status Hooks** 移除 hook。
+FleetView 重写 hook 配置时会保留这份信任。可以通过 **FleetView → 卸载状态钩子（Claude + Codex）** 移除 hook。
 
 ## 网络访问
 
