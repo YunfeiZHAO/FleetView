@@ -93,16 +93,10 @@ struct StatusGlyph: View {
             SoftBurst().fill(onColor ?? Theme.primary)
                 .frame(width: s * 0.92, height: s * 0.92)
         case .needsYou:
-            ZStack {
-                Diamond().fill(onColor ?? Theme.warn)
-                VStack(spacing: s * 0.07) {
-                    Capsule().frame(width: s * 0.12, height: s * 0.26)
-                    Circle().frame(width: s * 0.13, height: s * 0.13)
-                }
-                .blendMode(.destinationOut)
-            }
-            .compositingGroup()
-            .frame(width: s * 0.9, height: s * 0.9)
+            // The "!" is a hole in the path (even-odd fill), not a second shape blended out of the
+            // first: a blend needs an offscreen pass that not every renderer gives it.
+            AlertDiamond().fill(onColor ?? Theme.warn, style: FillStyle(eoFill: true))
+                .frame(width: s * 0.9, height: s * 0.9)
         case .idle:
             Circle().fill(Theme.outline).frame(width: s * 0.5, height: s * 0.5)
         case .shell:
@@ -141,6 +135,20 @@ struct SoftBurst: Shape {
             if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
         }
         p.closeSubpath()
+        return p
+    }
+}
+
+/// A diamond with an exclamation mark cut through it.
+struct AlertDiamond: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Diamond().path(in: r)
+        let w = r.width, h = r.height
+        p.addRoundedRect(in: CGRect(x: r.midX - w * 0.065, y: r.minY + h * 0.24,
+                                    width: w * 0.13, height: h * 0.32),
+                         cornerSize: CGSize(width: w * 0.065, height: w * 0.065))
+        p.addEllipse(in: CGRect(x: r.midX - w * 0.075, y: r.minY + h * 0.63,
+                                width: w * 0.15, height: w * 0.15))
         return p
     }
 }

@@ -1,40 +1,65 @@
 import SwiftUI
 
+/// Whether a card sits in the board's "进行中" zone, where a running card takes the primary
+/// container and a needs-you card the warn container. Everywhere else a card is a plain filled card:
+/// colour is reserved for the one place that answers "what needs me now".
+private struct CardEmphasisKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var cardEmphasis: Bool {
+        get { self[CardEmphasisKey.self] }
+        set { self[CardEmphasisKey.self] = newValue }
+    }
+}
+
+/// One terminal, as a Material 3 card.
+///
+/// Three rows: what it is and how it is (status shape, name, clock), what it was last asked, and
+/// whose it is (agent mark, tokens). No status word and no "claude"/"codex" label — the shape and the
+/// mark carry those, and the words are in the tooltips. The actions appear on hover, in a row whose
+/// height is reserved either way, so no two cards in a grid are ever different heights.
 struct TerminalCardView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.cardEmphasis) private var emphasis
     let terminal: TerminalSession
 
     @State private var hovering = false
     @State private var renaming = false
-    /// Non-nil while the id chip is showing feedback instead of the id itself.
+    /// Non-nil while the copy button is showing feedback.
     @State private var idFlash: String?
 
-    private var cluster: Cluster? { state.cluster(terminal.clusterId) }
     private var done: Bool { terminal.subtaskDone }
     private var highlighted: Bool { state.highlightedTerminalId == terminal.id }
     private var treeDropTarget: Bool { state.treeDropCardId == terminal.id }
-    private var cardStroke: Color {
-        if done { return Theme.markTint.opacity(0.55) }
-        if terminal.agentKind != .unknown { return Theme.agentColor(terminal.agentKind).opacity(0.5) }
-        return Theme.stroke
+    /// Exited or closed: still on the board, still clickable, but not live — Material's outlined
+    /// card with its content at the disabled opacity.
+    private var ended: Bool { terminal.status == .exited || terminal.status == .closed }
+
+    /// Background and foreground when the card takes a container colour (see CardEmphasisKey).
+    private var container: (bg: Color, fg: Color)? {
+        guard emphasis else { return nil }
+        switch terminal.status {
+        case .working:  return (Theme.primaryContainer, Theme.onPrimaryContainer)
+        case .needsYou: return (Theme.warnContainer, Theme.onWarnContainer)
+        default:        return nil
+        }
     }
+    private var fg: Color { container?.fg ?? Theme.onSurface }
+    private var fgSecondary: Color { container.map { $0.fg.opacity(0.78) } ?? Theme.onSurfaceVariant }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 8) {
             header.allowsHitTesting(renaming)     // display-only unless renaming → drags pass through the name/status
             promptLine.allowsHitTesting(false)    // never let the prompt text intercept a drag
-            Divider().overlay(done ? Theme.markTint.opacity(0.25) : Theme.stroke)
             footer                                 // keeps its buttons clickable; drag still works over it
         }
-        .padding(14)
-        .background(done ? Theme.markCard : (hovering ? Theme.cardHover : Theme.card))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12)
-            .stroke(cardStroke, lineWidth: done ? 1.5 : 1))
-        .overlay(RoundedRectangle(cornerRadius: 12)
-            .stroke(highlighted || treeDropTarget ? Theme.accent : Color.clear, lineWidth: 2))
-        .shadow(color: (highlighted || treeDropTarget) ? Theme.accent.opacity(0.45) : .clear,
-                radius: (highlighted || treeDropTarget) ? 9 : 0)
+        .opacity(ended && !hovering ? Theme.endedOpacity : 1)
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(cardFill)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
+            .strokeBorder(ended ? Theme.outlineVariant : Color.clear, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
+            .strokeBorder(highlighted || treeDropTarget ? Theme.primary : Color.clear, lineWidth: 2))
         .background(GeometryReader { g in            // drop target: tree node, or another card
             Color.clear.preference(key: CardFramesKey.self,
                                    value: [terminal.id: [g.frame(in: .named("fleet"))]])
@@ -51,55 +76,67 @@ struct TerminalCardView: View {
                 .onChanged { value in state.dragChanged(terminal.id, to: value.location) }
                 .onEnded { value in state.dragEnded(at: value.location) }
         )
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        .animation(.easeOut(duration: 0.2), value: done)
-        .animation(.easeOut(duration: 0.2), value: highlighted)
-        .contextMenu {
-            Button("Rename…") { renaming = true }
-            Button("Show Session Tree") { state.openSessionTree(terminal.id) }
-            Button("Duplicate (fork session)") { state.duplicateTerminal(terminal.id) }
-            Button("Duplicate blank") { state.duplicateTerminal(terminal.id, blank: true) }
-            Button(done ? "Unmark" : "Mark") { state.toggleSubtaskDone(terminal.id) }
-            if terminal.windowHidden == true {
-                Button("Show Window") { state.showTerminal(terminal.id) }
-            } else if state.windowState(terminal.id) == .open {
-                Button("Hide Window (keeps running)") { state.hideTerminal(terminal.id) }
-            }
-            if terminal.clusterId != nil {
-                Button("Remove from Cluster") { state.removeFromCluster(terminal.id) }
-            }
-            Divider()
-            Button("Remove Terminal", role: .destructive) { state.removeTerminal(terminal.id) }
-        }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .contextMenu { menuItems(inMenu: false) }
+    }
+
+    private var cardFill: Color {
+        if let container { return container.bg }
+        if ended { return .clear }
+        return hovering ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
     }
 
     private var header: some View {
-        HStack(spacing: 9) {
-            StatusDot(status: terminal.status)
+        HStack(spacing: 10) {
+            StatusGlyph(status: terminal.status, onColor: container?.fg)
             EditableText(text: terminal.name,
-                         font: .system(size: 14, weight: .semibold),
-                         color: Theme.text,
+                         font: .fvTitleSmall,
+                         color: fg,
                          onCommit: { state.renameTerminal(terminal.id, to: $0) },
                          editing: $renaming)
             Spacer(minLength: 6)
-            if terminal.agentKind != .unknown {
-                Text(terminal.agentKind.label)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(Theme.agentColor(terminal.agentKind))
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Theme.agentColor(terminal.agentKind).opacity(0.16))
-                    .clipShape(Capsule())
-            }
             if done {
-                Image(systemName: "bookmark.fill").font(.system(size: 11)).foregroundColor(Theme.markTint)
+                Image(systemName: "bookmark.fill").font(.system(size: 12))
+                    .foregroundColor(container?.fg ?? Theme.tertiary)
+                    .help("已加书签")
             }
             if terminal.windowHidden == true {        // window hidden, agent running: a click opens it
-                Image(systemName: "eye.slash").font(.system(size: 11)).foregroundColor(Theme.subtext)
+                Image(systemName: "eye.slash").font(.system(size: 12)).foregroundColor(fgSecondary)
+                    .help("窗口已隐藏，agent 在后台继续运行")
             }
-            Text(terminal.status.label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Theme.statusColor(terminal.status))
+            timeLabel
         }
+        .frame(height: 20)
+    }
+
+    /// The run clock while it works; otherwise how long ago anything happened here.
+    ///
+    /// The clock is anchored on the run's own start, not on `.now`: `.now` is re-evaluated on every
+    /// body pass, so each of the board's (many) re-renders handed the TimelineView a brand-new
+    /// schedule and restarted its tick.
+    @ViewBuilder private var timeLabel: some View {
+        if terminal.status == .working, let since = terminal.runningSince {
+            TimelineView(.periodic(from: since, by: 1)) { ctx in
+                Text(RelativeTime.clock(since: since, now: ctx.date))
+                    .font(.fvLabel).monospacedDigit().lineLimit(1)
+                    .foregroundColor(container?.fg ?? Theme.primary)
+                    .help("已运行 \(RelativeTime.clock(since: since, now: ctx.date))")
+            }
+            .fixedSize()
+        } else if let last = terminal.lastActivity {
+            TimelineView(.periodic(from: last, by: 30)) { ctx in
+                Text(RelativeTime.compact(last, now: ctx.date))
+                    .font(.fvLabel).monospacedDigit().lineLimit(1)
+                    .foregroundColor(fgSecondary)
+                    .help(lastRunHelp)
+            }
+            .fixedSize()
+        }
+    }
+
+    private var lastRunHelp: String {
+        guard let secs = terminal.lastRunSeconds else { return "最后一次活动" }
+        return "上一轮用了 \(RelativeTime.clock(seconds: secs))"
     }
 
     // Collapse whitespace and hard-cap length so a very long prompt can't overflow the card.
@@ -114,139 +151,93 @@ struct TerminalCardView: View {
     private var promptLine: some View {
         HStack(alignment: .top, spacing: 6) {
             Text(terminal.status == .shell ? "$" : "›")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundColor(terminal.status == .shell ? Theme.statusColor(.shell) : Theme.subtext.opacity(0.7))
-                .padding(.top, 1)
+                .font(.fvMonoBody)
+                .foregroundColor(fgSecondary)
             Text(displayPrompt)
-                .font(.system(size: 12))
-                .foregroundColor(terminal.lastPrompt.isEmpty ? Theme.subtext.opacity(0.5) : Theme.subtext)
+                .font(.fvBodySmall)
+                .foregroundColor(fgSecondary)
                 .lineLimit(2)
                 .truncationMode(.tail)
-                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(terminal.lastPrompt)      // full prompt on hover (selection removed so drag works here)
         }
-        .frame(minHeight: 34, alignment: .top)
+        // Two lines, always: a one-line prompt must not make a shorter card than its neighbours.
+        .frame(height: 32, alignment: .top)
     }
 
-    /// The bottom row. No "mark" chip: a marked card already says so four times over — the violet
-    /// card fill, the violet stroke, the violet divider above this row, and the bookmark glyph in
-    /// the header — and the fifth was the one costing the run clock the width it needed to be read.
+    /// Whose it is, and what it has cost — then the actions, on hover.
     private var footer: some View {
         HStack(spacing: 8) {
-            idChip
-            // First claim on the row's width. It is the figure the board is read for, and the only
-            // one here that cannot survive being clipped: "1…" could be a minute or an hour, while
-            // a truncated id is still a recognisable prefix of a hash you copy by clicking anyway,
-            // and "5m ago" was a rounded-off number before the layout got to it.
-            runChip.layoutPriority(2)
-            // While it runs, the clock is the only number worth the space — "last activity" then
-            // says nothing but "just now". Afterwards the two answer different questions: how long
-            // it took, and how long ago that was.
-            //
-            // Hidden rather than removed, because this row does not fit: at the grid's own minimum
-            // column width the footer needs ~301pt and has 272. Taking this label OUT of the layout
-            // changed that requirement by ~34pt, which was enough to tip the HStack in or out of
-            // wrapping — so every working⇄idle flip resized the card by 12-39pt and shoved every
-            // row beneath it. That was the board's up-and-down jitter.
-            if let last = terminal.lastActivity {
-                TimelineView(.periodic(from: last, by: 15)) { ctx in
-                    Text(RelativeTime.short(last, now: ctx.date) ?? "")
-                        .font(.system(size: 10))
-                        .lineLimit(1)
-                        .foregroundColor(Theme.subtext.opacity(0.7))
-                        .help("Last activity in this terminal")
-                }
-                .opacity(terminal.status == .working ? 0 : 1)
-                .allowsHitTesting(terminal.status != .working)   // no tooltip on an invisible label
-                .fixedSize()                                     // the room the four icons freed is for this
+            if terminal.agentKind != .unknown {
+                AgentMark(kind: terminal.agentKind, tint: container?.fg)
+                    .help(terminal.agentKind == .claude ? "Claude" : "Codex")
+            }
+            if terminal.newTokens > 0 {
+                Text(TokenUsage.short(terminal.newTokens))
+                    .font(.fvLabelSmall).monospacedDigit()
+                    .foregroundColor(fgSecondary)
+                    .help("\(terminal.newTokens) tokens（输入 + 输出，不含缓存读取）")
             }
             Spacer(minLength: 4)
             controls
+                .opacity(hovering || idFlash != nil ? 1 : 0)
+                .allowsHitTesting(hovering)
         }
+        .frame(height: 28)
     }
 
-    /// The run clock: green and ticking while the agent works, then the same figure left on the card
-    /// in grey. Blanking it would throw away the answer you came back to the board for; changing its
-    /// colour is enough to say the run is over — the status label and dot already say which way.
-    @ViewBuilder private var runChip: some View {
-        if terminal.status == .working, let since = terminal.runningSince {
-            // Anchored on the run's own start, not on `.now`: `.now` is re-evaluated on every body
-            // pass, so each of the board's (many) re-renders handed the TimelineView a brand-new
-            // schedule and restarted its tick.
-            TimelineView(.periodic(from: since, by: 1)) { ctx in
-                chip(RelativeTime.clock(since: since, now: ctx.date), Theme.statusColor(.working))
-                    .help("Running for \(RelativeTime.clock(since: since, now: ctx.date))")
-            }
-        } else if let secs = terminal.lastRunSeconds {
-            chip(RelativeTime.clock(seconds: secs), Theme.subtext)
-                .help("Last run took \(RelativeTime.clock(seconds: secs))")
-        }
-    }
-
-    private func chip(_ text: String, _ tint: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "timer").font(.system(size: 9, weight: .bold))
-            // lineLimit(1), like every other label in this row: the footer is wider than the card
-            // at the grid's smaller columns, and a Text with no limit answers that by wrapping —
-            // which makes the card taller. "9:59" → "10:00" is one more character, and that alone
-            // used to add 13pt to the card's height.
-            Text(text).font(.system(size: 10, weight: .medium, design: .monospaced)).lineLimit(1)
-        }
-        .foregroundColor(tint)
-        .padding(.horizontal, 6).padding(.vertical, 1)
-        .background(tint.opacity(0.14))
-        .clipShape(Capsule())
-    }
-
-    /// Two buttons, not six. The four that were here — mark, raise, duplicate, session tree — were
-    /// each one glyph wide and together they took about 100pt out of a row that was already short
-    /// of it: at the grid's smaller columns the footer wants ~301pt and gets 272, and the id was
-    /// what paid, rendering as "2…". They all moved into the menu, which loses no action and gives
-    /// the id and the two clocks room to be read.
     private var controls: some View {
-        HStack(spacing: 13) {
-            iconButton("iphone", active: state.dialog == .webLink(terminalId: terminal.id),
-                       help: "在手机上打开这个终端的聊天") {
+        HStack(spacing: 4) {
+            copyButton
+            roundButton("iphone", help: "在手机上打开这个终端的聊天") {
                 state.dialog = .webLink(terminalId: terminal.id)
             }
-            Menu {
-                Button(done ? "Unmark" : "Mark") { state.toggleSubtaskDone(terminal.id) }
-                if terminal.status.isOpen {
-                    Button("Raise to Front") { state.raiseTerminal(terminal.id) }
-                } else {
-                    Button("Reopen Terminal") { state.reopenTerminal(terminal.id) }
-                }
-                Divider()
-                // Also on double-click of the id chip. Kept here as well because a gesture is
-                // discoverable only if you already know it exists, and this is the one action on
-                // the card you would otherwise go to the CLI for.
-                Button("Copy Conversation Path") {
-                    if let path = state.transcriptPath(for: terminal.id) {
-                        copyToClipboard(path)
-                        flashId("path")
-                    } else {
-                        flashId("no log")
-                    }
-                }
-                Button(state.treePanelTerminalId == terminal.id ? "Hide Session Tree"
-                                                                : "Show Session Tree") {
-                    if state.treePanelTerminalId == terminal.id { state.closeSessionTree() }
-                    else { state.openSessionTree(terminal.id) }
-                }
-                Button("Duplicate (fork session)") { state.duplicateTerminal(terminal.id) }
-                Button("Duplicate blank") { state.duplicateTerminal(terminal.id, blank: true) }
-                Button("Rename…") { state.requestRename(terminal.id) }
-                if terminal.clusterId != nil {
-                    Button("Remove from Cluster") { state.removeFromCluster(terminal.id) }
-                }
-                Divider()
-                Button("Remove Terminal", role: .destructive) { state.removeTerminal(terminal.id) }
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 13)).foregroundColor(Theme.subtext)
+            Menu { menuItems(inMenu: true) } label: {
+                Image(systemName: "ellipsis").font(.system(size: 13))
+                    .foregroundColor(fgSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(roundFill).clipShape(Circle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("更多")
         }
+    }
+
+    private var roundFill: Color {
+        container.map { $0.fg.opacity(0.12) } ?? Theme.surfaceContainerHighest
+    }
+
+    /// The card's actions, for its context menu and for its ⋯ menu.
+    @ViewBuilder private func menuItems(inMenu: Bool) -> some View {
+        if inMenu {
+            if terminal.status.isOpen {
+                Button("置于最前") { state.raiseTerminal(terminal.id) }
+            } else {
+                Button("重新打开") { state.reopenTerminal(terminal.id) }
+            }
+            Button("复制对话文件路径") { copyTranscriptPath() }
+            Divider()
+        }
+        Button("重命名…") {
+            if inMenu { state.requestRename(terminal.id) } else { renaming = true }
+        }
+        Button(state.treePanelTerminalId == terminal.id ? "关闭对话树" : "打开对话树") {
+            if state.treePanelTerminalId == terminal.id { state.closeSessionTree() }
+            else { state.openSessionTree(terminal.id) }
+        }
+        Button("复制（分叉会话）") { state.duplicateTerminal(terminal.id) }
+        Button("复制为空白终端") { state.duplicateTerminal(terminal.id, blank: true) }
+        Button(done ? "取消书签" : "加书签") { state.toggleSubtaskDone(terminal.id) }
+        if terminal.windowHidden == true {
+            Button("显示窗口") { state.showTerminal(terminal.id) }
+        } else if state.windowState(terminal.id) == .open {
+            Button("隐藏窗口（继续运行）") { state.hideTerminal(terminal.id) }
+        }
+        if terminal.clusterId != nil {
+            Button("移出组") { state.removeFromCluster(terminal.id) }
+        }
+        Divider()
+        Button("移除终端", role: .destructive) { state.removeTerminal(terminal.id) }
     }
 
     private func copyToClipboard(_ s: String) {
@@ -254,68 +245,113 @@ struct TerminalCardView: View {
         NSPasteboard.general.setString(s, forType: .string)
     }
 
-    /// The terminal's id, shown short and click-to-copy (full UUID) — use it to target `fleetctl`.
+    private func copyTranscriptPath() {
+        // `transcriptPath(for:)`, not the stored `transcriptPath`: it resolves Codex from its
+        // rollouts ahead of the hook pointer, which is the case where the stored value is silently
+        // frozen on a file from days ago.
+        if let path = state.transcriptPath(for: terminal.id) {
+            copyToClipboard(path)
+            flashId("path")
+        } else {
+            // Said out loud rather than copying an empty string: a card that only ever held a
+            // shell has no conversation, and silence looks like a failed copy.
+            flashId("none")
+        }
+    }
+
+    /// Click copies the terminal id (what `project-manager` takes); double-click copies the
+    /// conversation file's path.
     ///
-    /// Four characters plus an ellipsis, and `fixedSize` so it is never the thing that gives way.
-    /// The "…" is written here rather than left to the layout: a prefix the *layout* clipped ("2…")
-    /// is a truncation you cannot trust the length of, while "8632…" says four characters is all
-    /// this label ever shows. Four still resolve a terminal for `project-manager`, and clicking
-    /// copies the whole UUID.
-    private var idChip: some View {
-        let short = String(terminal.id.uuidString.prefix(4)).lowercased() + "…"
-        return Text(idFlash ?? short)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .lineLimit(1)
-            .foregroundColor(idFlash != nil ? Theme.green : Theme.subtext.opacity(0.55))
-            // The whole chip, not just its glyphs: it is five 9pt characters, and hitting only the
-            // ink would be a far worse target than the label looks.
-            .contentShape(Rectangle())
-            // One exclusive gesture, not two `onTapGesture`s, and high-priority so it beats the
-            // card.
-            //
-            // Two stacked `onTapGesture`s did not work here: the single-tap handler is satisfied by
-            // the first click and fires immediately, so the double never formed. Ordering them the
-            // other way does not help — and the whole card already carries `.onTapGesture { raise }`
-            // (see `body`), which competes for the same click from above. `exclusively(before:)`
-            // makes the double-tap the one that has to fail before the single is offered, and
-            // `highPriorityGesture` is what stops the card's own tap from taking it first.
+    /// One exclusive gesture, not two `onTapGesture`s, and high-priority so it beats the card: two
+    /// stacked taps fire the single on the first click and the double never forms, and the card's
+    /// own tap (raise) competes for the same click from above.
+    private var copyButton: some View {
+        Image(systemName: idFlash == nil ? "doc.on.doc" : (idFlash == "none" ? "xmark" : "checkmark"))
+            .font(.system(size: 12))
+            .foregroundColor(fgSecondary)
+            .frame(width: 28, height: 28)
+            .background(roundFill).clipShape(Circle())
+            .contentShape(Circle())
             .highPriorityGesture(
-                TapGesture(count: 2).onEnded {
-                    // `transcriptPath(for:)`, not the stored `transcriptPath`: it resolves Codex
-                    // from its rollouts ahead of the hook pointer, which is the case where the
-                    // stored value is silently frozen on a file from days ago.
-                    if let path = state.transcriptPath(for: terminal.id) {
-                        copyToClipboard(path)
-                        flashId("path")
-                    } else {
-                        // Said out loud rather than copying an empty string: a card that only ever
-                        // held a shell has no conversation, and silence looks like a failed copy.
-                        flashId("no log")
-                    }
-                }
-                .exclusively(before: TapGesture().onEnded {
-                    copyToClipboard(terminal.id.uuidString.lowercased())
-                    flashId("copied")
-                })
+                TapGesture(count: 2).onEnded { copyTranscriptPath() }
+                    .exclusively(before: TapGesture().onEnded {
+                        copyToClipboard(terminal.id.uuidString.lowercased())
+                        flashId("id")
+                    })
             )
-            .fixedSize()
-            .help("单击复制终端 ID（给 project-manager 用），双击复制对话文件路径")
+            .help(idFlash == "none" ? "这个终端没有对话记录"
+                  : "单击复制终端 ID（\(String(terminal.id.uuidString.prefix(8)).lowercased())），双击复制对话文件路径")
     }
 
     private func flashId(_ text: String) {
-        withAnimation(.easeOut(duration: 0.12)) { idFlash = text }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeOut(duration: 0.25)) { idFlash = nil }
-        }
+        idFlash = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { idFlash = nil }
     }
 
-    private func iconButton(_ name: String, active: Bool = false, help: String,
-                            _ action: @escaping () -> Void) -> some View {
+    private func roundButton(_ name: String, help: String,
+                             _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: name).font(.system(size: 13))
-                .foregroundColor(active ? Theme.green : Theme.subtext)
+            Image(systemName: name).font(.system(size: 12))
+                .foregroundColor(fgSecondary)
+                .frame(width: 28, height: 28)
+                .background(roundFill).clipShape(Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain).help(help)
+    }
+}
+
+/// The agent's own mark, small: Claude's starburst in its clay, Codex's hexagon in plain ink.
+/// Identity, not status — it never colours a border or a fill.
+struct AgentMark: View {
+    let kind: AgentKind
+    var tint: Color? = nil
+    var size: CGFloat = 13
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .claude:
+                ClaudeMark().stroke(tint ?? Theme.claudeTint,
+                                    style: StrokeStyle(lineWidth: size * 0.15, lineCap: .round))
+            case .codex:
+                ZStack {
+                    Hexagon().stroke(tint ?? Theme.codexTint,
+                                     style: StrokeStyle(lineWidth: size * 0.12, lineJoin: .round))
+                    Circle().fill(tint ?? Theme.codexTint).frame(width: size * 0.22, height: size * 0.22)
+                }
+            case .unknown:
+                EmptyView()
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct ClaudeMark: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let c = CGPoint(x: r.midX, y: r.midY), R = min(r.width, r.height) / 2 * 0.9
+        for i in 0..<4 {
+            let a = Double(i) * .pi / 4
+            p.move(to: CGPoint(x: c.x + R * cos(a), y: c.y + R * sin(a)))
+            p.addLine(to: CGPoint(x: c.x - R * cos(a), y: c.y - R * sin(a)))
+        }
+        return p
+    }
+}
+
+private struct Hexagon: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let c = CGPoint(x: r.midX, y: r.midY), R = min(r.width, r.height) / 2 * 0.9
+        for i in 0..<6 {
+            let a = Double(i) * .pi / 3 - .pi / 2
+            let pt = CGPoint(x: c.x + R * cos(a), y: c.y + R * sin(a))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        p.closeSubpath()
+        return p
     }
 }
 

@@ -31,11 +31,6 @@ struct DashboardView: View {
                 VStack(spacing: 0) {
                     DynamicPanel()      // agent-authored dynamic UI — tops the content column, beside the sidebar
                     TopBar()
-                    Divider().overlay(Theme.stroke)
-                    if state.peerStripVisible {
-                        PeerStrip(fleet: state.peerFleet)
-                        Divider().overlay(Theme.stroke)
-                    }
                     // A peer's board replaces this Mac's rather than floating over it: the two look
                     // alike enough that anything less than taking the whole column would leave you
                     // unsure which fleet you are looking at — and these boards start terminals.
@@ -352,15 +347,18 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: "rectangle.3.group").foregroundColor(Theme.accent)
-                Text("FleetView").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text)
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.onPrimary)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.primary).clipShape(RoundedRectangle(cornerRadius: 8))
+                Text("FleetView").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
             }
-            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 14)
+            .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 12)
 
-            // TASKS (collapsible) — the selected peer's terminals while one is being viewed, so the
+            // Terminals (collapsible) — the selected peer's while one is being viewed, so the
             // sidebar turns to that machine along with the board rather than describing this one.
-            sectionHeader(title: "TASKS",
+            sectionHeader(title: "终端",
                           count: state.peerSelected == nil ? state.tasks.count
                                                            : state.peerTerminals.count,
                           collapsed: state.tasksCollapsed) {
@@ -373,94 +371,79 @@ struct Sidebar: View {
                 } else if state.taskGroups.isEmpty {
                     // "No terminals yet" is a lie when there are plenty and the filter is hiding them.
                     Text(state.showOnlyMarked && !state.terminals.isEmpty
-                         ? "No marked terminals" : "No terminals yet")
-                        .font(.system(size: 12)).foregroundColor(Theme.subtext.opacity(0.55))
-                        .padding(.horizontal, 16).padding(.top, 6)
+                         ? "没有加了书签的终端" : "还没有终端")
+                        .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+                        .padding(.horizontal, 18).padding(.top, 6)
                     Spacer(minLength: 0)
                 } else {
                     taskList
                 }
             }
 
-            Divider().overlay(Theme.stroke)
+            Divider().overlay(Theme.outlineVariant).padding(.horizontal, 12)
 
-            // NOTES (collapsible) — sits above the footer; grows to fill when Tasks is collapsed.
+            // Notes (collapsible) — sits above the footer; grows to fill when the terminals are collapsed.
             NotesSection(fill: state.tasksCollapsed)
             if state.tasksCollapsed && state.notesCollapsed { Spacer(minLength: 0) }
 
-            Divider().overlay(Theme.stroke)
-            // Three buttons share the sidebar's width, so the labels are one word each — at the
-            // default 236pt "Open Folder" and "New Folder" side by side would both truncate.
+            Divider().overlay(Theme.outlineVariant).padding(.horizontal, 12)
+            // Icons only: three words side by side truncated at the sidebar's default width, and
+            // each of these is a once-in-a-while action with its name in the tooltip.
             HStack(spacing: 0) {
-                footerButton("Open", "folder", help: "Open an existing folder as a project") {
-                    DashboardView.pickFolder(into: state)
-                }
-                Divider().frame(height: 20).overlay(Theme.stroke)
-                footerButton("New", "folder.badge.plus", help: "Create a new folder and open it as a project") {
+                footerButton("folder", help: "打开文件夹作为项目") { DashboardView.pickFolder(into: state) }
+                footerButton("folder.badge.plus", help: "新建文件夹并作为项目打开") {
                     DashboardView.newFolder(into: state)
                 }
-                Divider().frame(height: 20).overlay(Theme.stroke)
-                footerButton("Clone", "arrow.down.circle", help: "Clone a GitHub repository") {
-                    showingClone = true
-                }
+                footerButton("square.and.arrow.down", help: "克隆 GitHub 仓库") { showingClone = true }
             }
+            .padding(.vertical, 6)
         }
-        .background(Theme.panel)
+        .background(Theme.surfaceContainerLow)
         .sheet(isPresented: $showingClone) { CloneSheet().environmentObject(state) }
     }
 
     private var taskList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(state.taskGroups.enumerated()), id: \.element.id) { idx, group in
-                    if idx > 0 {
-                        DashedLine().padding(.horizontal, 12).padding(.vertical, 7)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(state.taskGroups) { group in
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder").font(.system(size: 12))
+                        Text(group.project.name).font(.fvLabelSmall).lineLimit(1)
                     }
-                    HStack(spacing: 5) {
-                        Image(systemName: "folder.fill").font(.system(size: 8))
-                            .foregroundColor(Theme.subtext.opacity(0.55))
-                        Text(group.project.name.uppercased())
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(Theme.subtext.opacity(0.6)).lineLimit(1)
-                    }
-                    .padding(.horizontal, 12).padding(.bottom, 3)
+                    .foregroundColor(Theme.onSurfaceVariant)
+                    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
                     ForEach(group.tasks) { task in TaskRow(task: task) }
                 }
             }
-            .padding(.horizontal, 8).padding(.top, 2)
+            .padding(.horizontal, 12).padding(.bottom, 8)
         }
         .frame(maxHeight: .infinity)
     }
 
-    /// A collapsible section header (chevron + title + count). Used for TASKS.
+    /// A collapsible section header (chevron + title + count).
     private func sectionHeader(title: String, count: Int, collapsed: Bool,
                                toggle: @escaping () -> Void) -> some View {
         Button(action: toggle) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold)).foregroundColor(Theme.subtext)
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onSurfaceVariant)
                     .rotationEffect(.degrees(collapsed ? 0 : 90))
-                Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.subtext)
+                Text(title).font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
-                Text("\(count)").font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.7))
+                Text("\(count)").font(.fvLabel).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16).padding(.vertical, 9)
+        .padding(.horizontal, 18).padding(.vertical, 9)
     }
 
-    private func footerButton(_ title: String, _ icon: String, help: String,
+    private func footerButton(_ icon: String, help: String,
                               _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: icon).font(.system(size: 12)).foregroundColor(Theme.accent)
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundColor(Theme.text)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            Image(systemName: icon).font(.system(size: 16)).foregroundColor(Theme.onSurfaceVariant)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -475,7 +458,7 @@ struct SidebarDivider: View {
 
     var body: some View {
         Rectangle()
-            .fill(hovering ? Theme.accent.opacity(0.6) : Theme.stroke)
+            .fill(hovering ? Theme.primary : Theme.outlineVariant)
             .frame(width: hovering ? 2 : 1)
             .overlay(
                 Rectangle()
@@ -530,42 +513,47 @@ struct TaskRow: View {
         if let c = cluster { return state.clusterDone(c.id) }
         return false
     }
-    private var subtitle: String {
-        if terminal != nil { return "" }        // project is shown in the group header
-        if let c = cluster {
-            let n = state.members(ofCluster: c.id).count
-            return "\(n) terminal\(n == 1 ? "" : "s")"
-        }
-        return ""
-    }
+    private var ended: Bool { status == .exited || status == .closed }
+    private var memberCount: Int { cluster.map { state.members(ofCluster: $0.id).count } ?? 0 }
 
+    /// A Material navigation-drawer item: shape, name, and — only while it runs — the clock.
     var body: some View {
-        HStack(spacing: 9) {
-            StatusDot(status: status)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    if isCluster {
-                        Image(systemName: "circle.hexagongrid.fill").font(.system(size: 9)).foregroundColor(Theme.accent)
+        HStack(spacing: 12) {
+            StatusGlyph(status: status)
+            HStack(spacing: 6) {
+                Text(name).font(.fvBody).lineLimit(1)
+                    .foregroundColor(isSelected ? Theme.onSecondaryContainer
+                                     : (ended ? Theme.onSurfaceVariant : Theme.onSurface))
+                if isCluster {
+                    HStack(spacing: 2) {
+                        Image(systemName: "square.stack").font(.system(size: 11))
+                        Text("\(memberCount)").font(.fvLabelSmall).monospacedDigit()
                     }
-                    Text(name).font(.system(size: 13, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
-                    if done {
-                        Image(systemName: "checkmark.seal.fill").font(.system(size: 10)).foregroundColor(Theme.green)
-                    }
+                    .foregroundColor(Theme.onSurfaceVariant)
+                    .help("\(memberCount) 个终端")
                 }
-                if !subtitle.isEmpty {
-                    Text(subtitle).font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.7)).lineLimit(1)
+                if done {
+                    Image(systemName: "bookmark.fill").font(.system(size: 11)).foregroundColor(Theme.tertiary)
                 }
             }
             Spacer(minLength: 4)
-            Text(status.label).font(.system(size: 10, weight: .medium)).foregroundColor(Theme.statusColor(status))
+            if status == .working, let since = terminal?.runningSince {
+                TimelineView(.periodic(from: since, by: 1)) { ctx in
+                    Text(RelativeTime.clock(since: since, now: ctx.date))
+                        .font(.fvLabel).monospacedDigit().foregroundColor(Theme.primary)
+                }
+                .fixedSize()
+            }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(isSelected ? Theme.accent.opacity(0.16) : (hover ? Theme.card : Color.clear))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .contentShape(Rectangle())
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+        .background(isSelected ? Theme.secondaryContainer
+                    : (hover ? Theme.surfaceContainerHigh : Color.clear))
+        .clipShape(Capsule())
+        .contentShape(Capsule())
         .onHover { hover = $0 }
         .onTapGesture { state.focusTask(task) }   // highlight + scroll, do not raise the window
-        .help(name)
+        .help("\(name) · \(status.label)")
     }
 }
 
@@ -576,33 +564,90 @@ struct TopBar: View {
     @ObservedObject private var jobs = BackgroundJobs.shared
     /// Which address the QR is currently of. The Mac can have two and the phone is only ever on
     /// one of them, so the code has to be able to follow.
-    @State private var showPower = false
     @State private var showJobs = false
 
     private var working: Int { state.terminals.filter { $0.status == .working }.count }
     private var needs: Int { state.terminals.filter { $0.status == .needsYou }.count }
 
     var body: some View {
-        HStack(spacing: 9) {
-            Text("\(state.projects.count) project\(state.projects.count == 1 ? "" : "s")")
-                .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
-            Text("·").foregroundColor(Theme.subtext.opacity(0.6))
-            Text("\(state.terminals.count) terminal\(state.terminals.count == 1 ? "" : "s")")
-                .font(.system(size: 13)).foregroundColor(Theme.subtext)
-            if working > 0 { pill("\(working) working", .working) }
-            if needs > 0 { pill("\(needs) needs you", .needsYou) }
-            Spacer()
-            markFilterButton
-            recentStripButton
+        HStack(spacing: 8) {
+            // Which fleet you are looking at comes first: everything to the right acts on it.
+            if state.peerStripVisible {
+                PeerStrip(fleet: state.peerFleet)
+            } else {
+                peersButton
+            }
+            Spacer(minLength: 12)
+            if needs > 0 { statusBadge(.needsYou, needs) }
+            if working > 0 { statusBadge(.working, working) }
             jobsButton
             updateButton
-            searchButton
-            peersButton
-            powerButton
+            searchField
+            markFilterButton
+            recentStripButton
             webButton
+            powerButton
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(Theme.panel.opacity(0.55))
+        .padding(.leading, 20).padding(.trailing, 16)
+        .frame(height: 64)
+        .background(Theme.surface)
+    }
+
+    /// One control in the bar. Every one is `controlHeight` tall and every one has a container —
+    /// a bar whose controls are half filled and half bare reads as two different heights even when
+    /// they are not.
+    private func barButton(_ symbol: String, text: String? = nil, on: Bool = false, help: String,
+                           _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 14))
+                if let text { Text(text).font(.fvLabel).monospacedDigit() }
+            }
+            .foregroundColor(on ? Theme.onSecondaryContainer : Theme.onSurfaceVariant)
+            .padding(.horizontal, text == nil ? 0 : 14)
+            .frame(minWidth: Theme.controlHeight, minHeight: Theme.controlHeight)
+            .background(on ? Theme.secondaryContainer : Theme.surfaceContainerHigh)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).help(help)
+    }
+
+    /// How many need you / are running, as the shapes the cards use, in their container colours.
+    private func statusBadge(_ status: TermStatus, _ n: Int) -> some View {
+        let (bg, fg) = status == .needsYou ? (Theme.warnContainer, Theme.onWarnContainer)
+                                           : (Theme.primaryContainer, Theme.onPrimaryContainer)
+        return HStack(spacing: 6) {
+            StatusGlyph(status: status, size: 15, onColor: fg)
+            Text("\(n)").font(.fvLabel).monospacedDigit()
+        }
+        .foregroundColor(fg)
+        .padding(.horizontal, 14)
+        .frame(height: Theme.controlHeight)
+        .background(bg).clipShape(Capsule())
+        .help("\(n) 个\(status.label)")
+    }
+
+    /// The way in to conversation search, drawn as the field it opens.
+    private var searchField: some View {
+        Button { state.toggleSearch() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").font(.system(size: 14))
+                Text("搜索").font(.fvBody)
+                Spacer(minLength: 8)
+                Text("⌘K").font(.fvLabelSmall)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Theme.surfaceContainerHighest).clipShape(Capsule())
+            }
+            .foregroundColor(Theme.onSurfaceVariant)
+            .padding(.leading, 14).padding(.trailing, 6)
+            .frame(width: 200, height: Theme.controlHeight)
+            .background(state.searchOpen ? Theme.secondaryContainer : Theme.surfaceContainerHigh)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("搜索所有 Claude / Codex 对话历史 (⌘K)")
     }
 
     /// Background work — a clone, a self-update — with a bar on it and a way out of it. Present
@@ -615,18 +660,10 @@ struct TopBar: View {
     /// it stays off a board that has just been opened.
     @ViewBuilder private var recentStripButton: some View {
         if state.terminals.contains(where: { $0.status != .working && $0.lastActivity != nil }) {
-            Button { state.showRecentStrip.toggle(); state.save() } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(state.showRecentStrip ? Theme.onAccent : Theme.text)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(state.showRecentStrip ? Theme.accent : Theme.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6)
-                        .stroke(state.showRecentStrip ? Color.clear : Theme.stroke, lineWidth: 1))
+            barButton("clock.arrow.circlepath", on: state.showRecentStrip,
+                      help: state.showRecentStrip ? "隐藏「最近使用」" : "显示「最近使用」") {
+                state.showRecentStrip.toggle(); state.save()
             }
-            .buttonStyle(.plain)
-            .help(state.showRecentStrip ? "隐藏「最近使用」" : "显示「最近使用」")
         }
     }
 
@@ -649,11 +686,11 @@ struct TopBar: View {
                         ProgressView().controlSize(.small).scaleEffect(0.55)
                             .frame(width: 11, height: 11)
                     }
-                    Text(jobs.pillLabel).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                    Text(jobs.pillLabel).font(.fvLabel).monospacedDigit()
                 }
-                .foregroundColor(Theme.onAccent)
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(broken ? Theme.red : Theme.accent).clipShape(Capsule())
+                .foregroundColor(broken ? Theme.onErrorContainer : Theme.onPrimaryContainer)
+                .padding(.horizontal, 14).frame(height: Theme.controlHeight)
+                .background(broken ? Theme.errorContainer : Theme.primaryContainer).clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .help("后台任务 — 点击查看进度或取消")
@@ -685,10 +722,10 @@ struct TopBar: View {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 11, weight: .semibold))
-                        Text(r.version).font(.system(size: 11, weight: .semibold))
+                        Text(r.version).font(.fvLabel)
                     }
                     .foregroundColor(Theme.onAccent)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .padding(.leading, 14).frame(height: Theme.controlHeight)
                 }
                 .buttonStyle(.plain)
                 .help("FleetView \(r.version) 已发布 — 点击安装")
@@ -696,7 +733,7 @@ struct TopBar: View {
                     Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
                         .foregroundColor(Theme.onAccent.opacity(0.7))
                 }
-                .buttonStyle(.plain).padding(.trailing, 7)
+                .buttonStyle(.plain).padding(.trailing, 12)
                 .help("忽略这个版本")
             }
             .background(Theme.accent).clipShape(Capsule())
@@ -710,172 +747,38 @@ struct TopBar: View {
     /// wondering where your terminals went. It stays out of the way when nothing is marked at all.
     @ViewBuilder private var markFilterButton: some View {
         if marked > 0 || state.showOnlyMarked {
-            Button { state.showOnlyMarked.toggle(); state.save() } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: state.showOnlyMarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(state.showOnlyMarked ? "\(marked) marked" : "\(marked)")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .foregroundColor(state.showOnlyMarked ? Theme.onAccent : Theme.text)
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(state.showOnlyMarked ? Theme.markTint : Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6)
-                    .stroke(state.showOnlyMarked ? Color.clear : Theme.stroke, lineWidth: 1))
+            barButton(state.showOnlyMarked ? "bookmark.fill" : "bookmark", text: "\(marked)",
+                      on: state.showOnlyMarked,
+                      help: state.showOnlyMarked ? "显示全部终端" : "只显示加了书签的终端") {
+                state.showOnlyMarked.toggle(); state.save()
             }
-            .buttonStyle(.plain)
-            .help(state.showOnlyMarked ? "显示全部终端" : "只显示被 Mark 的终端")
         }
     }
 
-    /// The only on-screen way in to conversation search (⌘K also opens it). Icon-only, matching
-    /// the Web button's chrome.
-    private var searchButton: some View {
-        Button { state.toggleSearch() } label: {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(state.searchOpen ? Theme.accent : Theme.text)
-                .frame(width: 24, height: 21)
-                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .help("搜索所有 Claude / Codex 对话历史 (⌘K)")
-    }
-
-    /// Stop the whole fleet. A popover rather than a bare button, because this is one click away
-    /// from ending every running agent — the panel is the confirmation, and it is also where the
+    /// Stop the whole fleet. A dialog rather than a bare button, because this is one click away
+    /// from ending every running agent — the dialog is the confirmation, and it is also where the
     /// "do this on quit too" setting lives, next to the thing it automates.
     private var powerButton: some View {
         let open = state.openTerminalCount
-        return Button { showPower.toggle() } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "power").font(.system(size: 11, weight: .semibold))
-                if open > 0 {
-                    Text("\(open)").font(.system(size: 11, weight: .medium))
-                }
-            }
-            .foregroundColor(showPower ? Theme.accent : Theme.text)
-            .padding(.horizontal, open > 0 ? 8 : 0)
-            .frame(minWidth: 24, minHeight: 21)
-            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
+        return barButton("power", text: open > 0 ? "\(open)" : nil, help: "关闭所有终端 / 退出时关闭") {
+            state.dialog = .closeAll
         }
-        .buttonStyle(.plain)
-        .help("关闭所有终端 / 退出时关闭")
-        .popover(isPresented: $showPower, arrowEdge: .bottom) { powerPopover }
-    }
-
-    private var powerPopover: some View {
-        let open = state.openTerminalCount
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("关闭所有终端")
-                .font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.text)
-            Text(open > 0 ? "\(open) 个终端正在运行。关闭会停止它们的 agent 进程（tmux 会话一并销毁）。"
-                          : "当前没有打开的终端。仍会清理可能残留的 tmux 会话。")
-                .font(.system(size: 11)).foregroundColor(Theme.subtext)
-                .fixedSize(horizontal: false, vertical: true)
-            // The one thing that makes this safe to press: nothing is lost from the board.
-            Label("卡片会保留。点击卡片可重新打开并 resume 原来的 Claude / Codex 会话。",
-                  systemImage: "arrow.uturn.backward")
-                .font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
-            if working > 0 {
-                Label("\(working) 个 agent 正在工作中，会被打断。", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10)).foregroundColor(Theme.amber)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button {
-                showPower = false
-                state.closeAllTerminals(reason: "topbar")
-            } label: {
-                Text("关闭全部终端")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.onAccent)
-                    .frame(maxWidth: .infinity).padding(.vertical, 7)
-                    .background(Theme.red).clipShape(RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            // Secondary by design: same panel, but text-only and behind its own alert. It sits
-            // one click from the button above it and does something that button explicitly does
-            // not — throw the board away.
-            Button {
-                showPower = false
-                BoardActions.confirmClear(state, reason: "topbar")
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "trash").font(.system(size: 10, weight: .semibold))
-                    Text("清空所有项目并关闭所有终端").font(.system(size: 11, weight: .medium))
-                }
-                .foregroundColor(Theme.red)
-                .frame(maxWidth: .infinity).padding(.vertical, 5)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("移除全部项目与终端卡片（对话历史不受影响）")
-            Divider().overlay(Theme.stroke)
-            Toggle(isOn: Binding(get: { state.closeTerminalsOnQuit },
-                                 set: { state.closeTerminalsOnQuit = $0; state.save() })) {
-                Text("退出 FleetView 时关闭所有终端")
-                    .font(.system(size: 12)).foregroundColor(Theme.text)
-            }
-            .toggleStyle(.checkbox)
-            Text(state.closeTerminalsOnQuit
-                 ? "退出即结束整个 fleet。"
-                 : "默认关闭：退出后终端继续在后台运行，下次启动自动重新接上。")
-                .font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.8))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16).frame(width: 260)
     }
 
     /// Opens the LAN switcher. The count appears once a scan has run — before that there is nothing
     /// honest to put there, and a "0" would read as "nobody is out there" rather than "not looked".
     private var peersButton: some View {
         let others = state.peerFleet.found.filter { !$0.isSelf }.count
-        return Button { state.togglePeerStrip() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "network").font(.system(size: 11, weight: .semibold))
-                if state.peerFleet.scanned && others > 0 {
-                    Text("\(others)").font(.system(size: 11, weight: .semibold))
-                }
-            }
-            .foregroundColor(state.peerStripVisible ? Theme.accent : Theme.text)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
+        return barButton("network", text: state.peerFleet.scanned && others > 0 ? "\(others)" : nil,
+                         help: "局域网里的其他 FleetView") {
+            state.togglePeerStrip()
         }
-        .buttonStyle(.plain)
-        .help("Other FleetViews on this network")
     }
 
     private var webButton: some View {
-        Button { state.dialog = .webLink(terminalId: nil) } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "iphone").font(.system(size: 11, weight: .semibold))
-                Text("Web").font(.system(size: 12, weight: .medium))
-            }
-            .foregroundColor(Theme.text)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .help("在手机上打开看板")
+        barButton("iphone", help: "在手机上打开看板") { state.dialog = .webLink(terminalId: nil) }
     }
 
-    private func copyToClipboard(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-    }
-
-    private func pill(_ text: String, _ status: TermStatus) -> some View {
-        Text(text).font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 2)
-            .background(Theme.statusColor(status).opacity(0.18))
-            .foregroundColor(Theme.statusColor(status))
-            .clipShape(Capsule())
-    }
 }
 
 // MARK: - Main area (all projects + terminals, always visible)
@@ -917,57 +820,70 @@ struct MainArea: View {
     }
 }
 
-/// Everything that is working right now, lifted to the top of the board and out of its project.
+/// The board's grid, the same everywhere a card is laid out, so a card is the same size wherever it
+/// appears.
+enum BoardGrid {
+    static let columns = [GridItem(.adaptive(minimum: 280, maximum: 380), spacing: 12)]
+    static let spacing: CGFloat = 12
+    /// A card in a sideways strip, where there is no grid to size it.
+    static let stripCardWidth: CGFloat = 300
+}
+
+/// A zone's heading: an optional mark, a name, a count. Sentence case — the all-caps labels these
+/// replace ("RUNNING NOW") shouted the structure louder than the cards.
+struct ZoneHeader: View {
+    var icon: String? = nil
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: 14)).foregroundColor(Theme.onSurfaceVariant)
+            }
+            Text(title).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+            Text("\(count)").font(.fvTitleSmall).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
+            Spacer()
+        }
+    }
+}
+
+/// "进行中": everything that needs you, then everything that is working, lifted to the top of the
+/// board and out of its project.
 ///
 /// The board is grouped by project because that is how work is organised; this answers the other
-/// question — what is moving — which otherwise means scrolling every section to look for green
-/// dots. The cards are the same cards, deliberately: this is a second place to see a terminal, not
-/// a second kind of terminal, so it stays draggable, markable and openable like any other. Each one
-/// carries the project it came from, because that is the one thing the grouping used to say and
-/// this row cannot.
+/// question — what wants me, what is moving — which otherwise means scanning every section. Needs-you
+/// comes first because it is the only state that is waiting on you. The cards are the same cards,
+/// drawn with their container colour (see CardEmphasisKey) — the only coloured cards on the board —
+/// and each carries the project it came from, because that is the one thing the grouping used to say
+/// and this zone cannot.
 ///
-/// Absent, not empty, when nothing is running: a permanent "nothing is running" header is a line of
+/// Absent, not empty, when nothing qualifies: a permanent "nothing is running" header is a line of
 /// furniture that is wrong most of the time.
 struct RunningStrip: View {
     @EnvironmentObject var state: AppState
 
-    private var running: [TerminalSession] {
-        state.visible(state.terminals.filter { $0.status == .working })
+    private var live: [TerminalSession] {
+        let v = state.visible(state.terminals.filter { $0.status == .working || $0.status == .needsYou })
+        return v.filter { $0.status == .needsYou } + v.filter { $0.status == .working }
     }
 
     var body: some View {
-        if !running.isEmpty {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(spacing: 8) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 11)).foregroundColor(Theme.statusColor(.working))
-                    Text("RUNNING NOW")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(Theme.statusColor(.working))
-                    Text("\(running.count)")
-                        .font(.system(size: 11, weight: .medium)).foregroundColor(Theme.subtext)
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Theme.card).clipShape(Capsule())
-                    Spacer()
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 460), spacing: 14)],
-                          alignment: .leading, spacing: 14) {
-                    ForEach(running) { t in
-                        VStack(alignment: .leading, spacing: 5) {
+        if !live.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                ZoneHeader(title: "进行中", count: live.count)
+                LazyVGrid(columns: BoardGrid.columns, alignment: .leading, spacing: BoardGrid.spacing) {
+                    ForEach(live) { t in
+                        VStack(alignment: .leading, spacing: 6) {
                             ProjectTag(terminal: t)
                             TerminalCardView(terminal: t)
                         }
                     }
                 }
+                .environment(\.cardEmphasis, true)
             }
-            .padding(14)
-            .background(Theme.statusColor(.working).opacity(0.055))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.statusColor(.working).opacity(0.22), lineWidth: 1))
         }
     }
-
 }
 
 /// Where a card lives when it is not here. Double-click opens that folder, the same gesture the
@@ -975,96 +891,77 @@ struct RunningStrip: View {
 ///
 /// Shared by both strips: each one lifts cards out of the grouping that would otherwise say which
 /// project they belong to, so each one owes the reader this line.
-///
-/// lineLimit(1) for the same reason every other label on a card has it: a name that wraps changes
-/// the row's height, and these rows are rebuilt every time an agent starts or stops.
 struct ProjectTag: View {
     @EnvironmentObject var state: AppState
     let terminal: TerminalSession
 
     var body: some View {
         let name = state.projects.first { $0.id == terminal.projectId }?.name ?? "—"
-        HStack(spacing: 4) {
-            Image(systemName: "folder.fill")
-                .font(.system(size: 8)).foregroundColor(Theme.subtext.opacity(0.55))
-            Text(name)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(Theme.subtext.opacity(0.85))
-                .lineLimit(1)
+        HStack(spacing: 6) {
+            Image(systemName: "folder").font(.system(size: 12))
+            Text(name).font(.fvLabelSmall).lineLimit(1)
         }
+        .foregroundColor(Theme.onSurfaceVariant)
         .padding(.leading, 2)
-        // The whole tag, not just the text: it is two small glyphs and a 10pt label, and hitting
-        // only the characters would be a worse target than the thing looks.
+        // The whole tag, not just the text: hitting only the characters would be a worse target
+        // than the thing looks.
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { state.openInFinder(terminal.projectId) }
         .help("双击在 Finder 中打开 \(name)")
     }
 }
 
-/// The cards you used most recently, lifted to the top the same way RUNNING NOW lifts the busy ones.
-/// Same cards again, so a terminal reached from here drags, marks and opens exactly like the one in
-/// its project section — this is a second place to find a terminal, not a second kind of terminal.
+/// The cards you used most recently, on a tray of their own above the projects.
 ///
-/// Working terminals are left out: they are in the strip immediately above, and the same card drawn
-/// twice within one screen of itself reads as two terminals. So does a card that has never been
-/// used, which is why a terminal with no activity at all never appears here.
+/// Same cards again, at the same size, so a terminal reached from here drags, marks and opens
+/// exactly like the one in its project section — a second place to find a terminal, not a second
+/// kind of terminal. The tray is what tells this row apart from a project's grid; the cards are not
+/// restyled for it.
 ///
-/// Capped, because this is a shortcut and not a second board. Uncapped it would restate the whole
-/// fleet above the fleet, and past a handful the question is better answered by search.
-///
-/// Absent rather than empty, for the same reason the running strip is: a permanent "nothing here"
-/// header is furniture that is wrong most of the time.
+/// Whatever is already in "进行中" is left out: the same card twice within one screen reads as two
+/// terminals. So is a card that has never been used. Capped, because this is a shortcut and not a
+/// second board; one row, scrolled sideways, because a shortcut that grows a second row pushes the
+/// board itself off screen.
 struct RecentStrip: View {
     @EnvironmentObject var state: AppState
 
     private static let limit = 6
 
     private var recent: [TerminalSession] {
-        state.visible(state.terminals.filter { $0.status != .working && $0.lastActivity != nil })
-            .sorted {
-                let (a, b) = ($0.lastActivity ?? .distantPast, $1.lastActivity ?? .distantPast)
-                // `sort` is not stable, and this list is rebuilt on every activity tick.
-                return a == b ? $0.id.uuidString < $1.id.uuidString : a > b
-            }
-            .prefix(Self.limit)
-            .map { $0 }
+        state.visible(state.terminals.filter {
+            $0.status != .working && $0.status != .needsYou && $0.lastActivity != nil
+        })
+        .sorted {
+            let (a, b) = ($0.lastActivity ?? .distantPast, $1.lastActivity ?? .distantPast)
+            // `sort` is not stable, and this list is rebuilt on every activity tick.
+            return a == b ? $0.id.uuidString < $1.id.uuidString : a > b
+        }
+        .prefix(Self.limit)
+        .map { $0 }
     }
 
     var body: some View {
         if state.showRecentStrip && !recent.isEmpty {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 11)).foregroundColor(Theme.subtext)
-                    Text("RECENTLY USED")
-                        .font(.system(size: 10, weight: .bold)).foregroundColor(Theme.subtext)
-                    Text("\(recent.count)")
-                        .font(.system(size: 11, weight: .medium)).foregroundColor(Theme.subtext)
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Theme.card).clipShape(Capsule())
-                    Spacer()
-                }
-                // One row, scrolled sideways rather than wrapped: this strip is a shortcut, and a
-                // shortcut that grows a second row pushes the board itself off screen. A fixed card
-                // width because an HStack would otherwise stretch six cards to whatever is left.
+            VStack(alignment: .leading, spacing: 10) {
+                ZoneHeader(icon: "clock.arrow.circlepath", title: "最近使用", count: recent.count)
+                    .padding(.horizontal, 4)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 14) {
+                    HStack(alignment: .top, spacing: BoardGrid.spacing) {
                         ForEach(recent) { t in
-                            VStack(alignment: .leading, spacing: 5) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 ProjectTag(terminal: t)
                                 TerminalCardView(terminal: t)
                             }
-                            .frame(width: 340)
+                            .frame(width: BoardGrid.stripCardWidth)
                         }
                     }
-                    // The cards carry a drop-shadow and a focus ring that a tight clip would cut.
+                    // A focus ring that a tight clip would cut.
                     .padding(.vertical, 2)
                 }
             }
-            .padding(14)
-            .background(Theme.subtext.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.stroke, lineWidth: 1))
+            .padding(12)
+            .background(Theme.surfaceContainerLow)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sheet))
         }
     }
 }
@@ -1109,16 +1006,11 @@ struct ProjectSection: View {
     private var needsYou: Int { state.terminals(inProject: project.id).filter { $0.status == .needsYou }.count }
     private var working: Int { state.terminals(inProject: project.id).filter { $0.status == .working }.count }
 
-    private func statusPill(_ text: String, _ status: TermStatus) -> some View {
-        Text(text).font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 7).padding(.vertical, 1)
-            .background(Theme.statusColor(status).opacity(0.18))
-            .foregroundColor(Theme.statusColor(status))
-            .clipShape(Capsule())
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 12) {
+            // The board proper starts here: a full-width rule above every project is what tells
+            // these sections apart from the "进行中" and "最近使用" zones above them.
+            Divider().overlay(Theme.outlineVariant).padding(.bottom, 4)
             header
             // Not gated on `collapsed`: folding a project puts its *terminals* away, and looking up
             // what a skill does is exactly the kind of thing you do without wanting the cards back.
@@ -1134,8 +1026,8 @@ struct ProjectSection: View {
                 } else {
                     ForEach(clusters) { c in ClusterContainer(clusterId: c.id).id(c.id) }
                     if !standalone.isEmpty {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 460), spacing: 14)],
-                                  alignment: .leading, spacing: 14) {
+                        LazyVGrid(columns: BoardGrid.columns,
+                                  alignment: .leading, spacing: BoardGrid.spacing) {
                             ForEach(standalone) { t in TerminalCardView(terminal: t).id(t.id) }
                         }
                     }
@@ -1221,159 +1113,164 @@ struct ProjectSection: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.stroke, lineWidth: 1))
     }
 
+    /// When anything last happened in this project.
+    private var lastActivity: Date? {
+        state.terminals(inProject: project.id).compactMap(\.lastActivity).max()
+    }
+
     private var header: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11))
-                .foregroundColor(Theme.subtext.opacity(gripHot ? 0.95 : 0.35))
-                .onHover { gripHot = $0 }
-                .help("Drag to reorder projects")
-                .onDrag {
-                    // AppKit calls this on the main thread; the closure is simply not typed for it.
-                    MainActor.assumeIsolated { state.draggingProjectId = project.id }
-                    return NSItemProvider(object: project.id.uuidString as NSString)
-                }
-            // Same chevron idiom as the sidebar's section headers, pointing at the same thing.
-            Button {
-                withAnimation(.easeOut(duration: 0.18)) { state.toggleProjectCollapsed(project.id) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(Theme.subtext)
-                    .rotationEffect(.degrees(collapsed ? 0 : 90))
-                    .frame(width: 16, height: 16)
+        HStack(spacing: 12) {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.onSurfaceVariant.opacity(gripHot ? 1 : 0.35))
+                    .frame(width: 16, height: 24)
                     .contentShape(Rectangle())
+                    .onHover { gripHot = $0 }
+                    .help("拖动调整项目顺序")
+                    .onDrag {
+                        // AppKit calls this on the main thread; the closure is simply not typed for it.
+                        MainActor.assumeIsolated { state.draggingProjectId = project.id }
+                        return NSItemProvider(object: project.id.uuidString as NSString)
+                    }
+                // Same chevron idiom as the sidebar's section headers, pointing at the same thing.
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { state.toggleProjectCollapsed(project.id) }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(collapsed ? "展开这个项目" : "折叠这个项目")
             }
-            .buttonStyle(.plain)
-            .help(collapsed ? "展开这个项目" : "折叠这个项目")
-            Image(systemName: "folder.fill").font(.system(size: 12)).foregroundColor(Theme.accent.opacity(0.9))
-            // lineLimit(1) for the same reason the card's footer labels have it: the "+N/min" chip
-            // below re-measures every 5s and swings between "+0/min" and "+1.2M/min", and on a
-            // narrow content column that pushed this name onto a second line and back — moving the
-            // whole project section, cards included, every five seconds.
-            Text(project.name).font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text)
+            // lineLimit(1): a name that wraps changes the header's height, and the figures next to
+            // it re-measure every few seconds.
+            Text(project.name).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 .lineLimit(1)
                 .onTapGesture(count: 2) { state.openInFinder(project.id) }
                 .onTapGesture { copyToClipboard(project.name) }
-                .help("Click to copy · double-click to open in Finder")
-            Text("\(total)").font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 6).padding(.vertical, 1)
-                .background(Theme.card).foregroundColor(Theme.subtext).clipShape(Capsule())
+                .help("\(project.path)\n单击复制名称 · 双击在 Finder 中打开")
             // Folded, the cards can no longer speak for themselves, and a terminal waiting on an
-            // answer behind a closed section is the one thing this feature could genuinely cost
-            // you. The header says it instead. RUNNING NOW already lifts working terminals out of
-            // their section, so that half is belt-and-braces; "needs you" has no such rescue.
+            // answer behind a closed section is the one thing folding could genuinely cost you.
+            // The header shows it — as the same shapes the cards use, not as words.
             if collapsed {
-                if needsYou > 0 { statusPill("\(needsYou) needs you", .needsYou) }
-                if working > 0 { statusPill("\(working) running", .working) }
+                if needsYou > 0 { glyphCount(.needsYou, needsYou) }
+                if working > 0 { glyphCount(.working, working) }
             }
-            // Both chips are pinned to one line at their intrinsic width. This row is width-critical
-            // (see the name's lineLimit above) and these two were the only Texts in it still free to
-            // wrap: squeezed, they took a second line, the header grew, and every card below it moved
-            // — once every five seconds, as the rate chip re-measured. Squeezing has to fall on the
-            // path, which is built to be truncated, not on figures that then change the row's height.
-            if newTokens > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "sum").font(.system(size: 9, weight: .bold))
-                    Text(TokenUsage.short(newTokens)).font(.system(size: 11, weight: .medium))
-                }
-                .lineLimit(1).fixedSize()
-                .foregroundColor(Theme.accent)
-                .padding(.horizontal, 6).padding(.vertical, 1)
-                .background(Theme.accent.opacity(0.12)).clipShape(Capsule())
-                .help("\(newTokens) new tokens used (input + output, excluding cache reads)")
-            }
-            if newTokens > 0 {
-                // Anchored on a date this view keeps, never on `.now` — the same mistake the card's
-                // run clock documents: `.now` is re-evaluated on every body pass, so each of the
-                // board's many re-renders handed this a brand-new schedule and restarted its tick.
-                TimelineView(.periodic(from: rateEpoch, by: 5)) { context in
-                    let recent = state.projectTokensRecent(project.id, now: context.date)
-                    HStack(spacing: 3) {
-                        Image(systemName: "bolt.fill").font(.system(size: 8))
-                        Text("+\(TokenUsage.short(recent))/min").font(.system(size: 10, weight: .medium))
-                            // Digits of the same width, so the chip stops resizing every time the
-                            // rate crosses a digit — the horizontal half of the same twitch.
-                            .monospacedDigit()
+            // Figures pinned to one line at their intrinsic width: squeezed, they took a second line,
+            // the header grew, and every card below moved — once every five seconds.
+            HStack(spacing: 14) {
+                meta("rectangle.on.rectangle", "\(total)", help: "\(total) 个终端")
+                if newTokens > 0 {
+                    meta("sum", TokenUsage.short(newTokens),
+                         help: "\(newTokens) tokens（输入 + 输出，不含缓存读取）")
+                    // Anchored on a date this view keeps, never on `.now` — `.now` is re-evaluated
+                    // on every body pass, which handed the timeline a new schedule each render.
+                    TimelineView(.periodic(from: rateEpoch, by: 5)) { context in
+                        let recent = state.projectTokensRecent(project.id, now: context.date)
+                        if recent > 0 {
+                            meta("chart.line.uptrend.xyaxis", "\(TokenUsage.short(recent))/m",
+                                 tint: Theme.primary, help: "最近一分钟新增的 tokens")
+                        }
                     }
-                    .lineLimit(1).fixedSize()
-                    .foregroundColor(recent > 0 ? Theme.green : Theme.subtext)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background((recent > 0 ? Theme.green : Theme.subtext).opacity(0.14)).clipShape(Capsule())
-                    .help("New tokens added in the last minute")
+                }
+                if let lastActivity {
+                    TimelineView(.periodic(from: lastActivity, by: 30)) { ctx in
+                        Text(RelativeTime.compact(lastActivity, now: ctx.date))
+                            .font(.fvLabel).monospacedDigit()
+                            .foregroundColor(Theme.onSurfaceVariant)
+                            .help("最后活动")
+                    }
                 }
             }
-            Text(project.path).font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.6))
-                .lineLimit(1).truncationMode(.middle)
-                .onTapGesture(count: 2) { state.openInFinder(project.id) }
-                .onTapGesture { copyToClipboard(project.path) }
-                .help("Click to copy · double-click to open in Finder")
+            .lineLimit(1).fixedSize()
             if copied {
-                Text("Copied").font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(Theme.onAccent).padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Theme.green).clipShape(Capsule()).transition(.opacity)
+                Text("已复制").font(.fvLabelSmall)
+                    .foregroundColor(Theme.onPrimary).padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Theme.primary).clipShape(Capsule()).transition(.opacity)
             }
             Spacer(minLength: 10)
-            // Hidden when the project carries none: a control that opens an empty drawer on most
-            // projects is noise on every header it appears in.
-            if skillCount > 0 {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { showSkills.toggle() }
-                    if showSkills {
-                        skills = ProjectSkills.scan(projectPath: project.path)
-                        skillCount = skills.count
+            // Standard icon buttons: no container on any of them (a row's controls either all have
+            // one or none do). Hidden when there is nothing behind them.
+            HStack(spacing: 2) {
+                if skillCount > 0 {
+                    iconButton("wand.and.stars", count: skillCount, on: showSkills,
+                               help: showSkills ? "收起技能" : ".claude/skills 里有 \(skillCount) 个技能") {
+                        withAnimation(.easeOut(duration: 0.18)) { showSkills.toggle() }
+                        if showSkills {
+                            skills = ProjectSkills.scan(projectPath: project.path)
+                            skillCount = skills.count
+                        }
                     }
+                }
+                if !archived.isEmpty {
+                    iconButton("archivebox", count: archived.count,
+                               help: "\(archived.count) 个已移除的终端：在搜索里打开，拖回看板即可恢复") {
+                        state.openArchive(projectId: project.id)
+                    }
+                }
+                if deltas.count > 1 {
+                    iconButton("chart.bar.xaxis", on: showChart,
+                               help: showChart ? "隐藏 token 图表" : "显示 token 图表") {
+                        withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
+                    }
+                }
+                iconButton("folder", help: "在 Finder 中显示") { state.openInFinder(project.id) }
+                iconButton("plus", help: "新终端") { state.requestNewTerminal(projectId: project.id) }
+                Menu {
+                    Button("在 Finder 中显示") { state.openInFinder(project.id) }
+                    Button("复制路径") { copyToClipboard(project.path) }
+                    Divider()
+                    Button("从 FleetView 移除项目", role: .destructive) { state.removeProject(project.id) }
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "wand.and.stars").font(.system(size: 11))
-                        Text("\(skillCount)").font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(showSkills ? Theme.accent : Theme.subtext).padding(5)
+                    Image(systemName: "ellipsis").font(.system(size: 14))
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .frame(width: Theme.controlHeight, height: Theme.controlHeight)
                 }
-                .buttonStyle(.plain)
-                .help(showSkills ? "Hide this project's skills"
-                                 : "\(skillCount) skills in .claude/skills")
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("更多")
             }
-            // Hidden until this project has actually lost a card, so it stays out of the way on a
-            // board where nothing has been removed yet.
-            if !archived.isEmpty {
-                Button { state.openArchive(projectId: project.id) } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
-                        Text("\(archived.count)").font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(Theme.subtext).padding(5)
-                }
-                .buttonStyle(.plain)
-                .help("\(archived.count) removed terminals — open them in search, drag one back")
-            }
-            if deltas.count > 1 {
-                Button { withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() } } label: {
-                    Image(systemName: "chart.bar.xaxis").font(.system(size: 12))
-                        .foregroundColor(showChart ? Theme.accent : Theme.subtext).padding(5)
-                }
-                .buttonStyle(.plain).help(showChart ? "Hide token chart" : "Show token chart")
-            }
-            Button { state.openInFinder(project.id) } label: {
-                Image(systemName: "folder").font(.system(size: 12)).foregroundColor(Theme.subtext).padding(5)
-            }
-            .buttonStyle(.plain).help("Reveal project in Finder")
-            Button { state.requestNewTerminal(projectId: project.id) } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus").font(.system(size: 10, weight: .bold))
-                    Text("Terminal").font(.system(size: 12, weight: .medium))
-                }
-                .foregroundColor(Theme.text)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            Button { state.removeProject(project.id) } label: {
-                Image(systemName: "xmark").font(.system(size: 10)).foregroundColor(Theme.subtext).padding(5)
-            }
-            .buttonStyle(.plain).help("Remove project from FleetView")
         }
+        .frame(height: 40)
+    }
+
+    private func glyphCount(_ status: TermStatus, _ n: Int) -> some View {
+        HStack(spacing: 4) {
+            StatusGlyph(status: status, size: 14)
+            Text("\(n)").font(.fvLabel).monospacedDigit().foregroundColor(Theme.statusColor(status))
+        }
+        .help("\(n) 个\(status.label)")
+    }
+
+    private func meta(_ symbol: String, _ text: String, tint: Color = Theme.onSurfaceVariant,
+                      help: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 12))
+            Text(text).font(.fvLabel).monospacedDigit()
+        }
+        .foregroundColor(tint)
+        .help(help)
+    }
+
+    private func iconButton(_ symbol: String, count: Int? = nil, on: Bool = false, help: String,
+                            _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 14))
+                if let count { Text("\(count)").font(.fvLabel).monospacedDigit() }
+            }
+            .foregroundColor(on ? Theme.onSecondaryContainer : Theme.onSurfaceVariant)
+            .padding(.horizontal, count == nil ? 0 : 10)
+            .frame(minWidth: Theme.controlHeight, minHeight: Theme.controlHeight)
+            .background(on ? Theme.secondaryContainer : Color.clear)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).help(help)
     }
 
     private func copyToClipboard(_ s: String) {
@@ -1387,18 +1284,18 @@ struct ProjectSection: View {
 
     private var emptyRow: some View {
         Button { state.requestNewTerminal(projectId: project.id) } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "plus.rectangle.on.rectangle").font(.system(size: 12))
-                Text("New terminal").font(.system(size: 12, weight: .medium))
+            HStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 14))
+                Text("新终端").font(.fvLabel)
             }
-            .foregroundColor(Theme.subtext)
-            .padding(.horizontal, 14).padding(.vertical, 16)
+            .foregroundColor(Theme.onSurfaceVariant)
+            .padding(.horizontal, 16).padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                .foregroundColor(Theme.stroke))
+                .foregroundColor(Theme.outlineVariant))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -1449,58 +1346,58 @@ struct ClusterContainer: View {
     private var members: [TerminalSession] { state.visible(allMembers) }
     private var highlighted: Bool { state.highlightedClusterId == clusterId }
 
+    @State private var hovering = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "circle.hexagongrid.fill").font(.system(size: 12)).foregroundColor(Theme.accent)
-                Text("CLUSTER").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.accent.opacity(0.85))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Theme.accent.opacity(0.14)).clipShape(Capsule())
+                Image(systemName: "square.stack").font(.system(size: 14)).foregroundColor(Theme.onSurfaceVariant)
                 Text(name)
-                    .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text).lineLimit(1)
+                    .font(.fvTitleSmall).foregroundColor(Theme.onSurface).lineLimit(1)
                     .onTapGesture(count: 2) { state.requestRenameCluster(clusterId) }
-                    .help(name)
-                Button { state.requestRenameCluster(clusterId) } label: {
-                    Image(systemName: "pencil").font(.system(size: 10)).foregroundColor(Theme.subtext)
-                }
-                .buttonStyle(.plain).help("Rename cluster task")
+                    .help("双击重命名")
                 // The cluster's real size, with what the filter is showing of it — the header must
                 // not claim a two-terminal task when the task has six.
-                Text(members.count == allMembers.count
-                     ? "· \(allMembers.count) terminal\(allMembers.count == 1 ? "" : "s")"
-                     : "· \(members.count) of \(allMembers.count) shown")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext)
+                Text(members.count == allMembers.count ? "\(allMembers.count)"
+                                                       : "\(members.count) / \(allMembers.count)")
+                    .font(.fvTitleSmall).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
+                    .help(members.count == allMembers.count ? "\(allMembers.count) 个终端"
+                                                            : "显示了 \(allMembers.count) 个里的 \(members.count) 个")
                 Spacer()
-                Button { state.addToCluster(clusterId) } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 10, weight: .bold))
-                        Text("Agent").font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(Theme.accent)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Theme.accent.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 6))
+                HStack(spacing: 2) {
+                    clusterButton("pencil", help: "重命名这个组") { state.requestRenameCluster(clusterId) }
+                    clusterButton("plus", help: "给这个任务再加一个 agent") { state.addToCluster(clusterId) }
                 }
-                .buttonStyle(.plain).help("Add another agent to this task")
+                .opacity(hovering ? 1 : 0)
             }
+            .frame(height: 28)
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 290, maximum: 460), spacing: 12)],
-                      alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: BoardGrid.columns,
+                      alignment: .leading, spacing: BoardGrid.spacing) {
                 ForEach(members) { t in TerminalCardView(terminal: t) }
             }
         }
-        .padding(14)
-        .background(Theme.accent.opacity(0.055))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14)
-            .stroke(highlighted ? Theme.accent : Theme.accent.opacity(0.28), lineWidth: highlighted ? 2 : 1))
-        .shadow(color: highlighted ? Theme.accent.opacity(0.35) : .clear, radius: highlighted ? 10 : 0)
-        .animation(.easeOut(duration: 0.2), value: highlighted)
+        .padding(12)
+        // An outline and nothing else: the group is a frame around cards, not a coloured block.
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sheet)
+            .strokeBorder(highlighted ? Theme.primary : Theme.outlineVariant, lineWidth: highlighted ? 2 : 1))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         // The whole box is a drop target for a dragged card — the task is the thing you are aiming
         // at, not whichever member card happens to be under the cursor.
         .background(GeometryReader { g in
             Color.clear.preference(key: ClusterFramesKey.self,
                                    value: [clusterId: [g.frame(in: .named("fleet"))]])
         })
+    }
+
+    private func clusterButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 13))
+                .foregroundColor(Theme.onSurfaceVariant)
+                .frame(width: 28, height: 28).contentShape(Circle())
+        }
+        .buttonStyle(.plain).help(help)
     }
 }
 

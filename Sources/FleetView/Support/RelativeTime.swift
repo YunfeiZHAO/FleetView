@@ -21,6 +21,18 @@ enum RelativeTime {
         clock(seconds: Int(now.timeIntervalSince(date)))
     }
 
+    /// How long ago, as compactly as it can be said: "刚刚", "25m", "5h", "4d". What a card shows
+    /// when nothing is running — the unit letter is enough once you have seen it.
+    static func compact(_ date: Date, now: Date = Date()) -> String {
+        let s = Int(now.timeIntervalSince(date))
+        if s < 60 { return "刚刚" }
+        let m = s / 60
+        if m < 60 { return "\(m)m" }
+        let h = m / 60
+        if h < 24 { return "\(h)h" }
+        return "\(h / 24)d"
+    }
+
     /// Format an elapsed-seconds count (negative ⇒ nil, "never interacted").
     static func short(seconds: Int) -> String? {
         guard seconds >= 0 else { return nil }

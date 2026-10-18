@@ -11,10 +11,13 @@ enum AppDialog: Identifiable, Equatable {
     /// Open the dashboard on a phone. With a terminal, the link goes straight to that terminal's
     /// conversation (`#t=<id>`), exactly where tapping its card on the dashboard would land.
     case webLink(terminalId: UUID?)
+    /// Stop every terminal (and optionally the board), with the quit setting beside it.
+    case closeAll
 
     var id: String {
         switch self {
         case .webLink(let t): return "webLink-\(t?.uuidString ?? "board")"
+        case .closeAll:       return "closeAll"
         }
     }
 }
@@ -34,10 +37,12 @@ struct DialogHost: View {
                     switch dialog {
                     case .webLink(let terminalId):
                         WebLinkDialog(terminalId: terminalId)
+                    case .closeAll:
+                        CloseAllDialog()
                     }
                 }
-                .background(Theme.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 28))
+                .background(Theme.surfaceContainerHigh)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.dialog))
                 .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
             }
             .background {
@@ -74,16 +79,16 @@ struct WebLinkDialog: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "iphone").font(.system(size: 16)).foregroundColor(Theme.accent)
-                Text("在手机上打开").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.text)
+                Text("在手机上打开").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 Spacer()
                 Button { state.dialog = nil } label: {
                     Image(systemName: "xmark").font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Theme.subtext).frame(width: 32, height: 32).contentShape(Circle())
+                        .foregroundColor(Theme.onSurfaceVariant).frame(width: 32, height: 32).contentShape(Circle())
                 }
                 .buttonStyle(.plain).help("关闭 (Esc)")
             }
             Text(subtitle)
-                .font(.system(size: 12)).foregroundColor(Theme.subtext)
+                .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4).padding(.bottom, 14)
 
@@ -93,10 +98,10 @@ struct WebLinkDialog: View {
                         ForEach(addresses) { address in
                             let on = address.url == picked.url
                             Button { select(address.url) } label: {
-                                Text(address.label).font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(on ? Theme.text : Theme.subtext)
+                                Text(address.label).font(.fvLabel)
+                                    .foregroundColor(on ? Theme.onSecondaryContainer : Theme.onSurfaceVariant)
                                     .frame(maxWidth: .infinity, minHeight: 30)
-                                    .background(on ? Theme.cardHover : Color.clear)
+                                    .background(on ? Theme.secondaryContainer : Color.clear)
                                     .clipShape(Capsule())
                                     .contentShape(Capsule())
                             }
@@ -105,7 +110,7 @@ struct WebLinkDialog: View {
                         }
                     }
                     .padding(3)
-                    .background(Theme.card).clipShape(Capsule())
+                    .background(Theme.surfaceContainerHighest).clipShape(Capsule())
                     .padding(.bottom, 14)
                 }
                 if let qr {
@@ -118,12 +123,12 @@ struct WebLinkDialog: View {
                 }
                 HStack(spacing: 6) {
                     Text(picked.url + suffix)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.fvMono)
                         .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
-                        .foregroundColor(Theme.text)
+                        .foregroundColor(Theme.onSurface)
                         .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                        .background(Theme.card).clipShape(Capsule())
+                        .frame(maxWidth: .infinity, minHeight: Theme.controlHeight, alignment: .leading)
+                        .background(Theme.surfaceContainerHighest).clipShape(Capsule())
                     roundButton(copied ? "checkmark" : "doc.on.doc", help: "复制链接") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(picked.url + suffix, forType: .string)
@@ -140,12 +145,12 @@ struct WebLinkDialog: View {
                 }
                 Label(picked.reach + "。能访问这个地址的设备都能操作" + (terminalId == nil ? "所有终端" : "这个终端"),
                       systemImage: "info.circle")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext)
+                    .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
             } else {
                 Text("没有联网，或者 Web 服务没有启动。连上网络后再打开这里。")
-                    .font(.system(size: 12)).foregroundColor(Theme.subtext)
+                    .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -172,11 +177,88 @@ struct WebLinkDialog: View {
     private func roundButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 13))
-                .foregroundColor(Theme.subtext)
-                .frame(width: 36, height: 36)
-                .background(Theme.card).clipShape(Circle())
+                .foregroundColor(Theme.onSurfaceVariant)
+                .frame(width: Theme.controlHeight, height: Theme.controlHeight)
+                .background(Theme.surfaceContainerHighest).clipShape(Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(.plain).help(help)
+    }
+}
+
+/// "关闭所有终端": what it stops, what it keeps, and the quit-time setting that automates it.
+struct CloseAllDialog: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        let open = state.openTerminalCount
+        let working = state.terminals.filter { $0.status == .working }.count
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "power").font(.system(size: 16)).foregroundColor(Theme.error)
+                Text("关闭所有终端").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                Spacer()
+            }
+            .padding(.bottom, 12)
+            Text(open > 0 ? "\(open) 个终端正在运行。关闭会停止它们的 agent 进程，tmux 会话一并销毁。"
+                          : "当前没有打开的终端。仍会清理可能残留的 tmux 会话。")
+                .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+            // The one thing that makes this safe to press: nothing is lost from the board.
+            Label("卡片会保留。点击卡片可以重新打开，并接着原来的 Claude / Codex 会话。",
+                  systemImage: "arrow.uturn.backward")
+                .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+            if working > 0 {
+                Label("\(working) 个 agent 正在工作，会被打断。", systemImage: "exclamationmark.triangle.fill")
+                    .font(.fvBodySmall).foregroundColor(Theme.warn)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+            Toggle(isOn: Binding(get: { state.closeTerminalsOnQuit },
+                                 set: { state.closeTerminalsOnQuit = $0; state.save() })) {
+                Text("退出 FleetView 时也关闭所有终端").font(.fvBodySmall).foregroundColor(Theme.onSurface)
+            }
+            .toggleStyle(.checkbox)
+            .padding(.top, 16)
+            Text(state.closeTerminalsOnQuit ? "退出即结束整个 fleet。"
+                                            : "默认关闭：退出后终端继续在后台运行，下次启动自动重新接上。")
+                .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+            HStack(spacing: 8) {
+                // Secondary by design, and behind its own alert: it sits beside the main action and
+                // does something that action explicitly does not — throw the board away.
+                Button {
+                    state.dialog = nil
+                    BoardActions.confirmClear(state, reason: "topbar")
+                } label: {
+                    Text("清空看板…").font(.fvLabel).foregroundColor(Theme.error)
+                        .padding(.horizontal, 12).frame(height: 40).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("移除全部项目与终端卡片（对话历史不受影响）")
+                Spacer()
+                Button { state.dialog = nil } label: {
+                    Text("取消").font(.fvLabel).foregroundColor(Theme.primary)
+                        .padding(.horizontal, 16).frame(height: 40).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    state.dialog = nil
+                    state.closeAllTerminals(reason: "topbar")
+                } label: {
+                    Text("关闭全部终端").font(.fvLabel).foregroundColor(Theme.onPrimary)
+                        .padding(.horizontal, 20).frame(height: 40)
+                        .background(Theme.error).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 20)
+        }
+        .padding(24)
+        .frame(width: 420)
     }
 }

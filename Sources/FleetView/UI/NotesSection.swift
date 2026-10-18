@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The sidebar's collapsible "NOTES" section: quick free-form text items.
+/// The sidebar's collapsible "笔记" section: quick free-form text items.
 /// Single-click a note to copy it, double-click to edit (also via right-click).
 struct NotesSection: View {
     @EnvironmentObject var state: AppState
@@ -42,28 +42,28 @@ struct NotesSection: View {
             header
             if !state.notesCollapsed {
                 if shown.isEmpty && shownPeer.isEmpty && query.isEmpty {
-                    Text(viewingPeer == nil ? "Click to copy · double-click to edit"
-                                            : "\(viewingPeer!.label) has no notes")
-                        .font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.5))
+                    Text(viewingPeer == nil ? "单击复制 · 双击编辑"
+                                            : "\(viewingPeer!.label) 没有笔记")
+                        .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                         .padding(.horizontal, 16).padding(.vertical, 6)
                 } else {
                     // Counted across whatever is in view: the row earns its place once the list is
                     // long, and a list is long whether the length came from here or from a peer.
                     if state.notes.count + state.peerNotes.count > 5 { filterField }
                     if shown.isEmpty && shownPeer.isEmpty {
-                        Text("No note matches “\(filter)”")
-                            .font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.6))
+                        Text("没有包含“\(filter)”的笔记")
+                            .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                             .padding(.horizontal, 16).padding(.vertical, 8)
                     } else {
                         ScrollView {
-                            VStack(spacing: 3) {
+                            VStack(spacing: 2) {
                                 ForEach(shown) { NoteRow(note: $0) }
                                 // Mirrored rows come after the local ones and carry their origin,
                                 // so the list never leaves you guessing whose note you are about
                                 // to edit — every one of these writes to another machine.
                                 ForEach(shownPeer) { PeerNoteRow(note: $0) }
                             }
-                            .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 4)
+                            .padding(.horizontal, 4).padding(.top, 2).padding(.bottom, 4)
                         }
                         .frame(maxHeight: fill ? .infinity : 240)
                     }
@@ -74,27 +74,27 @@ struct NotesSection: View {
     }
 
     private var filterField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10))
-                .foregroundColor(Theme.subtext.opacity(0.8))
-            TextField("Filter notes", text: $filter)
-                .textFieldStyle(.plain).font(.system(size: 12)).foregroundColor(Theme.text)
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 13))
+                .foregroundColor(Theme.onSurfaceVariant)
+            TextField("筛选", text: $filter)
+                .textFieldStyle(.plain).font(.fvBodySmall).foregroundColor(Theme.onSurface)
                 .focused($filterFocused)
                 .onExitCommand { filter = "" }
             if !filter.isEmpty {
                 Button { filter = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
-                        .foregroundColor(Theme.subtext.opacity(0.7))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                        .foregroundColor(Theme.onSurfaceVariant)
                 }
-                .buttonStyle(.plain).help("Clear filter")
+                .buttonStyle(.plain).help("清除")
             }
         }
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(Theme.card.opacity(filterFocused ? 0.95 : 0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(filterFocused ? Theme.accent.opacity(0.5) : Theme.stroke, lineWidth: 1))
-        .padding(.horizontal, 12).padding(.bottom, 5)
+        .padding(.horizontal, 14)
+        .frame(height: Theme.controlHeight)
+        .background(Theme.surfaceContainerHigh)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(filterFocused ? Theme.primary : Color.clear, lineWidth: 1))
+        .padding(.horizontal, 12).padding(.bottom, 6)
     }
 
     private var header: some View {
@@ -104,14 +104,14 @@ struct NotesSection: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold)).foregroundColor(Theme.subtext)
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onSurfaceVariant)
                     .rotationEffect(.degrees(state.notesCollapsed ? 0 : 90))
-                Text("NOTES").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.subtext)
+                Text("笔记").font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
                 if let p = viewingPeer {
                     // Named in the header, not only on the rows: this list is somebody else's while
                     // a peer is selected, and every edit made in it lands on their machine.
-                    Text("from \(p.label)")
-                        .font(.system(size: 10, weight: .medium)).foregroundColor(Theme.accent)
+                    Text("来自 \(p.label)")
+                        .font(.fvLabelSmall).foregroundColor(Theme.primary)
                         .lineLimit(1)
                 }
                 Spacer()
@@ -119,7 +119,7 @@ struct NotesSection: View {
                     ProgressView().controlSize(.small).scaleEffect(0.45)
                 }
                 Text(viewingPeer == nil ? "\(state.notes.count)" : "\(shownPeer.count)")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.7))
+                    .font(.fvLabel).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
             }
             .contentShape(Rectangle())
         }
@@ -129,20 +129,20 @@ struct NotesSection: View {
 
     private var addField: some View {
         HStack(spacing: 7) {
-            Image(systemName: "plus.circle.fill").font(.system(size: 12))
-                .foregroundColor(Theme.accent.opacity(0.85))
-            TextField(viewingPeer == nil ? "Add a note…" : "Add a note on \(viewingPeer!.label)…",
+            Image(systemName: "plus").font(.system(size: 13, weight: .medium))
+                .foregroundColor(Theme.primary)
+            TextField(viewingPeer == nil ? "添加笔记…" : "在 \(viewingPeer!.label) 上添加笔记…",
                       text: $newNote)
-                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(Theme.text)
+                .textFieldStyle(.plain).font(.fvBodySmall).foregroundColor(Theme.onSurface)
                 .focused($addFocused)
                 .onSubmit(add)
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(Theme.card.opacity(addFocused ? 0.95 : 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(addFocused ? Theme.accent.opacity(0.55) : Theme.stroke, lineWidth: 1))
-        .padding(.horizontal, 12).padding(.top, 3).padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .frame(height: Theme.controlHeight)
+        .background(addFocused ? Theme.surfaceContainerHigh : Color.clear)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(addFocused ? Theme.primary : Color.clear, lineWidth: 1))
+        .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 8)
     }
 
     /// Adds where the list is pointing. While a peer is selected the whole section is that
@@ -178,56 +178,54 @@ struct PeerNoteRow: View {
     /// No per-row origin tag: the whole section belongs to one machine while a peer is selected and
     /// the header says which, so repeating it on every row was the same sentence N times.
     private var row: some View {
-        Text(note.text.isEmpty ? "empty note" : note.text)
-            .font(.system(size: 12.5))
-            .foregroundColor(note.text.isEmpty ? Theme.subtext.opacity(0.5) : Theme.text)
+        Text(note.text.isEmpty ? "空笔记" : note.text)
+            .font(.fvMonoBody)
+            .foregroundColor(note.text.isEmpty ? Theme.onSurfaceVariant : Theme.onSurface)
             .lineLimit(3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(hover ? Theme.cardHover : Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(hover ? Theme.surfaceContainerHigh : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .overlay(alignment: .topTrailing) { if copied { copiedChip } }
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(Theme.accent.opacity(0.22), lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .onTapGesture(count: 2) { beginEdit() }
         .onTapGesture { copy() }
         .contextMenu {
-            Button("Copy") { copy() }
-            Button("Edit on \(note.from)") { beginEdit() }
+            Button("复制") { copy() }
+            Button("在 \(note.from) 上编辑") { beginEdit() }
             Divider()
-            Button("Delete on \(note.from)", role: .destructive) { state.removePeerNote(note) }
+            Button("在 \(note.from) 上删除", role: .destructive) { state.removePeerNote(note) }
         }
-        .help("From \(note.from) · click to copy · double-click to edit it there")
+        .help("来自 \(note.from) · 单击复制 · 双击在那台机器上编辑")
     }
 
     private var copiedChip: some View {
-        Text("Copied").font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onAccent)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Theme.green).clipShape(Capsule())
+        Text("已复制").font(.fvLabelSmall).foregroundColor(Theme.onPrimary)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Theme.primary).clipShape(Capsule())
             .padding(6)
             .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     private var editor: some View {
         HStack(spacing: 7) {
-            TextField("note on \(note.from)", text: $draft)
-                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(Theme.text)
+            TextField("\(note.from) 上的笔记", text: $draft)
+                .textFieldStyle(.plain).font(.fvMonoBody).foregroundColor(Theme.onSurface)
                 .focused($focused)
                 .onSubmit(commit)
                 .onExitCommand { editing = false }
             Button(action: commit) {
                 Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
                     .foregroundColor(Theme.green)
-            }.buttonStyle(.plain).help("Save on \(note.from)")
+            }.buttonStyle(.plain).help("保存到 \(note.from)")
             Button { editing = false } label: {
                 Image(systemName: "xmark").font(.system(size: 12)).foregroundColor(Theme.subtext)
-            }.buttonStyle(.plain).help("Cancel")
+            }.buttonStyle(.plain).help("取消")
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.accent.opacity(0.55), lineWidth: 1))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Theme.surfaceContainerHigh).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.primary, lineWidth: 1))
     }
 
     private func copy() {
@@ -269,36 +267,36 @@ struct NoteRow: View {
     // MARK: - Display
 
     private var row: some View {
-        Text(note.text.isEmpty ? "empty note" : note.text)
-            .font(.system(size: 12.5))
-            .foregroundColor(note.text.isEmpty ? Theme.subtext.opacity(0.5) : Theme.text)
+        Text(note.text.isEmpty ? "空笔记" : note.text)
+            .font(.fvMonoBody)
+            .foregroundColor(note.text.isEmpty ? Theme.onSurfaceVariant : Theme.onSurface)
             .lineLimit(3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(hover ? Theme.cardHover : Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(hover ? Theme.surfaceContainerHigh : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(alignment: .trailing) { if copied { copiedChip } }
             .contentShape(Rectangle())
             .onHover { hover = $0 }
             .onTapGesture(count: 2) { beginEdit() }   // double-click → edit
             .onTapGesture { copy() }                  // single-click → copy
             .contextMenu {
-                Button("Copy") { copy() }
-                Button("Edit") { beginEdit() }
+                Button("复制") { copy() }
+                Button("编辑") { beginEdit() }
                 Divider()
-                Button("Delete", role: .destructive) { withAnimation { state.removeNote(note.id) } }
+                Button("删除", role: .destructive) { withAnimation { state.removeNote(note.id) } }
             }
-            .help("Click to copy · double-click to edit")
+            .help("单击复制 · 双击编辑")
     }
 
     private var copiedChip: some View {
         HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle.fill")
-            Text("Copied")
+            Image(systemName: "checkmark")
+            Text("已复制")
         }
-        .font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.onAccent)
+        .font(.fvLabelSmall).foregroundColor(Theme.onPrimary)
         .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(Theme.green).clipShape(Capsule())
+        .background(Theme.primary).clipShape(Capsule())
         .padding(.trailing, 6)
         .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
@@ -307,21 +305,21 @@ struct NoteRow: View {
 
     private var editor: some View {
         HStack(spacing: 7) {
-            TextField("note", text: $draft)
-                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(Theme.text)
+            TextField("笔记", text: $draft)
+                .textFieldStyle(.plain).font(.fvMonoBody).foregroundColor(Theme.onSurface)
                 .focused($focused)
                 .onSubmit(commit)
                 .onExitCommand(perform: cancel)
             Button(action: commit) {
                 Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(Theme.green)
-            }.buttonStyle(.plain).help("Save")
+            }.buttonStyle(.plain).help("保存")
             Button(action: cancel) {
                 Image(systemName: "xmark").font(.system(size: 12)).foregroundColor(Theme.subtext)
-            }.buttonStyle(.plain).help("Cancel")
+            }.buttonStyle(.plain).help("取消")
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.accent.opacity(0.55), lineWidth: 1))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Theme.surfaceContainerHigh).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.primary, lineWidth: 1))
         .onChange(of: focused) { _, f in if !f && editing { commit() } }   // commit on click-away
     }
 

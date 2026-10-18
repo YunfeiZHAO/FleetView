@@ -117,73 +117,87 @@ struct PeerStrip: View {
 
     private var others: [Peer] { fleet.found.filter { !$0.isSelf } }
 
+    /// Two FleetViews run by the same account would both be called by that account's name, and a
+    /// tab you cannot tell apart from its neighbour is one you will click by mistake. Then the host
+    /// is added, which is the thing that actually differs.
+    private func title(_ p: Peer) -> String {
+        others.filter { $0.label == p.label }.count > 1 ? "\(p.label) · \(p.host)" : p.label
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
-            tab(title: "This Mac", detail: nil, active: state.peerSelected == nil) {
-                state.selectPeer(nil)
-            }
-            ForEach(others) { p in
-                tab(title: p.label,
-                    detail: p.working > 0 ? "\(p.terminals) · \(p.working) running"
-                                          : "\(p.terminals) terminals",
-                    active: state.peerSelected?.id == p.id) {
-                    state.selectPeer(p)
+        HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                tab(title: "本机", detail: nil, active: state.peerSelected == nil) {
+                    state.selectPeer(nil)
+                }
+                ForEach(others) { p in
+                    tab(title: title(p), detail: "\(p.terminals)",
+                        active: state.peerSelected?.id == p.id) {
+                        state.selectPeer(p)
+                    }
+                    .help(p.working > 0 ? "\(p.url) · \(p.terminals) 个终端，\(p.working) 个运行中"
+                                        : "\(p.url) · \(p.terminals) 个终端")
                 }
             }
+            .padding(3)
+            .frame(height: Theme.controlHeight)
+            .background(Theme.surfaceContainerHigh).clipShape(Capsule())
             if fleet.scanning {
                 ProgressView().controlSize(.small).scaleEffect(0.6)
-                Text("Scanning \(fleet.sweepSize) addresses…")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext)
+                Text("正在扫描 \(fleet.sweepSize) 个地址…")
+                    .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             } else if fleet.scanned && others.isEmpty {
-                Text("No other FleetView on this network")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext)
+                Text("局域网里没有其他 FleetView")
+                    .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             }
             // Said out loud, always — a sweep that quietly covered a slice of a large network would
             // otherwise let "none found" be read as "none there".
             if fleet.scanned && fleet.narrowed {
-                Text("subnet too large — only this /24 was scanned")
-                    .font(.system(size: 10)).foregroundColor(Theme.amber)
+                Text("网段太大，只扫描了本机所在的 /24")
+                    .font(.fvLabelSmall).foregroundColor(Theme.warn)
             }
-            Spacer()
             if let p = state.peerSelected {
-                // The address, always visible while a peer is showing. Which machine you are driving
-                // is the one thing that must never be a guess — every instruction sent from here
-                // lands in somebody else's live session.
-                Text(p.url).font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Theme.subtext).textSelection(.enabled)
-                Button { NSWorkspace.shared.open(URL(string: p.url + "/")!) } label: {
-                    Image(systemName: "arrow.up.forward.square").font(.system(size: 11))
-                        .foregroundColor(Theme.subtext)
+                // Which machine you are driving is the one thing that must never be a guess — every
+                // instruction sent from here lands in somebody else's live session.
+                Text(p.url).font(.fvMono)
+                    .foregroundColor(Theme.onSurfaceVariant).textSelection(.enabled).lineLimit(1)
+                stripButton("arrow.up.forward.square", help: "在浏览器里打开这台机器的看板") {
+                    NSWorkspace.shared.open(URL(string: p.url + "/")!)
                 }
-                .buttonStyle(.plain).help("Open this peer's dashboard in a browser")
             }
-            Button { Task { await state.rescanPeers() } } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 11))
-                    .foregroundColor(Theme.subtext)
-            }
-            .buttonStyle(.plain).disabled(fleet.scanning)
-            .help("Scan the network again")
+            stripButton("arrow.clockwise", help: "重新扫描局域网") { Task { await state.rescanPeers() } }
+                .disabled(fleet.scanning)
+            stripButton("xmark", help: "收起") { state.togglePeerStrip() }
         }
-        .padding(.horizontal, 18).padding(.vertical, 7)
-        .background(Theme.panel.opacity(0.35))
     }
 
     private func tab(title: String, detail: String?, active: Bool,
                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Text(title).font(.system(size: 12, weight: active ? .semibold : .regular))
+            HStack(spacing: 6) {
+                Text(title).font(.fvLabel).lineLimit(1)
                 if let detail {
-                    Text(detail).font(.system(size: 10)).foregroundColor(Theme.subtext)
+                    Text(detail).font(.fvLabelSmall).monospacedDigit()
+                        .foregroundColor(active ? Theme.onSecondaryContainer.opacity(0.75) : Theme.onSurfaceVariant)
                 }
             }
-            .foregroundColor(active ? Theme.accent : Theme.text)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(active ? Theme.accent.opacity(0.14) : Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6)
-                .stroke(active ? Theme.accent.opacity(0.5) : Theme.stroke, lineWidth: 1))
+            .foregroundColor(active ? Theme.onSecondaryContainer : Theme.onSurface)
+            .padding(.horizontal, 12).frame(height: Theme.controlHeight - 6)
+            .background(active ? Theme.secondaryContainer : Color.clear)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private func stripButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 13))
+                .foregroundColor(Theme.onSurfaceVariant)
+                .frame(width: Theme.controlHeight, height: Theme.controlHeight)
+                .background(Theme.surfaceContainerHigh).clipShape(Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain).help(help)
     }
 }
