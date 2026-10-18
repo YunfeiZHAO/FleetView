@@ -21,6 +21,9 @@ struct TerminalCardView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.cardEmphasis) private var emphasis
     let terminal: TerminalSession
+    /// False for the copy that follows the cursor during a drag: drawn only, no gestures, and it
+    /// must not report a frame — it would claim to be the card it is a picture of.
+    var interactive: Bool = true
 
     @State private var hovering = false
     @State private var renaming = false
@@ -46,7 +49,16 @@ struct TerminalCardView: View {
     private var fg: Color { container?.fg ?? Theme.onSurface }
     private var fgSecondary: Color { container.map { $0.fg.opacity(0.78) } ?? Theme.onSurfaceVariant }
 
+    /// This card is the one being dragged: its place shows as an empty slot while the lifted copy
+    /// follows the cursor.
+    private var pickedUp: Bool { interactive && state.draggingTerminalId == terminal.id }
+
     var body: some View {
+        if interactive { live } else { face }
+    }
+
+    /// The card as drawn, with nothing attached.
+    private var face: some View {
         VStack(alignment: .leading, spacing: 8) {
             header.allowsHitTesting(renaming)     // display-only unless renaming → drags pass through the name/status
             promptLine.allowsHitTesting(false)    // never let the prompt text intercept a drag
@@ -60,6 +72,14 @@ struct TerminalCardView: View {
             .strokeBorder(ended ? Theme.outlineVariant : Color.clear, lineWidth: 1))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
             .strokeBorder(highlighted || treeDropTarget ? Theme.primary : Color.clear, lineWidth: 2))
+    }
+
+    private var live: some View {
+        face
+            .opacity(pickedUp ? 0 : 1)
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .foregroundColor(pickedUp ? Theme.outline : Color.clear))
         .background(GeometryReader { g in            // drop target: tree node, or another card
             Color.clear.preference(key: CardFramesKey.self,
                                    value: [terminal.id: [g.frame(in: .named("fleet"))]])

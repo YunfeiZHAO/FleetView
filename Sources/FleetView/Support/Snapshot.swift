@@ -46,6 +46,18 @@ enum Snapshot {
             state.dialog = .closeAll
             shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                   to: "\(dir)/dialog-close-\(suffix).png")
+            // Mid-drag: FleetView-1 lifted over the code_sense-1 card's neighbourhood, the dock up.
+            if let dragged = state.terminals.first(where: { $0.name == "FleetView-1" }),
+               let target = state.terminals.first(where: { $0.name == "code_sense-1" }) {
+                state.dialog = nil
+                state.draggingTerminalId = dragged.id
+                state.dragLocation = CGPoint(x: 900, y: 560)
+                state.clusterDrop = .project(target.projectId)
+                shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                      to: "\(dir)/drag-\(suffix).png")
+                state.draggingTerminalId = nil
+                state.clusterDrop = nil
+            }
             state.dialog = nil
             state.searchModel.app = state
             state.searchOpen = true

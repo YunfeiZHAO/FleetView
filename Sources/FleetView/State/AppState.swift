@@ -1734,18 +1734,14 @@ final class AppState: ObservableObject {
     // MARK: - Drag-to-act (self-managed gesture + manual hit-testing)
 
     enum DragZone: String, CaseIterable, Identifiable {
-        case done, duplicate, rename, leaveCluster, remove
+        case done, duplicate, rename, tree, leaveCluster, remove
         var id: String { rawValue }
     }
 
-    /// While a card is being dragged, the right edge becomes a drop target that opens that
-    /// terminal's session tree — the same edge the panel itself slides out from.
+    /// Opening a terminal's session tree by drag is a zone in the dock now. It used to be the
+    /// board's right 96pt, which could not be seen until you happened to drag over it, and which
+    /// covered the cards in the rightmost column so they could not be dropped on.
     @Published var hoveredTreeZone = false
-    var sessionTreeZoneFrame: CGRect {
-        guard boardFrame != .zero else { return .zero }
-        let w: CGFloat = 96
-        return CGRect(x: boardFrame.maxX - w, y: boardFrame.minY, width: w, height: boardFrame.height)
-    }
 
     @Published var draggingTerminalId: UUID?
     @Published var dragLocation: CGPoint = .zero      // in the "fleet" coordinate space
@@ -1763,7 +1759,7 @@ final class AppState: ObservableObject {
     var zoneFrames: [DragZone: CGRect] = [:]          // reported by the dock, not published
 
     func availableZones(for id: UUID) -> [DragZone] {
-        var zones: [DragZone] = [.done, .duplicate, .rename]
+        var zones: [DragZone] = [.done, .duplicate, .rename, .tree]
         if terminals.first(where: { $0.id == id })?.clusterId != nil { zones.append(.leaveCluster) }
         zones.append(.remove)
         return zones
@@ -1775,12 +1771,10 @@ final class AppState: ObservableObject {
         if draggingTerminalId != id { draggingTerminalId = id }
         dragLocation = point
         hoveredZone = zoneAt(point)
-        // The dock's explicit zones win; the edge only claims what they don't; a card takes what is
-        // left. In that order because the first two are overlays that appear *for* this drag and
-        // light up under the cursor — a card that quietly outranked them would steal a drop aimed
+        // The dock's zones win and a card takes what is left: the dock appears *for* this drag and
+        // lights up under the cursor, and a card that quietly outranked it would steal a drop aimed
         // at something the user can see they are aiming at.
-        hoveredTreeZone = hoveredZone == nil && sessionTreeZoneFrame.contains(point)
-        clusterDrop = (hoveredZone == nil && !hoveredTreeZone && !dockFrame.contains(point))
+        clusterDrop = (hoveredZone == nil && !dockFrame.contains(point))
             ? clusterTarget(for: id, at: point) : nil
     }
 
@@ -1931,7 +1925,6 @@ final class AppState: ObservableObject {
 
     func dragEnded(at point: CGPoint) {
         let zone = zoneAt(point)
-        let onTreeZone = hoveredTreeZone
         // What was highlighted, not what a fresh hit-test says: the drop belongs to the thing the
         // user could see was lit.
         let drop = clusterDrop
@@ -1942,7 +1935,6 @@ final class AppState: ObservableObject {
         clusterDrop = nil
         guard let id else { return }
         if let zone { perform(zone, on: id) }
-        else if onTreeZone { openSessionTree(id) }
         else if let drop { applyClusterDrop(id, drop) }
     }
 
@@ -1962,6 +1954,7 @@ final class AppState: ObservableObject {
         case .done:         toggleSubtaskDone(id)
         case .duplicate:    duplicateTerminal(id)
         case .rename:       requestRename(id)
+        case .tree:         openSessionTree(id)
         case .leaveCluster: removeFromCluster(id)
         case .remove:       removeTerminal(id)
         }

@@ -125,16 +125,16 @@ struct DashboardView: View {
     private var dropHint: String? {
         switch state.clusterDrop {
         case .cluster(let id):
-            return "松开：加入「\(state.cluster(id)?.name ?? "cluster")」"
+            return "松开：加入「\(state.cluster(id)?.name ?? "组")」"
         case .card(let id):
             guard let t = state.terminals.first(where: { $0.id == id }) else { return nil }
-            return "松开：与「\(t.name)」组成 cluster"
+            return "松开：和「\(t.name)」组成一组"
         case .leaveCluster:
             let name = state.terminals.first { $0.id == state.draggingTerminalId }?
                 .clusterId.flatMap { state.cluster($0)?.name }
-            return "松开：移出「\(name ?? "cluster")」"
+            return "松开：移出「\(name ?? "组")」"
         case .project(let id):
-            let name = state.projects.first { $0.id == id }?.name ?? "project"
+            let name = state.projects.first { $0.id == id }?.name ?? "项目"
             return "松开：移到「\(name)」"
         case nil:
             return nil
@@ -191,39 +191,36 @@ struct DashboardView: View {
         ZStack {
             if let dragId = state.draggingTerminalId {
                 // No scrim of its own: the dashboard already receded (see dashboardReceded), and a
-                // second wash on top of it also fell over the zones, which are the thing you are
-                // aiming at.
-                SessionTreeDropEdge(hot: state.hoveredTreeZone, frame: state.sessionTreeZoneFrame)
-                // What is being landed on — a whole cluster box, or a single card. Drawn HERE, not
-                // on the target itself, because the board lies under the dim wash and a highlight
-                // that is dimmed along with everything else is not a highlight.
+                // second wash on top of it would also fall over the dock, which is the thing you
+                // are aiming at.
                 //
-                // Clipped to the board: a target scrolled half under the top bar still reports its
-                // whole frame, and an accent ring drawn across the header highlights nothing.
-                // Where the card came from, drawn first and drawn quietly: the loudest thing on the
-                // board has to be what will happen, not what already is.
-                if let c = state.dragSourceClusterFrame {
-                    ring(c, radius: 14, tint: Theme.accent, width: 2, alpha: 0.35)
-                }
-                ForEach(Array(state.dragSourceCardFrames.enumerated()), id: \.offset) { _, r in
-                    ring(r, radius: 12, tint: Theme.accent, width: 1.5, alpha: 0.5,
-                         dash: [5, 4], fill: 0.06)
-                }
-                // …and what releasing here would do. Joining fills and glows; leaving is a dashed
-                // amber outline — the colour the dock's Leave Cluster zone already uses, and
-                // deliberately not the solid accent, because walking out of a task is the opposite
-                // outcome and must not read as landing in one.
+                // What is being landed on — a whole cluster box, or a single card. Drawn HERE, not
+                // on the target itself, because the board lies under the wash and a highlight that
+                // is dimmed along with everything else is not a highlight. Joining is a solid
+                // primary ring; leaving is a dashed warn one, because walking out of a task is the
+                // opposite outcome and must not read as landing in one.
                 if let target = state.clusterDropFrame {
                     ring(target.rect, radius: target.radius,
-                         tint: target.leaving ? Theme.amber : Theme.accent, width: 2.5,
+                         tint: target.leaving ? Theme.warn : Theme.primary, width: 2,
                          dash: target.leaving ? [7, 5] : [],
-                         fill: target.leaving ? 0.05 : 0.16,
-                         glow: target.leaving ? 0 : 0.5)
+                         fill: target.leaving ? 0 : 0.10)
                 }
                 VStack { Spacer(); ActionDock(terminalId: dragId).environmentObject(state) }
                 if let t = state.terminals.first(where: { $0.id == dragId }) {
-                    DragPreviewChip(name: t.name, status: t.status, hint: dropHint, note: dropNote)
-                        .position(x: state.dragLocation.x, y: state.dragLocation.y - 16)
+                    // The card itself, lifted and following the cursor — its place on the board is
+                    // left as an empty dashed slot (see TerminalCardView), so it reads as picked up.
+                    let w = state.dragSourceCardFrames.first?.width ?? BoardGrid.stripCardWidth
+                    TerminalCardView(terminal: t, interactive: false)
+                        .environmentObject(state)
+                        .frame(width: w)
+                        .rotationEffect(.degrees(-1.5))
+                        .shadow(color: .black.opacity(0.35), radius: 22, y: 12)
+                        .position(x: state.dragLocation.x + w / 2 - 36, y: state.dragLocation.y + 70)
+                    if let hint = dropHint {
+                        DragHintLabel(hint: hint, note: dropNote)
+                            .fixedSize()
+                            .position(x: state.dragLocation.x + 12, y: state.dragLocation.y - 26)
+                    }
                 }
             }
             if let d = state.treeDrag {
@@ -1594,34 +1591,6 @@ struct ProjectFramesKey: PreferenceKey {
 
 /// The right edge turns into a drop target while a card is dragged — release there to open that
 /// terminal's session tree, on the side the panel itself comes from.
-struct SessionTreeDropEdge: View {
-    let hot: Bool
-    let frame: CGRect
-
-    var body: some View {
-        if frame != .zero {
-            VStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(hot ? .white : Theme.accent)
-                Text("会话树")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(hot ? .white : Theme.accent.opacity(0.9))
-            }
-            .frame(width: frame.width, height: frame.height)
-            .background(
-                LinearGradient(colors: [Theme.accent.opacity(hot ? 0.42 : 0.13), .clear],
-                               startPoint: .trailing, endPoint: .leading)
-            )
-            .overlay(alignment: .trailing) {
-                Rectangle().fill(Theme.accent.opacity(hot ? 1 : 0.5)).frame(width: hot ? 3 : 1.5)
-            }
-            .position(x: frame.midX, y: frame.midY)
-            .animation(.easeOut(duration: 0.12), value: hot)
-        }
-    }
-}
-
 /// The chip that follows the cursor while dragging a tree node. Its second line is the whole
 /// hint system: it names what releasing HERE will do, and says nothing when there's no target.
 struct TreeDragChip: View {
