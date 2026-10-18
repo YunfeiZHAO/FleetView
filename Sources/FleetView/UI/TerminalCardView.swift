@@ -1,13 +1,31 @@
 import SwiftUI
 
-/// Whether a card sits in the board's "进行中" zone, where a running card takes the primary
-/// container and a needs-you card the warn container. Everywhere else a card is a plain filled card:
-/// colour is reserved for the one place that answers "what needs me now".
-private struct CardEmphasisKey: EnvironmentKey { static let defaultValue = false }
-extension EnvironmentValues {
-    var cardEmphasis: Bool {
-        get { self[CardEmphasisKey.self] }
-        set { self[CardEmphasisKey.self] = newValue }
+/// One ring going out from the card when its status changes, in the colour of the new state.
+/// Played once per change and never otherwise: a board that moves on its own is a board you stop
+/// trusting to mean something when it moves.
+private struct StatusHalo: View {
+    let trigger: TermStatus
+    let color: Color
+    let reduceMotion: Bool
+
+    private struct Phase { var spread: CGFloat = 0; var alpha: Double = 0 }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: Theme.Radius.card)
+            .strokeBorder(color, lineWidth: 2)
+            .keyframeAnimator(initialValue: Phase(), trigger: trigger) { ring, p in
+                ring.padding(-p.spread).opacity(p.alpha)
+            } keyframes: { _ in
+                KeyframeTrack(\.spread) {
+                    CubicKeyframe(reduceMotion ? 0 : 12, duration: 0.9)
+                    LinearKeyframe(0, duration: 0)
+                }
+                KeyframeTrack(\.alpha) {
+                    LinearKeyframe(0.8, duration: 0.06)
+                    CubicKeyframe(0, duration: 0.84)
+                }
+            }
+            .allowsHitTesting(false)
     }
 }
 
@@ -19,7 +37,7 @@ extension EnvironmentValues {
 /// height is reserved either way, so no two cards in a grid are ever different heights.
 struct TerminalCardView: View {
     @EnvironmentObject var state: AppState
-    @Environment(\.cardEmphasis) private var emphasis
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let terminal: TerminalSession
     /// False for the copy that follows the cursor during a drag: drawn only, no gestures, and it
     /// must not report a frame — it would claim to be the card it is a picture of.
@@ -29,6 +47,8 @@ struct TerminalCardView: View {
     @State private var renaming = false
     /// Non-nil while the copy button is showing feedback.
     @State private var idFlash: String?
+    /// Bumped when a fresh state's ten seconds run out, so the card redraws in its settled colour.
+    @State private var freshTick = 0
 
     private var done: Bool { terminal.subtaskDone }
     private var highlighted: Bool { state.highlightedTerminalId == terminal.id }
@@ -37,13 +57,54 @@ struct TerminalCardView: View {
     /// card with its content at the disabled opacity.
     private var ended: Bool { terminal.status == .exited || terminal.status == .closed }
 
-    /// Background and foreground when the card takes a container colour (see CardEmphasisKey).
-    private var container: (bg: Color, fg: Color)? {
-        guard emphasis else { return nil }
+    /// How the card is filled. The colour is the state, and the same wherever the card is drawn —
+    /// the 进行中 zone, its project, the recent tray. It used to be kept for the 进行中 zone alone,
+    /// which left a project's cards telling running from idle by one small shape: terminals start
+    /// and stop on their own, and the change was easy to miss.
+    ///
+    /// A change is "fresh" for `AppState.freshFor`: a run that has just started takes the strong
+    /// primary tone before settling into its container, and one that has just finished takes the
+    /// tertiary container before settling back to an ordinary card. The finished tint is a step
+    /// below running on purpose — something stopping needs you less than something going.
+    private enum Look: Equatable { case runningFresh, running, needsYou, finished, plain }
+
+    private var freshUntil: Date? {
         switch terminal.status {
-        case .working:  return (Theme.primaryContainer, Theme.onPrimaryContainer)
-        case .needsYou: return (Theme.warnContainer, Theme.onWarnContainer)
-        default:        return nil
+        case .working: return terminal.runningSince?.addingTimeInterval(AppState.freshFor)
+        case .idle:    return state.runEndedAt[terminal.id]?.addingTimeInterval(AppState.freshFor)
+        default:       return nil
+        }
+    }
+
+    private var look: Look {
+        _ = freshTick
+        let fresh = freshUntil.map { Date() < $0 } ?? false
+        switch terminal.status {
+        case .working:  return fresh ? .runningFresh : .running
+        case .needsYou: return .needsYou
+        case .idle:     return fresh ? .finished : .plain
+        default:        return .plain
+        }
+    }
+
+    /// Background and foreground when the card takes a colour (see `Look`).
+    private var container: (bg: Color, fg: Color)? {
+        switch look {
+        case .runningFresh: return (Theme.primary, Theme.onPrimary)
+        case .running:      return (Theme.primaryContainer, Theme.onPrimaryContainer)
+        case .needsYou:     return (Theme.warnContainer, Theme.onWarnContainer)
+        case .finished:     return (Theme.tertiaryContainer, Theme.onTertiaryContainer)
+        case .plain:        return nil
+        }
+    }
+
+    /// The halo's colour: the state the card just entered.
+    private var haloColor: Color {
+        switch look {
+        case .runningFresh, .running: return Theme.primary
+        case .needsYou:               return Theme.warn
+        case .finished:               return Theme.tertiary
+        case .plain:                  return Theme.outline
         }
     }
     private var fg: Color { container?.fg ?? Theme.onSurface }
@@ -72,10 +133,22 @@ struct TerminalCardView: View {
             .strokeBorder(ended ? Theme.outlineVariant : Color.clear, lineWidth: 1))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
             .strokeBorder(highlighted || treeDropTarget ? Theme.primary : Color.clear, lineWidth: 2))
+        // A status change crossfades the fill; the end of the fresh window eases it more slowly,
+        // since nothing happened then and it should not look as if something had.
+        .animation(.easeInOut(duration: 0.45), value: terminal.status)
+        .animation(.easeInOut(duration: 1.2), value: look)
     }
 
     private var live: some View {
         face
+            .overlay(StatusHalo(trigger: terminal.status, color: haloColor, reduceMotion: reduceMotion))
+            .task(id: freshUntil) {
+                // Redraw once when the fresh window closes — one sleep per card that is fresh,
+                // not a clock ticking on every card.
+                guard let until = freshUntil, until > Date() else { return }
+                try? await Task.sleep(for: .seconds(until.timeIntervalSinceNow + 0.05))
+                if !Task.isCancelled { freshTick &+= 1 }
+            }
             .opacity(pickedUp ? 0 : 1)
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
@@ -108,7 +181,19 @@ struct TerminalCardView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            StatusGlyph(status: terminal.status, onColor: container?.fg)
+            Group {
+                if look == .finished {
+                    FinishedGlyph(color: container?.fg ?? Theme.tertiary, cutout: container?.bg ?? Theme.surface)
+                } else {
+                    StatusGlyph(status: terminal.status, onColor: container?.fg)
+                }
+            }
+            // A new identity per state, so a change replaces the shape — the old one shrinks away
+            // and the new one springs in — rather than morphing one path into an unrelated one.
+            .id(look == .finished ? "finished" : terminal.status.rawValue)
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.3).combined(with: .opacity))
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.55),
+                       value: look == .finished ? "finished" : terminal.status.rawValue)
             EditableText(text: terminal.name,
                          font: .fvTitleSmall,
                          color: fg,

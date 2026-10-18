@@ -333,6 +333,7 @@ enum UIText {
     case errForkWrite(String)
     case peerReading(String)
     case peerNoTerminals(String)
+    case cardJustFinished
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,

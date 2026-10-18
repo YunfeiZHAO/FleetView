@@ -325,6 +325,7 @@ extension UIText {
         case .errForkWrite(let a): return "无法写入分叉出的会话：\(a)"
         case .peerReading(let a): return "正在读取 \(a)…"
         case .peerNoTerminals(let a): return "\(a) 上没有终端"
+        case .cardJustFinished: return "刚完成"
         }
     }
 }

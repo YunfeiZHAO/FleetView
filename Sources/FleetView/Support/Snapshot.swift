@@ -96,8 +96,13 @@ enum Snapshot {
         exit(0)
     }
 
+    /// Re-dates the sample's fresh changes before every shot: they are fresh for ten seconds, and a
+    /// full run of shots takes longer than that.
+    @MainActor private static var freshen: () -> Void = {}
+
     @MainActor private static func shoot<V: View>(_ view: V, size: NSSize,
                                                   appearance: NSAppearance.Name, to path: String) {
+        freshen()
         let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless],
@@ -176,9 +181,9 @@ enum Snapshot {
               prompt: w("Run the checkout e2e suite and group the failures by module in report.md",
                         "跑完结账流程的端到端测试，把失败用例按模块归类，写到 report.md"),
               tokens: 1_200_000, running: 847),
-            t(shop, "web-store-1", .idle, .claude, ago: 60,
+            t(shop, "web-store-1", .working, .claude, ago: 1,
               prompt: w("Add a loading skeleton to the product grid", "给商品网格加一个加载骨架屏"),
-              tokens: 3_100_000),
+              tokens: 3_100_000, running: 2),
             t(shop, "dev-server", .shell, .unknown, ago: 3600, prompt: "npm run dev"),
             d1, d2,
             t(rides, treeTerminal, .idle, .claude, ago: 518_400,
@@ -190,6 +195,17 @@ enum Snapshot {
             t(tmp, "load-test", .closed, .unknown, ago: 18_000,
               prompt: "for i in $(seq 50); do curl -s localhost:8123/health; done"),
         ]
+        // One run that has just started (web-store-1) and one that has just finished (FleetView-1),
+        // so both fresh colours are in every shot.
+        freshen = { [weak s] in
+            guard let s else { return }
+            if let i = s.terminals.firstIndex(where: { $0.name == "web-store-1" }) {
+                s.terminals[i].runningSince = Date().addingTimeInterval(-2)
+            }
+            if let fv1 = s.terminals.first(where: { $0.name == "FleetView-1" }) {
+                s.runEndedAt[fv1.id] = Date().addingTimeInterval(-2)
+            }
+        }
         s.notes = [Note(text: "claude --dangerously-skip-permissions"),
                    Note(text: "claude --resume"),
                    Note(text: "~/dev/FleetView/docs/design"),

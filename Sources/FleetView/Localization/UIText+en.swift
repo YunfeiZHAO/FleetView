@@ -325,6 +325,7 @@ extension UIText {
         case .errForkWrite(let a): return "Couldn't write the forked conversation: \(a)"
         case .peerReading(let a): return "Reading \(a)…"
         case .peerNoTerminals(let a): return "No terminals on \(a)"
+        case .cardJustFinished: return "Just finished"
         }
     }
 }

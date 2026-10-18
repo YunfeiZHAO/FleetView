@@ -882,6 +882,7 @@ struct TopBar: View {
 
 struct MainArea: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if state.projects.isEmpty {
@@ -914,6 +915,11 @@ struct MainArea: View {
                                 DormantZone(projects: dormant)
                             }
                         }
+                        // Cards entering and leaving the 进行中 zone, moving within it, and the
+                        // board below sliding as the zone grows or empties. Keyed on the zone's
+                        // membership and order only, so nothing else on the board animates by it.
+                        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
+                                   value: RunningStrip.live(state).map(\.id))
                         .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 24)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -968,13 +974,19 @@ struct ZoneHeader: View {
 /// furniture that is wrong most of the time.
 struct RunningStrip: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var live: [TerminalSession] {
+    /// Needs-you first, then the running ones newest first: whatever just started is always in the
+    /// same place, right after the cards waiting on you, with the smallest clock.
+    static func live(_ state: AppState) -> [TerminalSession] {
         let v = state.visible(state.terminals.filter { $0.status == .working || $0.status == .needsYou })
-        return v.filter { $0.status == .needsYou } + v.filter { $0.status == .working }
+        return v.filter { $0.status == .needsYou }
+            + v.filter { $0.status == .working }
+               .sorted { ($0.runningSince ?? .distantPast) > ($1.runningSince ?? .distantPast) }
     }
 
     var body: some View {
+        let live = Self.live(state)
         if !live.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 ZoneHeader(title: L(.zoneLive), count: live.count)
@@ -984,10 +996,14 @@ struct RunningStrip: View {
                             ProjectTag(terminal: t)
                             TerminalCardView(terminal: t)
                         }
+                        .transition(reduceMotion ? .opacity
+                                    : .asymmetric(insertion: .scale(scale: 0.92).combined(with: .opacity),
+                                                  removal: .scale(scale: 0.92).combined(with: .opacity)
+                                                      .animation(.easeIn(duration: 0.2))))
                     }
                 }
-                .environment(\.cardEmphasis, true)
             }
+            .transition(.opacity)
         }
     }
 }

@@ -102,6 +102,36 @@ struct StatusGlyph: View {
     }
 }
 
+/// A run that has just finished: a disc with a check through it. The check is drawn in the colour
+/// under the glyph rather than cut out, so it reads as a hole without needing an even-odd outline
+/// of a stroked path.
+struct FinishedGlyph: View {
+    let color: Color
+    let cutout: Color
+    var size: CGFloat = 16
+
+    var body: some View {
+        ZStack {
+            Circle().fill(color).frame(width: size * 0.88, height: size * 0.88)
+            CheckMark().stroke(cutout, style: StrokeStyle(lineWidth: size * 0.11, lineCap: .round, lineJoin: .round))
+                .frame(width: size * 0.44, height: size * 0.34)
+        }
+        .frame(width: size, height: size)
+        .help(L(.cardJustFinished))
+        .accessibilityLabel(Text(L(.cardJustFinished)))
+    }
+}
+
+struct CheckMark: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY + r.height * 0.55))
+        p.addLine(to: CGPoint(x: r.minX + r.width * 0.36, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        return p
+    }
+}
+
 /// Nine soft scallops around a disc.
 struct SoftBurst: Shape {
     func path(in rect: CGRect) -> Path {

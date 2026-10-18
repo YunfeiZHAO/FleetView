@@ -84,6 +84,18 @@ final class AppState: ObservableObject {
 
     @Published var treePanelTerminalId: UUID?
     @Published var treePanelWidth: Double = 460
+
+    // MARK: - Fresh changes
+
+    /// When each terminal's last run ended by going back to idle. Kept only in memory: it drives the
+    /// few seconds a card that just finished stays tinted, and after a relaunch nothing is fresh.
+    @Published var runEndedAt: [UUID: Date] = [:]
+    /// How long a change counts as fresh: a run that started this recently draws in the strong
+    /// primary tone, one that ended this recently in the tertiary container, then both settle.
+    /// Terminals start and stop on their own (hooks, auto-recover, scheduled pings), and a
+    /// one-off animation is missed by anyone not looking at that moment; this is long enough to
+    /// catch with a glance and short enough not to become a second state to read.
+    static let freshFor: TimeInterval = 10
     let treeModel = SessionTreeModel()
 
     // MARK: - Conversation search (⌘K)
@@ -1979,6 +1991,9 @@ final class AppState: ObservableObject {
         case .needsYou:
             break                                   // same turn, waiting on you — keep counting
         case .idle, .shell, .closed, .exited:
+            // Only a run that came back to the prompt "finished"; one cut off by a closed window
+            // or an exited process is drawn as what it became.
+            if s == .idle, terminals[idx].runningSince != nil { runEndedAt[terminals[idx].id] = Date() }
             finishRun(at: idx, endedBy: s.label)
         }
         terminals[idx].status = s
@@ -2586,6 +2601,9 @@ final class AppState: ObservableObject {
                                  ? (t.runningSince.map { max(0, Int(Date().timeIntervalSince($0))) } ?? -1)
                                  : -1,
                              lastRun: t.lastRunSeconds ?? -1,
+                             finished: t.status == .idle
+                                 ? (runEndedAt[t.id].map { max(0, Int(Date().timeIntervalSince($0))) } ?? -1)
+                                 : -1,
                              cwd: t.cwd,
                              transcript: t.transcriptPath,
                              window: windowState(t.id).rawValue)
