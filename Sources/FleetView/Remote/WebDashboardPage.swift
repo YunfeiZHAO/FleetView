@@ -10,7 +10,7 @@ enum WebDashboardPage {
     // A raw string (#"""…"""#) so the inline JS can use backslashes (regex, "\n") verbatim.
     static let html = #"""
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -98,10 +98,41 @@ enum WebDashboardPage {
   /* Stops the rubber-band at the root, so a flick that the overlay did not consume cannot drag the
      page itself — the same class of movement the overlay's own overflow now prevents. */
   html{overscroll-behavior:none}
+  /* PingFang SC named ahead of the generic fallbacks: with lang=zh-CN that is what the Mac draws, and
+     a browser left to pick its own CJK face mixes two of them on one card. Tabular figures throughout,
+     so a clock or a token count does not shuffle its neighbours as it changes. */
   body{background:var(--bg);color:var(--text);
-    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font:14px/20px -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-variant-numeric:tabular-nums;
     -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
-  #panel{display:none;position:relative;border-bottom:1px solid var(--stroke);background:var(--bg)}
+  button,input,textarea{font-family:inherit}
+  /* Material 3's type scale — the same steps as the Mac's Theme. Every size on the page is one of
+     16 / 14 / 12 / 11; weights are 500 or 400 and nothing else. */
+  .tm{font-size:16px;line-height:24px;font-weight:500}
+  .ts{font-size:14px;line-height:20px;font-weight:500}
+  .bs{font-size:12px;line-height:16px;font-weight:400}
+  .lm{font-size:12px;line-height:16px;font-weight:500}
+  .ls{font-size:11px;line-height:16px;font-weight:500}
+  /* Line icons, Lucide's geometry drawn inline (see IC) so the page still needs nothing off the LAN.
+     18 in a control, 16 on a card or a row. */
+  svg.ic{width:18px;height:18px;flex:none;display:block;fill:none;stroke:currentColor;stroke-width:1.75;
+    stroke-linecap:round;stroke-linejoin:round}
+  svg.ic.s16{width:16px;height:16px}
+  svg.ic.s14{width:14px;height:14px}
+  svg.ic.s12{width:12px;height:12px}
+  /* Status is a still shape in a role colour, never a word and never moving (see glyph()). The word
+     is the shape's title, for hover and for a screen reader. */
+  svg.g{width:16px;height:16px;flex:none;display:block;overflow:visible}
+  svg.g.s12{width:12px;height:12px}
+  .g.working{color:var(--accent)}
+  .g.needsYou{color:var(--amber)}
+  .g.idle,.g.shell{color:var(--outline)}
+  .g.exited,.g.closed{color:color-mix(in srgb,var(--text) 38%,transparent)}
+  /* Who the agent is — identity, not state, so it only ever sits in a card's footer. */
+  svg.ag{width:13px;height:13px;flex:none;display:block;overflow:visible}
+  .ag.claude{color:var(--claude)}
+  .ag.codex{color:var(--codex)}
+  #panel{display:none;position:relative;border-bottom:1px solid var(--outlineVariant);background:var(--bg)}
   #panel.show{display:block}
   #panelframe{width:100%;height:240px;border:0;display:block;background:var(--bg)}
   /* 240px is a third of an iPhone SE's screen spent before the board has drawn a single card. The
@@ -111,26 +142,59 @@ enum WebDashboardPage {
   #panel.min #panelframe{height:0}
   /* Collapsing zeroed the iframe, the panel box collapsed with it, and the sticky header (z-index 5)
      painted over the absolutely-positioned toggle — so "hide" could never be undone. */
-  #panel.min{min-height:30px}
-  #panel .pcollapse{position:absolute;right:8px;top:6px;z-index:6;background:var(--card);color:var(--sub);
-    border:1px solid var(--stroke);border-radius:6px;font-size:11px;padding:2px 8px;cursor:pointer}
-  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-    transition:transform .24s cubic-bezier(.2,.8,.3,1);
-    padding:12px 16px;background:var(--headerBg);backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--stroke);padding-top:max(12px,env(safe-area-inset-top));
+  #panel.min{min-height:40px}
+  #panel .pcollapse{position:absolute;right:8px;top:6px;z-index:6;display:inline-flex;align-items:center;gap:4px;
+    height:28px;padding:0 12px 0 8px;background:var(--card);color:var(--sub);border:0;border-radius:999px;
+    font-size:12px;line-height:16px;font-weight:500;cursor:pointer}
+  /* The Material top app bar: the page's own surface, no rule under it, and every control in it the
+     same 36px pill — a row where some controls have a ground and some do not reads as two rows. */
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    transition:transform .2s cubic-bezier(.2,.8,.3,1);
+    min-height:64px;padding:14px 16px;background:var(--bg);padding-top:max(14px,env(safe-area-inset-top));
     padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
   /* Slides up while you read down the board and comes back on the way up (see autoHide). */
   header.hide{transform:translateY(calc(-100% - 1px))}
-  .logo{font-weight:600;font-size:15px}.logo b{color:var(--accent)}
-  .muted{color:var(--sub);font-size:13px}
-  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px}
+  .brand{display:inline-flex;align-items:center;gap:10px;margin-right:6px}
+  .brand .logo{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--onAccent);
+    display:grid;place-items:center;flex:none}
+  .brand .logo svg{width:16px;height:16px;stroke-width:2.25}
+  .muted{color:var(--sub)}
   .spacer{flex:1}
-  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .tb{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;
+    height:36px;min-width:36px;padding:0 9px;border:0;border-radius:999px;background:var(--card);color:var(--sub);
+    font-size:12px;line-height:16px;font-weight:500;cursor:pointer;transition:background .15s}
+  .tb:active{background:var(--cardHover)}
+  @media (hover:hover){ .tb:hover{background:var(--cardHover)} }
+  .tb.on,.tb.on:hover{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  /* The summary is the shapes the cards use, counted, in the container colour of the zone they lead
+     to — "1 needs you" spelled out was a sentence to read where a mark is a glance. */
+  #pills{display:contents}
+  .badge{display:inline-flex;align-items:center;gap:6px;flex:none;height:36px;padding:0 12px;border-radius:999px;
+    font-size:12px;line-height:16px;font-weight:500}
+  .badge.need{background:var(--warnContainer);color:var(--onWarnContainer)}
+  .badge.run{background:var(--primaryContainer);color:var(--onPrimaryContainer)}
+  .badge .g{color:inherit}
+  /* A phone has room for the controls or for the words, not both. Narrower still, the brand goes
+     too and the summary badges take the left edge, so the whole bar stays one row. */
+  @media (max-width:560px){
+    #counts,.brand .bname{display:none}
+    header{gap:6px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+    .badge{padding:0 10px}
+    header .netsig{padding:0 10px}
+  }
+  @media (max-width:440px){
+    .brand{display:none}
+    header .spacer{order:1}
+    header .tb,header .netsig{order:2}
+    /* The bars over the number, as in the conversation's header, so the pill is an icon wide. */
+    header .netsig{flex-direction:column;justify-content:center;gap:1px;width:44px;padding:0;line-height:14px}
+  }
   /* Connection: signal bars and round-trip time, from the /ping probe (see ping()). */
-  .netsig{display:inline-flex;align-items:center;gap:5px;background:none;border:0;padding:4px 2px;
-    font:inherit;font-size:11px;color:var(--sub);cursor:pointer;font-variant-numeric:tabular-nums}
+  .netsig{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:4px 2px;
+    font:inherit;font-size:11px;line-height:16px;font-weight:500;color:var(--sub);cursor:pointer;font-variant-numeric:tabular-nums}
+  header .netsig{height:36px;padding:0 12px;border-radius:999px;background:var(--card)}
   .bars{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
-  .bars i{width:3px;border-radius:1px;background:var(--stroke)}
+  .bars i{width:3px;border-radius:1px;background:var(--outlineVariant)}
   .bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:6px}
   .bars i:nth-child(3){height:9px}.bars i:nth-child(4){height:12px}
   .bars.l4 i,.bars.l3 i:nth-child(-n+3){background:var(--green)}
@@ -138,75 +202,126 @@ enum WebDashboardPage {
   .bars.l1 i:nth-child(1){background:var(--red)}
   .netsig.off .ms{color:var(--red)}
   /* In the conversation's header: the bars over the number, in the width of an icon button. */
-  .tsig{flex:none;width:40px;flex-direction:column;gap:2px;padding:0;font-size:9.5px}
-  main{padding:16px;max-width:1200px;margin:0 auto;padding-bottom:120px;
+  .tsig{flex:none;width:40px;flex-direction:column;gap:2px;padding:0}
+  main{padding:8px 16px 120px;max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:24px;
     padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
-  .proj{margin-bottom:26px}
-  .projhead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-  .projhead .name{font-size:15px;font-weight:600}
-  .projhead .count{font-size:11px;font-weight:600;color:var(--sub);background:var(--card);padding:1px 7px;border-radius:999px}
-  .projhead .tok{font-size:11px;font-weight:600;color:var(--accent);background:var(--accentSoft);padding:1px 7px;border-radius:999px}
-  .addbtn{margin-left:auto;font-size:12px;font-weight:600;color:var(--accent);background:var(--accentSoft);
-    border:1px solid var(--accentEdge);border-radius:7px;padding:5px 10px;cursor:pointer}
-  .addbtn:active{transform:scale(.96)}
+  /* ---- the board, in the Mac's order: 进行中 → projects used in the last two hours → the rest ---- */
+  .zh{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+  .zh .n{color:var(--sub)}
+  /* One grid for every card on the board, so a card is the same size wherever it appears. */
   .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-  /* "running now" — the same cards, tinted with the running colour so the strip reads as a state
-     rather than as another project. */
-  .runbox{padding:12px;border-radius:16px;background:var(--panel);
-    border:1px solid var(--stroke)}
-  .runbox .projhead{margin-bottom:10px}
-  .rlabel{font-size:10px;font-weight:700;color:var(--green);letter-spacing:.04em}
-  .rtag{font-size:10px;font-weight:500;color:var(--sub);opacity:.85;margin:0 0 4px 2px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .card{background:var(--card);border:1px solid var(--stroke);border-radius:12px;padding:13px 14px;
-    display:flex;flex-direction:column;gap:9px;transition:transform .1s,background .12s;cursor:pointer;
-    position:relative;user-select:none;-webkit-user-select:none}
+  /* 进行中 lifts a card out of its project, so the card has to say where it came from. */
+  .from{display:flex;align-items:center;gap:6px;min-width:0;margin:0 0 6px 2px;color:var(--sub)}
+  .from span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rc{min-width:0}
+  /* A Material filled card: three rows — status and name, the last prompt, who and how much. */
+  .card{background:var(--card);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;
+    transition:transform .12s,background .12s;cursor:pointer;position:relative;min-width:0;
+    user-select:none;-webkit-user-select:none}
   /* touch-action is NOT inherited: with it only on .card, a finger landing on the card's text hit
      an `auto` element and the browser scrolled instead. pan-y keeps the list scrollable; a press
      and hold claims the gesture for dragging (see onDown). */
   .card, .card *{touch-action:pan-y}
-  .card.armed{transform:scale(1.03);box-shadow:0 10px 26px rgba(0,0,0,.5);border-color:var(--accent)}
-  .card:hover{background:var(--cardHover)}
-  .card.locked{cursor:default;opacity:.6}
-  /* Violet, and never a hard-coded near-black: this was #101c13, which stayed black on a light
-     page. Matches the desktop card exactly. */
-  .card.done{background:var(--markBg);border-color:var(--markTint)}
-  .card.dragging{opacity:.35}
-  .cardtop{display:flex;align-items:center;gap:9px}
-  .cardtop .name{font-weight:600;font-size:14px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .agent{font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;text-transform:uppercase}
-  .status{font-size:11px;font-weight:600}
-  .prompt{font-size:12px;color:var(--sub);display:flex;gap:6px;min-height:32px}
-  .prompt .sig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;flex:none}
-  .prompt .txt{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .ago{font-size:10px;color:var(--sub);opacity:.75;text-align:right}
-  /* Footer row: the id on the left, the clock on the right — the same places the desktop card
-     puts them, because this board is now also read side by side with that one. */
-  .foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:-3px}
-  .uid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--sub);
-       opacity:.55;cursor:pointer;letter-spacing:.2px}
-  .uid:hover{opacity:.9}
-  .uid:active{color:var(--accent)}
+  @media (hover:hover){ .card:hover{background:var(--cardHover)} }
+  .card.locked{cursor:default}
+  .card .hd{display:flex;align-items:center;gap:10px;height:20px;min-width:0}
+  .card .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .when{flex:none;color:var(--sub)}
   /* tabular-nums so a ticking clock doesn't shuffle the card's right edge every second */
-  .run{color:var(--green);font-weight:600;font-variant-numeric:tabular-nums}
-  /* The run is over: same figure, no longer green — the status label already says how it ended. */
-  .run.done{color:var(--sub);opacity:.9}
-  .cluster{border:1px solid var(--accentEdge);background:var(--accentFaint);border-radius:14px;padding:12px;margin-bottom:12px}
-  .cluster .clabel{font-size:9px;font-weight:700;color:var(--accent);background:var(--accentSoft);padding:2px 6px;border-radius:999px;margin-right:6px}
-  .cluster .chead{display:flex;align-items:center;margin-bottom:10px}
-  .cluster .cname{font-weight:600;font-size:14px}
-  .banner{background:var(--amberSoft);border:1px solid var(--amberEdge);color:var(--amber);padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:16px}
-  .empty{color:var(--sub);text-align:center;padding:60px 20px}
-  /* drag chip + action dock */
-  #chip{position:fixed;z-index:60;pointer-events:none;display:none;background:var(--card);border:1px solid var(--accent);
-    border-radius:9px;padding:7px 11px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.5);transform:translate(-50%,-140%)}
-  #dock{position:fixed;left:0;right:0;bottom:0;z-index:55;display:none;justify-content:center;gap:10px;flex-wrap:wrap;
-    padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.75) 45%)}
-  .zone{min-width:88px;text-align:center;padding:14px 12px;border-radius:12px;font-size:13px;font-weight:600;
-    background:var(--card);border:1px solid var(--stroke);color:var(--text)}
-  .zone.hot{background:var(--accent);color:var(--onAccent);border-color:var(--accent);transform:scale(1.06)}
-  .zone.danger{color:var(--red);border-color:var(--redEdge)}
-  .zone.danger.hot{background:var(--red);color:#fff}
+  .card .clock{color:var(--accent)}
+  .card .mk{flex:none;color:var(--tertiary)}
+  .card .mk svg{fill:currentColor}
+  .card .hid{flex:none;color:var(--sub)}
+  /* Two lines, always: a one-line prompt must not make a shorter card than its neighbours. */
+  .card .pr{display:flex;gap:6px;height:32px;min-width:0;color:var(--sub)}
+  .card .pr .sig{flex:none;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace}
+  .card .pr .tx{min-width:0;overflow:hidden;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .card .ft{display:flex;align-items:center;gap:8px;height:28px;min-width:0;color:var(--sub)}
+  /* Copies the terminal's ip/uuid. The Mac shows its card buttons on hover; a phone has no hover,
+     so there it stays, without the ground. */
+  .card .uid{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;
+    border-radius:999px;background:var(--surfaceHighest);color:var(--sub);cursor:pointer}
+  @media (hover:hover){ .card .uid{opacity:0;transition:opacity .12s} .card:hover .uid{opacity:1} }
+  /* 进行中 — the only coloured cards on the board: running on primary-container, needs-you on
+     warn-container. Secondary text is the same ink at 78% rather than a second hue. */
+  .card.tint.run{background:var(--primaryContainer);color:var(--onPrimaryContainer)}
+  .card.tint.need{background:var(--warnContainer);color:var(--onWarnContainer)}
+  .card.tint .g,.card.tint .ag,.card.tint .when,.card.tint .clock,.card.tint .mk,.card.tint .uid{color:inherit}
+  .card.tint.run .pr,.card.tint.run .ft,.card.tint.run .hid{color:color-mix(in srgb,var(--onPrimaryContainer) 78%,transparent)}
+  .card.tint.need .pr,.card.tint.need .ft,.card.tint.need .hid{color:color-mix(in srgb,var(--onWarnContainer) 78%,transparent)}
+  .card.tint .uid{background:color-mix(in srgb,currentColor 12%,transparent)}
+  @media (hover:none){ .card .uid,.card.tint .uid{background:transparent} }
+  /* Ended (exited / closed): Material's outlined card, its contents at the disabled 38%. Same size as
+     every other card — the step down is colour and opacity, never dimensions. */
+  .card.ghost{background:transparent;box-shadow:inset 0 0 0 1px var(--outlineVariant)}
+  .card.ghost > *{opacity:.38}
+  @media (hover:hover){ .card.ghost:hover{background:transparent} .card.ghost:hover > *{opacity:1} }
+  /* Held long enough to drag: lifted, with the primary ring the drop targets use. */
+  .card.armed{transform:scale(1.02);box-shadow:0 10px 26px rgba(0,0,0,.4);outline:2px solid var(--accent);outline-offset:-2px}
+  /* While it is being dragged the card leaves a dashed space where it was. */
+  .card.dragging{background:transparent;box-shadow:none;transform:none;outline:1.5px dashed var(--outline);outline-offset:-1.5px}
+  .card.dragging > *{visibility:hidden}
+  /* A group of terminals on one task: a frame around cards, not a coloured block. */
+  .cluster{border-radius:16px;padding:12px;box-shadow:inset 0 0 0 1px var(--outlineVariant);margin-bottom:12px}
+  .cluster .chead{display:flex;align-items:center;gap:8px;height:28px;margin-bottom:12px;color:var(--sub);min-width:0}
+  .cluster .cname{color:var(--text);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* A full-width rule above every project is what tells the sections apart from 进行中 above them. */
+  .proj{border-top:1px solid var(--outlineVariant);padding-top:16px}
+  .ph{display:flex;align-items:center;gap:12px;min-height:40px;margin-bottom:8px;min-width:0}
+  .ph .pname{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ph .meta{display:flex;align-items:center;gap:14px;flex:none;color:var(--sub)}
+  .ph .meta > span{display:inline-flex;align-items:center;gap:4px}
+  .ph .acts{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
+  @media (max-width:420px){ .ph{gap:10px} .ph .meta{gap:10px} }
+  /* Standard icon buttons — no ground, a state layer on press — as every action in a project header is. */
+  .icb{display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:999px;
+    background:transparent;color:var(--sub);cursor:pointer;transition:background .12s}
+  .icb:active{background:color-mix(in srgb,var(--text) 12%,transparent)}
+  @media (hover:hover){ .icb:hover{background:color-mix(in srgb,var(--text) 8%,transparent)} }
+  /* A project with no terminals: its empty row is the way to start one. */
+  .emptyrow{display:flex;align-items:center;gap:8px;width:100%;padding:16px;border-radius:12px;cursor:pointer;
+    background:transparent;color:var(--sub);border:1px dashed var(--outlineVariant);font-size:12px;line-height:16px;font-weight:500}
+  /* Quiet for two hours: one row per project — its name, every terminal as a small status shape, its
+     tokens and when it was last touched. A tap opens the whole section for this visit. */
+  .dorm{border-top:1px solid var(--outlineVariant);padding-top:16px;display:flex;flex-direction:column;gap:8px}
+  .dorm .zh{margin-bottom:4px}
+  .drow{display:flex;align-items:center;gap:14px;width:100%;height:44px;padding:0 16px;border:0;border-radius:12px;
+    background:var(--panel);color:var(--sub);cursor:pointer;text-align:left;min-width:0;transition:background .12s}
+  .drow:active{background:var(--card)}
+  @media (hover:hover){ .drow:hover{background:color-mix(in srgb,var(--card) 50%,var(--panel))} }
+  .drow .dn{color:var(--text);min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drow .marks{display:flex;gap:3px;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden}
+  .drow .r{margin-left:auto;display:flex;gap:16px;align-items:center;flex:none}
+  .drow .r span:last-child{min-width:28px;text-align:right}
+  @media (max-width:420px){ .drow{gap:10px;padding:0 12px} .drow .r{gap:10px} }
+  .dorm .proj{border-top:0;padding-top:4px}
+  .banner{background:var(--warnContainer);color:var(--onWarnContainer);padding:12px 16px;border-radius:12px}
+  .banner b{font-weight:500}
+  .empty{color:var(--sub);text-align:center;padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .empty .et{color:var(--text)}
+  .empty svg.ic{width:24px;height:24px}
+  .tonal{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;margin-top:8px;border:0;border-radius:999px;
+    background:var(--secondaryContainer);color:var(--onSecondaryContainer);cursor:pointer;font-size:12px;line-height:16px;font-weight:500}
+  /* Dragging: a small inverse label rides with the finger and says what letting go will do. */
+  #chip{position:fixed;z-index:60;pointer-events:none;display:none;max-width:70vw;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;background:var(--inverseSurface);color:var(--inverseOnSurface);border-radius:8px;padding:6px 10px;
+    font-size:12px;line-height:16px;font-weight:500;box-shadow:0 6px 18px rgba(0,0,0,.35);transform:translate(-50%,-160%)}
+  /* The action bar a card is dropped on: surface-container-high, the dialog corner, the destructive
+     action last and in the error colour. */
+  #dock{position:fixed;left:12px;right:12px;bottom:max(16px,env(safe-area-inset-bottom));z-index:55;display:none;
+    justify-content:center;gap:4px;width:auto;max-width:600px;margin:0 auto;padding:8px;border-radius:28px;
+    background:var(--card);box-shadow:0 8px 28px rgba(0,0,0,.4)}
+  .zone{flex:1 1 0;min-width:0;max-width:96px;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:10px 4px;border-radius:20px;color:var(--text);text-align:center;white-space:nowrap;
+    font-size:12px;line-height:16px;font-weight:500;transition:background .12s}
+  .zone svg.ic{width:20px;height:20px}
+  .zone span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .zone.hot{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  .zone.danger{color:var(--red)}
+  .zone.danger.hot{background:var(--errorContainer);color:var(--onErrorContainer)}
+  /* Six actions across a phone: tighter, and the label a step down, so "取消书签" still fits whole. */
+  @media (max-width:440px){ #dock{gap:2px;padding:6px} .zone{padding:10px 2px;font-size:11px} }
   /* terminal overlay */
   /* The height has been wrong in both directions, so it is worth saying what it is now.
      Measuring the visible viewport in JS left a gap: whenever the value lagged the browser chrome
@@ -251,21 +366,22 @@ enum WebDashboardPage {
     padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);
     padding-right:env(safe-area-inset-right);
     background:var(--headerBg);-webkit-backdrop-filter:blur(18px) saturate(150%);
-    backdrop-filter:blur(18px) saturate(150%);border-bottom:1px solid var(--stroke);
-    transition:transform .24s cubic-bezier(.2,.8,.3,1)}
+    backdrop-filter:blur(18px) saturate(150%);border-bottom:1px solid var(--outlineVariant);
+    transition:transform .2s cubic-bezier(.2,.8,.3,1)}
   #term.headhide #thead{transform:translateY(calc(-100% - 1px))}
   #termbar{display:flex;align-items:center;gap:4px;min-height:54px;padding:5px 8px;
     max-width:980px;margin:0 auto}
   /* Icon buttons: no box until pressed. Five bordered boxes in one row was most of what made the
      bar look heavy. */
   .ib{flex:none;width:40px;height:40px;display:grid;place-items:center;background:transparent;
-    border:0;border-radius:12px;color:var(--text);cursor:pointer;padding:0}
-  .ib:active{background:var(--card)}
-  .ib svg,.rb svg,.nsearch svg,.tile svg{width:22px;height:22px;fill:none;stroke:currentColor;
-    stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    border:0;border-radius:999px;color:var(--text);cursor:pointer;padding:0}
+  .ib:active{background:color-mix(in srgb,var(--text) 12%,transparent)}
+  .ib svg,.rb svg,.nsearch svg,.tile svg{width:20px;height:20px;fill:none;stroke:currentColor;
+    stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+  .tile svg{width:24px;height:24px}
   .rb svg circle[r="1.2"]{fill:currentColor;stroke:none}
   .ttl{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 4px}
-  #termbar .tname{font-weight:650;font-size:15px;line-height:1.25;white-space:nowrap;overflow:hidden;
+  #termbar .tname{font-weight:500;font-size:16px;line-height:22px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis}
   #termframe{flex:1;border:0;width:100%;background:#000;display:none}
   #termframe.on{display:block}
@@ -274,15 +390,17 @@ enum WebDashboardPage {
   #termerr{display:none;flex:1;align-items:center;justify-content:center;padding:24px;background:var(--bg)}
   #termerr.on{display:flex}
   #termerr .te{max-width:420px;text-align:center;display:flex;flex-direction:column;gap:10px}
-  #termerr .te b{font-size:14px;color:var(--text)}
-  #termerr .te span{font-size:12px;color:var(--sub);line-height:1.5}
+  #termerr .te b{font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+  #termerr .te span{font-size:12px;color:var(--sub);line-height:18px}
   #termerr .te button{align-self:center;background:var(--accent);color:var(--onAccent);border:0;
-    border-radius:9px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer}
+    border-radius:999px;height:36px;padding:0 20px;font-size:14px;font-weight:500;cursor:pointer}
   /* view switch */
-  #tabs{flex:none;display:flex;gap:2px;background:var(--card);border-radius:10px;padding:3px}
-  #tabs button{background:transparent;border:0;color:var(--sub);border-radius:8px;padding:6px 11px;
-    font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
-  #tabs button.on{background:var(--bg);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  /* Material's segmented button: a surface-container-high trough, the chosen side a
+     secondary-container pill. */
+  #tabs{flex:none;display:flex;align-items:center;gap:2px;height:36px;background:var(--card);border-radius:999px;padding:3px}
+  #tabs button{height:30px;background:transparent;border:0;color:var(--sub);border-radius:999px;padding:0 12px;
+    font-size:12px;line-height:16px;font-weight:500;cursor:pointer;transition:background .15s,color .15s}
+  #tabs button.on{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
   /* conversation pane — plain scrollable chat, the reliable way to read history on a phone */
   /* pan-y: vertical scrolling stays the browser's, horizontal gestures come to us — which is both
      how the swipe-back below is possible and what stops Safari's own edge swipe leaving the page. */
@@ -295,66 +413,63 @@ enum WebDashboardPage {
   /* Held halfway, the overlay has to read as a card lifted off the dashboard rather than a broken
      layout — hence the edge shadow, kept through the settle so it fades out with the movement. */
   #term.dragging{transition:none}
-  #term.settle{transition:transform .24s cubic-bezier(.22,.8,.3,1)}
+  #term.settle{transition:transform .2s cubic-bezier(.22,.8,.3,1)}
   #term.dragging,#term.settle{box-shadow:-22px 0 46px rgba(0,0,0,.55)}
   /* Hold the text to a comfortable measure on a wide screen instead of letting lines run the
      full width of a desktop browser. */
   #chat > *{max-width:760px;margin-left:auto;margin-right:auto}
   #chat.on{display:block}
-  .msg{margin:0 0 16px;font-size:13.5px;line-height:1.62}
+  .msg{margin:0 0 16px;font-size:14px;line-height:22px}
   /* One floating bar carries the prompt currently being answered. Making each prompt sticky piled
      every past one at the top instead of replacing it, so a single element is kept and its text
      swapped as you scroll. */
   #stickyq{position:absolute;left:0;right:0;z-index:4;display:none;padding:12px 20px 0;
-    pointer-events:none;transition:top .24s cubic-bezier(.2,.8,.3,1)}
+    pointer-events:none;transition:top .2s cubic-bezier(.2,.8,.3,1)}
   #stickyq .sq{max-width:760px;margin:0 auto}
   #stickyq.on{display:block}
-  /* It floats over live text, so it needs to read as a separate layer — and on a dark page the
-     cleanest way to say "this is on top" is to invert it: white glass, dark text. No tint and no
-     coloured edge, so it stays a quotation of the conversation rather than a control. */
-  #stickyq .sq{position:relative;padding:13px 16px;border-radius:12px;
-    font-size:14px;line-height:1.5;font-weight:500;color:var(--quoteFg);
+  /* It floats over live text, so it needs to read as a separate layer: the same primary-container
+     bubble as the prompt it quotes, lifted by a shadow rather than set apart by a second colour. */
+  #stickyq .sq{position:relative;padding:12px 16px;border-radius:16px;
+    font-size:14px;line-height:20px;font-weight:400;color:var(--quoteFg);
     background:var(--quoteBg);
-    -webkit-backdrop-filter:blur(30px) saturate(140%);backdrop-filter:blur(30px) saturate(140%);
-    border:1px solid var(--quoteEdge);
-    box-shadow:0 12px 30px rgba(0,0,0,.45);
+    box-shadow:0 6px 20px rgba(0,0,0,.35);
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .msg .mtext{white-space:pre-wrap;word-break:break-word}
   .msg.user{margin-top:26px}                 /* a new question needs a visible break before it */
   .msg.user:first-child{margin-top:0}
-  /* Same white card as #stickyq: that bar is a quotation of one of these, so they have to read as
-     the same object. Inline code and links need their own colours on a light ground. */
+  /* Same primary-container bubble as #stickyq: that bar is a quotation of one of these, so they have
+     to read as the same object. Inline code and links need their own colours on that ground. */
   .msg.user .mtext{background:var(--quoteBg);color:var(--quoteFg);
-    padding:12px 15px;border-radius:12px;font-size:14px;line-height:1.55;
-    border:1px solid var(--quoteEdge);box-shadow:0 6px 16px rgba(0,0,0,.32)}
+    padding:12px 16px;border-radius:16px;font-size:14px;line-height:22px}
   .msg.user .mtext code{background:var(--quoteCode);color:var(--quoteCodeFg)}
-  /* Sending should feel like the card is pushed up out of the composer, so it starts squashed
-     against the bottom edge and settles with a slight overshoot. */
+  /* Sending: the card rises out of the composer — once, because you pressed Send, and inside the
+     120–200ms every other response on the page takes. */
   @keyframes extrude{
-    0%  {transform:translateY(16px) scaleY(.5) scaleX(.94);opacity:0}
-    55% {transform:translateY(0) scaleY(1.05) scaleX(1.01);opacity:1}
-    100%{transform:none;opacity:1}
+    from{transform:translateY(10px);opacity:0}
+    to  {transform:none;opacity:1}
   }
-  .msg.user.sending .mtext{transform-origin:bottom center;
-    animation:extrude .34s cubic-bezier(.2,.9,.25,1.2) both}
+  .msg.user.sending .mtext{animation:extrude .2s cubic-bezier(.2,.8,.3,1) both}
   @media (prefers-reduced-motion:reduce){ .msg.user.sending .mtext{animation:none} }
   .msg.user .mtext a{color:var(--quoteLink)}
   .msg.asst .mtext{color:var(--text);padding:0 2px}
   .msg.sub{opacity:.72}
-  .msg .tag{font-size:9px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:2px}
+  .msg .tag{font-size:11px;line-height:16px;font-weight:500;color:var(--accent);margin-bottom:2px}
   /* typed while the agent was working: the same card, just drawn with a broken edge */
   .msg.user.queued .mtext{background:var(--quoteBgSoft);
-    border-style:dashed;border-color:var(--quoteEdgeSoft)}
-  .msg.think,.msg.tool{background:var(--card);border:1px solid var(--stroke);border-radius:10px;
-    padding:10px 12px;cursor:pointer;margin-left:10px}
+    outline:1px dashed var(--quoteEdgeSoft);outline-offset:-1px}
+  .msg.think,.msg.tool{background:var(--card);border:1px solid transparent;border-radius:12px;
+    padding:10px 14px;cursor:pointer;margin-left:10px}
   .msg.think{opacity:.7}
   .msg.tool.bad{border-color:var(--redEdge)}
-  .mhead{display:flex;gap:7px;align-items:baseline;font-size:12px}
-  .mhead .sum{color:var(--sub);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+  .mhead{display:flex;gap:8px;align-items:center;font-size:12px;line-height:16px;min-width:0}
+  .mhead b{font-weight:500}
+  .mhead svg.ic{color:var(--sub)}
+  .mhead .sum{color:var(--sub);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
   .msg .mbody{display:none;white-space:pre-wrap;word-break:break-word;margin-top:8px;padding-top:8px;
     border-top:1px solid var(--stroke);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:11px;color:var(--sub);max-height:340px;overflow:auto}
+    font-size:12px;line-height:18px;color:var(--sub);max-height:340px;overflow:auto}
+  .mbody b{font-weight:500;color:var(--text)}
   .msg.open .mbody{display:block}
   .msg.think .mtext{display:none}
   .msg.think.open .mtext{display:block;margin-top:7px;font-size:12px}
@@ -365,79 +480,67 @@ enum WebDashboardPage {
   .skel{max-width:760px;margin:0 auto}
   .skel .sk-user{margin:26px 0 16px}
   .skel .sk-asst{margin:0 0 26px;padding:0 2px}
-  .skel .row{height:12px;border-radius:7px;margin-bottom:8px;
-    background:linear-gradient(90deg,var(--skel1),var(--skel2),var(--skel1));
-    background-size:220% 100%;animation:shim 1.2s linear infinite}
-  .skel .sk-user .row{height:44px;border-radius:12px;
-    background:linear-gradient(90deg,var(--skelU1),var(--skelU2),var(--skelU1));
-    background-size:220% 100%}
-  @keyframes shim{0%{background-position:220% 0}100%{background-position:-120% 0}}
-  /* The conversation arrives rather than appearing: each card comes up from below with a strong
-     ease-out and a small overshoot, staggered, so the eye follows the last few into place. The two
-     sides drift in from their own edge, which is what makes it read as flying rather than fading. */
-  @keyframes flyR{
-    0%  {opacity:0;transform:translate(22px,30px) scale(.955)}
-    62% {opacity:1;transform:translate(-3px,-5px) scale(1.008)}
-    100%{opacity:1;transform:none}
+  /* Still blocks, not a shimmer: a sweep that runs for as long as the fetch takes is motion nobody
+     asked for, and when the fetch kept failing it shimmered forever (see showChatError). */
+  .skel .row{height:12px;border-radius:8px;margin-bottom:8px;background:var(--skel2)}
+  .skel .sk-user .row{height:44px;border-radius:16px;background:var(--skelU2)}
+  /* The conversation you just opened arrives rather than appearing: the last few cards rise into
+     place, slightly staggered, once — as the answer to the tap that opened it. */
+  @keyframes flyIn{
+    from{opacity:0;transform:translateY(10px)}
+    to  {opacity:1;transform:none}
   }
-  @keyframes flyL{
-    0%  {opacity:0;transform:translate(-16px,26px) scale(.965)}
-    62% {opacity:1;transform:translate(2px,-4px) scale(1.006)}
-    100%{opacity:1;transform:none}
-  }
-  .msg.fly{animation:flyL .5s cubic-bezier(.16,1,.3,1) both}
-  .msg.user.fly{animation-name:flyR}
-  @media (prefers-reduced-motion:reduce){ .skel .row,.msg.fly{animation:none} }
+  .msg.fly{animation:flyIn .2s cubic-bezier(.2,.8,.3,1) both}
+  @media (prefers-reduced-motion:reduce){ .msg.fly{animation:none} }
   @media (max-width:520px){
     #chat{padding:calc(var(--headh,54px) + 12px) 13px 22px}
     #stickyq{padding:10px 13px 0}
     #inputbar{padding-left:8px;padding-right:8px}
     #termbar{padding-left:4px;padding-right:4px}
-    #tabs button{padding:6px 9px}
+    #tabs button{padding:0 10px}
     .msg.think,.msg.tool{margin-left:0}
   }
   /* a shell terminal's scrollback — wrapped so a phone never scrolls sideways */
-  .shellout{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:1.5;
+  .shellout{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:18px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
   /* markdown inside a message (block elements handle spacing, so no pre-wrap here) */
   .msg .mtext.md{white-space:normal}
   .md p{margin:0 0 8px}
   .md p:last-child{margin-bottom:0}
-  .md h1,.md h2,.md h3{margin:12px 0 6px;font-weight:700;line-height:1.35;font-size:14px}
-  .md h1{font-size:16px}
-  .md h2{font-size:15px}
+  .md h1,.md h2,.md h3{margin:12px 0 6px;font-weight:500;line-height:1.4;font-size:14px}
+  .md h1,.md h2{font-size:16px}
   .md ul,.md ol{margin:4px 0 8px;padding-left:20px}
   .md li{margin:2px 0}
   .md blockquote{margin:6px 0;padding:2px 0 2px 10px;border-left:2px solid var(--stroke);color:var(--sub)}
   .md hr{border:0;border-top:1px solid var(--stroke);margin:10px 0}
   .md a{color:var(--accent)}
   .md code{background:var(--codeInline);padding:1px 4px;border-radius:4px;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
-  .md pre.code{background:var(--codeBg);border:1px solid var(--stroke);border-radius:8px;padding:9px 10px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .md pre.code{background:var(--codeBg);border:1px solid var(--outlineVariant);border-radius:8px;padding:10px 12px;
     margin:8px 0;overflow-x:auto;white-space:pre;position:relative;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.45}
-  .md pre.code i.lang{position:absolute;right:8px;top:3px;font-style:normal;font-size:9px;
-    color:var(--sub);text-transform:uppercase;letter-spacing:.04em}
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px}
+  .md pre.code i.lang{position:absolute;right:8px;top:2px;font-style:normal;font-size:11px;
+    color:var(--sub)}
   .md table{border-collapse:collapse;margin:8px 0;font-size:12px;display:block;overflow-x:auto}
   .md th,.md td{border:1px solid var(--stroke);padding:4px 8px;text-align:left}
-  .md th{background:var(--card);font-weight:600}
+  .md th{background:var(--card);font-weight:500}
   /* code diff (Edit / MultiEdit / Write / codex apply_patch) */
-  .diff{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;
-    overflow-x:auto;border-radius:6px;background:var(--codeBg);padding:6px 0;margin-top:7px}
+  .diff{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;
+    overflow-x:auto;border-radius:8px;background:var(--codeBg);padding:6px 0;margin-top:7px}
   .dl{white-space:pre;padding:0 10px}
   .dl.add{background:var(--greenSoft);color:var(--greenFg)}
   .dl.del{background:var(--redSoft);color:var(--redFg)}
   .dl.ctx{color:var(--sub)}
-  .dl.ph{color:var(--accent);font-weight:700}
-  .dgap{color:var(--sub);opacity:.55;padding:2px 10px;font-size:10px}
-  .dhead{color:var(--sub);padding:5px 10px 1px;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
-  .dstat{font-size:10px;font-weight:700;white-space:nowrap}
+  .dl.ph{color:var(--accent);font-weight:500}
+  .dgap{color:var(--sub);opacity:.7;padding:2px 10px;font-size:11px}
+  .dhead{color:var(--sub);padding:5px 10px 1px;font-size:11px}
+  .dstat{font-size:11px;font-weight:500;white-space:nowrap}
   .dstat .a{color:var(--green)}
   .dstat .d{color:var(--red)}
   /* Session status, as the header's subtitle: one line of plain text, not a row of pills. It was its
      own strip of bordered chips — a second bar under the first, 40px of a phone before the
      conversation began. Everything is still on it; it scrolls sideways when it runs long. */
-  #sinfo{display:flex;gap:0;align-items:center;font-size:11.5px;line-height:1.3;color:var(--sub);
+  #sinfo{display:flex;gap:0;align-items:center;font-size:12px;line-height:16px;color:var(--sub);
     white-space:nowrap;overflow-x:auto;scrollbar-width:none;
     -webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
   #sinfo::-webkit-scrollbar{display:none}
@@ -453,57 +556,61 @@ enum WebDashboardPage {
   #sinfo .ctx.danger .bar i{background:var(--red)}
   #sinfo .ctx.warn{color:var(--amber)}
   #sinfo .ctx.danger{color:var(--red)}
-  #sinfo .live{display:inline-flex;align-items:center;gap:5px;font-weight:600}
-  #sinfo .live .dot{width:7px;height:7px;border-radius:50%}
+  #sinfo .live{display:inline-flex;align-items:center;gap:5px;font-weight:500}
+  #sinfo .live svg.g{width:12px;height:12px}
   /* what the agent is doing right now, pinned under the last message */
-  .runbar{display:flex;align-items:center;gap:8px;padding:9px 11px;margin:2px 0 10px;
-    background:var(--greenSoft);border:1px solid var(--greenEdge);border-radius:10px;
-    font-size:12px;color:var(--green)}
-  .runbar .what{color:var(--sub);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .runbar.wait{background:var(--amberSoft);border-color:var(--amberEdge);color:var(--amber)}
+  .runbar{display:flex;align-items:center;gap:8px;padding:10px 14px;margin:2px 0 10px;
+    background:var(--primaryContainer);color:var(--onPrimaryContainer);border-radius:12px;
+    font-size:12px;line-height:16px}
+  .runbar b{font-weight:500;flex:none}
+  .runbar .spin{background:currentColor}
+  .runbar .g{color:inherit;width:14px;height:14px}
+  .runbar .what{color:color-mix(in srgb,currentColor 78%,transparent);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .runbar.wait{background:var(--warnContainer);color:var(--onWarnContainer)}
   /* a tool still running (no result yet) */
   .msg.tool.run{border-color:var(--accentEdgeOn)}
   /* "Running" — Material's soft-burst shape, still. It was a spinner; nothing on the page moves
      unless you moved it. Same mark as the Mac's StatusGlyph. */
   .spin{display:inline-block;width:11px;height:11px;flex:none;background:var(--accent);
     -webkit-mask:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M16.00%208.00%20L15.81%208.51%20L15.30%208.96%20L14.63%209.32%20L14.01%209.61%20L13.62%209.91%20L13.54%2010.30%20L13.72%2010.82%20L14.03%2011.48%20L14.27%2012.19%20L14.28%2012.82%20L14.00%2013.26%20L13.44%2013.44%20L12.72%2013.39%20L11.99%2013.21%20L11.39%2013.07%20L10.96%2013.13%20L10.70%2013.47%20L10.51%2014.06%20L10.30%2014.78%20L9.99%2015.43%20L9.56%2015.83%20L9.03%2015.85%20L8.49%2015.52%20L8.00%2014.96%20L7.58%2014.37%20L7.22%2013.95%20L6.84%2013.83%20L6.39%2014.01%20L5.83%2014.40%20L5.18%2014.80%20L4.54%2015.02%20L4.00%2014.93%20L3.65%2014.51%20L3.52%2013.84%20L3.54%2013.08%20L3.60%2012.40%20L3.53%2011.92%20L3.24%2011.65%20L2.69%2011.55%20L1.97%2011.48%20L1.24%2011.33%20L0.68%2011.03%20L0.44%2010.57%20L0.57%209.99%20L0.97%209.40%20L1.49%208.86%20L1.92%208.40%20L2.08%208.00%20L1.92%207.60%20L1.49%207.14%20L0.97%206.60%20L0.57%206.01%20L0.44%205.43%20L0.68%204.97%20L1.24%204.67%20L1.97%204.52%20L2.69%204.45%20L3.24%204.35%20L3.53%204.08%20L3.60%203.60%20L3.54%202.92%20L3.52%202.16%20L3.65%201.49%20L4.00%201.07%20L4.54%200.98%20L5.18%201.20%20L5.83%201.60%20L6.39%201.99%20L6.84%202.17%20L7.22%202.05%20L7.58%201.63%20L8.00%201.04%20L8.49%200.48%20L9.03%200.15%20L9.56%200.17%20L9.99%200.57%20L10.30%201.22%20L10.51%201.94%20L10.70%202.53%20L10.96%202.87%20L11.39%202.93%20L11.99%202.79%20L12.72%202.61%20L13.44%202.56%20L14.00%202.74%20L14.28%203.18%20L14.27%203.81%20L14.03%204.52%20L13.72%205.18%20L13.54%205.70%20L13.62%206.09%20L14.01%206.39%20L14.63%206.68%20L15.30%207.04%20L15.81%207.49Z%22/%3E%3C/svg%3E') center/contain no-repeat;mask:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M16.00%208.00%20L15.81%208.51%20L15.30%208.96%20L14.63%209.32%20L14.01%209.61%20L13.62%209.91%20L13.54%2010.30%20L13.72%2010.82%20L14.03%2011.48%20L14.27%2012.19%20L14.28%2012.82%20L14.00%2013.26%20L13.44%2013.44%20L12.72%2013.39%20L11.99%2013.21%20L11.39%2013.07%20L10.96%2013.13%20L10.70%2013.47%20L10.51%2014.06%20L10.30%2014.78%20L9.99%2015.43%20L9.56%2015.83%20L9.03%2015.85%20L8.49%2015.52%20L8.00%2014.96%20L7.58%2014.37%20L7.22%2013.95%20L6.84%2013.83%20L6.39%2014.01%20L5.83%2014.40%20L5.18%2014.80%20L4.54%2015.02%20L4.00%2014.93%20L3.65%2014.51%20L3.52%2013.84%20L3.54%2013.08%20L3.60%2012.40%20L3.53%2011.92%20L3.24%2011.65%20L2.69%2011.55%20L1.97%2011.48%20L1.24%2011.33%20L0.68%2011.03%20L0.44%2010.57%20L0.57%209.99%20L0.97%209.40%20L1.49%208.86%20L1.92%208.40%20L2.08%208.00%20L1.92%207.60%20L1.49%207.14%20L0.97%206.60%20L0.57%206.01%20L0.44%205.43%20L0.68%204.97%20L1.24%204.67%20L1.97%204.52%20L2.69%204.45%20L3.24%204.35%20L3.53%204.08%20L3.60%203.60%20L3.54%202.92%20L3.52%202.16%20L3.65%201.49%20L4.00%201.07%20L4.54%200.98%20L5.18%201.20%20L5.83%201.60%20L6.39%201.99%20L6.84%202.17%20L7.22%202.05%20L7.58%201.63%20L8.00%201.04%20L8.49%200.48%20L9.03%200.15%20L9.56%200.17%20L9.99%200.57%20L10.30%201.22%20L10.51%201.94%20L10.70%202.53%20L10.96%202.87%20L11.39%202.93%20L11.99%202.79%20L12.72%202.61%20L13.44%202.56%20L14.00%202.74%20L14.28%203.18%20L14.27%203.81%20L14.03%204.52%20L13.72%205.18%20L13.54%205.70%20L13.62%206.09%20L14.01%206.39%20L14.63%206.68%20L15.30%207.04%20L15.81%207.49Z%22/%3E%3C/svg%3E') center/contain no-repeat}
-  .msg .when{font-size:9px;color:var(--sub);opacity:.55;margin-left:6px;font-weight:400}
-  .msg .cp{font-size:9px;color:var(--sub);opacity:.45;cursor:pointer;padding:0 5px;float:right}
+  .msg .when{font-size:11px;line-height:16px;color:var(--sub);opacity:.7;margin-left:6px;font-weight:400}
+  .msg .cp{font-size:11px;line-height:16px;color:var(--sub);opacity:.6;cursor:pointer;padding:0 5px;float:right}
   .msg .cp:active{opacity:1;color:var(--accent)}
   /* permission / question card */
-  #perm{display:none;background:var(--amberSoft);border-top:1px solid var(--amberEdge);padding:10px 12px}
+  #perm{display:none;background:var(--warnContainer);color:var(--onWarnContainer);padding:12px 14px}
   #perm.on{display:block}
-  #perm .q{font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px}
-  #perm .what{font-size:11px;color:var(--sub);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  #perm .q{font-size:14px;line-height:20px;font-weight:500;margin-bottom:8px}
+  #perm .what{font-size:12px;color:color-mix(in srgb,var(--onWarnContainer) 78%,transparent);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #perm .opts{display:flex;flex-direction:column;gap:6px}
-  #perm button{text-align:left;background:var(--card);color:var(--text);border:1px solid var(--stroke);
-    border-radius:8px;padding:9px 11px;font-size:13px;cursor:pointer}
-  #perm button:active{background:var(--accent);color:var(--onAccent)}
+  #perm button{text-align:left;background:var(--bg);color:var(--text);border:0;
+    border-radius:12px;padding:10px 14px;font-size:14px;line-height:20px;cursor:pointer}
+  #perm button:active{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
   /* todo / plan / question tool views */
   .todo{margin-top:7px}
-  .todo div{padding:2px 0;font-size:12px;line-height:1.45}
+  .todo div{display:flex;align-items:flex-start;gap:6px;padding:2px 0;font-size:12px;line-height:18px}
+  .todo div svg.ic{margin-top:2px}
   .todo .d{color:var(--sub);text-decoration:line-through}
-  .todo .p{color:var(--accent);font-weight:600}
+  .todo .p{color:var(--accent);font-weight:500}
   .qopts{margin-top:6px}
-  .qopts .qq{font-size:12px;font-weight:600;margin:6px 0 3px}
+  .qopts .qq{font-size:12px;font-weight:500;margin:6px 0 3px}
   .qopts .qo{font-size:12px;color:var(--sub);padding:1px 0 1px 14px}
   /* jump to latest */
   #jump{position:absolute;right:14px;bottom:96px;z-index:6;background:var(--accent);color:var(--onAccent);border:0;
-    border-radius:999px;width:34px;height:34px;font-size:16px;line-height:1;cursor:pointer;display:none;
-    box-shadow:0 4px 14px rgba(0,0,0,.45)}
-  #jump.on{display:block}
+    border-radius:999px;width:40px;height:40px;padding:0;cursor:pointer;display:none;place-items:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.35)}
+  #jump.on{display:grid}
   /* flex:none + the safe-area pad keeps the composer pinned to the true bottom; without it the
      bar floated and the page showed through underneath on a phone. With the drawer open the drawer
      is the bottom edge, so the pad moves down to it. */
-  #inputbar{flex:none;background:var(--panel);border-top:1px solid var(--stroke);
+  #inputbar{flex:none;background:var(--panel);
     padding:8px 10px;padding-bottom:max(8px,env(safe-area-inset-bottom))}
   #term.drawer #inputbar{padding-bottom:8px}
   #inputbar > *{max-width:760px;margin-left:auto;margin-right:auto}
   #keys{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px}
-  #keys button{flex:none;background:var(--card);color:var(--text);border:1px solid var(--stroke);border-radius:7px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
-  #keys button:active{background:var(--accent);color:var(--onAccent)}
+  #keys button{flex:none;height:32px;background:var(--card);color:var(--text);border:0;border-radius:8px;padding:0 12px;font-size:12px;font-weight:500;cursor:pointer}
+  #keys button:active{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
   /* The key row exists to drive a TUI: scrolling a pane, arrowing through a menu, ^C, backspace.
      Chat has none of that — it scrolls natively, answers prompts with real buttons, and stops the
      agent with the Send/Stop button — so the whole row goes away there. */
@@ -519,23 +626,23 @@ enum WebDashboardPage {
      drawing the box shorter than the line it holds. */
   #sendrow{--rowh:40px;display:flex;gap:6px;align-items:flex-end}
   #inputtext{flex:1;min-width:0;resize:none;background:var(--card);color:var(--text);
-    border:1px solid var(--stroke);border-radius:20px;padding:9px 14px;
+    border:1px solid transparent;border-radius:20px;padding:9px 14px;
     /* Longhands on purpose. This was `font:14px/1.35 inherit`, which is not valid — `inherit` may
        only stand alone in the shorthand — so the whole declaration was dropped and the box drew in
        the browser's default textarea face: monospace in Chrome, which also made the placeholder
        too wide for the box and wrap under its own clip. */
     font-family:inherit;font-size:14px;line-height:1.35;
     max-height:120px;min-height:var(--rowh);outline:none;transition:border-color .15s}
-  #inputtext:focus{border-color:var(--accentEdgeOn)}
+  #inputtext:focus{border-color:var(--accent)}
   .rb{flex:none;width:var(--rowh);height:var(--rowh);display:grid;place-items:center;padding:0;
     background:transparent;border:0;border-radius:50%;color:var(--sub);cursor:pointer;
     transition:color .15s,background .15s,transform .2s}
   .rb:active{background:var(--card)}
-  .rb.on{color:var(--accent);background:var(--accentSoft)}
+  .rb.on{color:var(--onSecondaryContainer);background:var(--secondaryContainer)}
   #morebtn.on svg{transform:rotate(45deg)}
   .rb svg{transition:transform .2s}
-  #sendbtn{flex:none;background:var(--accent);color:var(--onAccent);border:0;border-radius:20px;
-    padding:0 16px;font-size:14px;font-weight:700;cursor:pointer;min-height:var(--rowh);
+  #sendbtn{flex:none;background:var(--accent);color:var(--onAccent);border:0;border-radius:999px;
+    padding:0 18px;font-size:14px;font-weight:500;cursor:pointer;min-height:var(--rowh);
     transition:background .15s}
   /* The panels under the composer — quick commands, and the ⊕ tiles. Only one is open at a time, and
      the drawer is the bottom of the overlay while it is. */
@@ -548,39 +655,40 @@ enum WebDashboardPage {
   @keyframes drawerIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){ .dpane.on{animation:none} }
   .nhead{display:flex;gap:6px;align-items:center;margin:4px 0 8px}
-  .nsearch{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:var(--card);
-    border:1px solid var(--stroke);border-radius:12px;padding:0 10px;color:var(--sub)}
-  .nsearch:focus-within{border-color:var(--accentEdgeOn)}
-  .nsearch svg{width:17px;height:17px;flex:none}
+  .nsearch{flex:1;min-width:0;display:flex;align-items:center;gap:8px;min-height:40px;background:var(--card);
+    border:1px solid transparent;border-radius:999px;padding:0 14px;color:var(--sub)}
+  .nsearch:focus-within{border-color:var(--accent)}
+  .nsearch svg{width:16px;height:16px;flex:none}
   #pfind{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--text);
-    padding:9px 0;font-family:inherit;font-size:13px;-webkit-appearance:none;appearance:none}
+    padding:9px 0;font-family:inherit;font-size:14px;-webkit-appearance:none;appearance:none}
   #pfind::-webkit-search-cancel-button{display:none}
-  .nact{flex:none;background:var(--card);color:var(--accent);border:1px solid var(--stroke);
-    border-radius:12px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
+  .nact{flex:none;display:inline-flex;align-items:center;justify-content:center;height:40px;min-width:40px;
+    background:var(--card);color:var(--accent);border:0;
+    border-radius:999px;padding:0 14px;font-size:12px;font-weight:500;cursor:pointer}
   .nact.on{background:var(--accent);color:var(--onAccent);border-color:transparent}
   /* The list is the palette: whole commands, two lines each, instead of chips cut off at the edge
      of a strip you had to scroll sideways to read. */
   #presets{max-height:min(38vh,300px);overflow-y:auto;-webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;display:flex;flex-direction:column;gap:6px;padding-bottom:2px}
   .nrow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--card);
-    color:var(--text);border:1px solid var(--stroke);border-radius:12px;padding:9px 12px;
+    color:var(--text);border:0;border-radius:12px;padding:10px 14px;
     cursor:pointer;font:inherit}
   .nrow:active{background:var(--cardHover)}
-  .nrow .ntext{flex:1;min-width:0;font-size:12.5px;line-height:1.45;
+  .nrow .ntext{flex:1;min-width:0;font-size:12px;line-height:18px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .nrow .nuse{flex:none;color:var(--sub);font-size:16px;line-height:1}
-  .nrow .ndel{flex:none;background:var(--redSoft);color:var(--red);border:1px solid var(--redEdge);
-    border-radius:9px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}
-  .nempty{color:var(--sub);font-size:12.5px;text-align:center;padding:18px 8px}
+  .nrow .nuse{flex:none;color:var(--sub)}
+  .nrow .ndel{flex:none;height:32px;background:var(--errorContainer);color:var(--onErrorContainer);border:0;
+    border-radius:999px;padding:0 14px;font-size:12px;font-weight:500;cursor:pointer}
+  .nempty{color:var(--sub);font-size:12px;text-align:center;padding:18px 8px}
   .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 0 6px}
   .tile{display:flex;flex-direction:column;align-items:center;gap:7px;background:transparent;
     border:0;color:var(--sub);cursor:pointer;font:inherit;font-size:12px;padding:0}
   .tile .ti{width:56px;height:56px;border-radius:16px;background:var(--card);display:grid;
-    place-items:center;color:var(--text);border:1px solid var(--stroke);transition:transform .12s}
+    place-items:center;color:var(--text);border:0;transition:transform .12s}
   .tile:active .ti{transform:scale(.94);background:var(--cardHover)}
   .tile .ti svg{width:24px;height:24px}
-  .tile .ttxt{font:600 17px ui-monospace,SFMono-Regular,Menlo,monospace}
+  .tile .ttxt{font:500 16px ui-monospace,SFMono-Regular,Menlo,monospace}
   .tile[disabled]{opacity:.5}
   /* Touch sizing. Two separate things, both of which only apply where the pointer is a finger — on
      a mouse-driven browser the denser text and smaller chips are worth keeping.
@@ -628,11 +736,12 @@ enum WebDashboardPage {
   #inputbar.big #grip{display:flex}
   #grip .gbar{width:72px;align-self:stretch;display:flex;align-items:center;justify-content:center;
     cursor:ns-resize;touch-action:none}
-  #grip .gbar::before{content:"";display:block;width:46px;height:4px;border-radius:999px;background:var(--stroke)}
+  #grip .gbar::before{content:"";display:block;width:32px;height:4px;border-radius:999px;background:var(--outline);opacity:.4}
   #grip .gtools{position:absolute;right:0;top:50%;transform:translateY(-50%);display:flex;gap:5px}
-  #grip .gtools button{background:var(--card);color:var(--sub);border:1px solid var(--stroke);
-    border-radius:6px;font-size:11px;font-weight:700;line-height:1;padding:3px 7px;cursor:pointer;
+  #grip .gtools button{display:inline-grid;place-items:center;background:var(--card);color:var(--sub);border:0;
+    border-radius:999px;font-size:11px;font-weight:500;line-height:1;padding:3px 8px;cursor:pointer;
     font-family:inherit;min-height:var(--gtoolh)}
+  #grip .gtools button svg.ic{width:14px;height:14px}
   /* Expanded: the box takes the whole column and the row's buttons drop underneath it. Left in a
      row, they ate a third of the width and the "expanded" editor wrapped every three words —
      narrower than the bar it replaced. */
@@ -644,7 +753,7 @@ enum WebDashboardPage {
   #inputbar.big #sendrow{grid-area:send;min-height:0;
     display:grid;gap:6px;grid-template-columns:auto auto minmax(0,1fr) auto;
     grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"box box box box" "notes more . send"}
-  #inputbar.big #inputtext{max-height:none;height:100%;grid-area:box;border-radius:14px}
+  #inputbar.big #inputtext{max-height:none;height:100%;grid-area:box;border-radius:16px}
   #inputbar.big #notesbtn{grid-area:notes}
   #inputbar.big #morebtn{grid-area:more}
   #inputbar.big #sendbtn{grid-area:send}
@@ -665,148 +774,142 @@ enum WebDashboardPage {
      one thing you want to reach without first knowing which terminal produced it. */
   /* Open a project: the folders in ~/PycharmProjects, under the header like the files tray. */
   #projs{display:none;position:sticky;top:0;z-index:6;background:var(--panel);
-    border-bottom:1px solid var(--stroke);padding:10px 12px 6px}
+    border-bottom:1px solid var(--outlineVariant);padding:10px 12px 6px}
   #projs.on{display:block}
   #projs .nsearch{margin-bottom:8px}
   #pquery{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--text);
-    padding:9px 0;font-family:inherit;font-size:13px;-webkit-appearance:none;appearance:none}
+    padding:9px 0;font-family:inherit;font-size:14px;-webkit-appearance:none;appearance:none}
   #projlist{max-height:min(55vh,420px);overflow-y:auto;overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch}
-  .prow{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;
-    background:var(--card);border:1px solid var(--stroke);border-radius:10px}
+  .prow{display:flex;align-items:center;gap:8px;padding:10px 12px 10px 16px;margin-bottom:6px;
+    background:var(--card);border-radius:12px}
   .prow .pn{flex:1;min-width:0}
-  .prow .pn b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .prow .pn span{font-size:11px;color:var(--sub)}
-  .prow button{flex:none;font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;cursor:pointer;
-    border:1px solid var(--accentEdge);background:var(--accentSoft);color:var(--accent)}
-  .prow button.go{background:var(--accent);color:var(--onAccent);border-color:transparent}
-  .prow .onb{font-size:10.5px;font-weight:700;color:var(--green);background:var(--greenSoft);
-    border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px}
-  @media (pointer:coarse){ #pquery{font-size:16px} .prow button{min-height:38px} }
-  #projbtn.on{border-color:var(--accent)}
-  #traybtn,#markbtn,#schemebtn,#projbtn{position:relative;background:var(--card);color:var(--text);border:1px solid var(--stroke);
-    border-radius:8px;padding:5px 9px;font-size:14px;line-height:1;cursor:pointer}
-  #traybtn.has{border-color:var(--accent)}
-  /* Filled tint while it is filtering: a board hiding most of itself has to say so somewhere that
-     is always on screen, or you go looking for terminals that are simply not being drawn. */
-  #markbtn.on{background:var(--markBg);border-color:var(--markTint)}
-  #markcount{font-size:11px;font-weight:700;color:var(--sub);margin-left:4px;vertical-align:1px}
-  #markbtn.on #markcount{color:var(--markTint)}
-  #traybadge:not(:empty){position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;
-    border-radius:999px;background:var(--accent);color:var(--onAccent);font-size:10px;font-weight:700;
-    line-height:16px;text-align:center;padding:0 3px}
+  .prow .pn b{display:block;font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prow .pn span{font-size:11px;line-height:16px;color:var(--sub)}
+  .prow button{flex:none;height:32px;font-size:12px;font-weight:500;border-radius:999px;padding:0 12px;cursor:pointer;
+    border:0;background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  .prow button.go{background:var(--accent);color:var(--onAccent)}
+  .prow .onb{font-size:11px;line-height:16px;font-weight:500;color:var(--onPrimaryContainer);background:var(--primaryContainer);
+    border-radius:8px;padding:0 6px;margin-left:6px;vertical-align:1px}
+  @media (pointer:coarse){ #pquery{font-size:16px} .prow button{min-height:36px} }
+  /* The mark filter fills its pill while it is filtering (.tb.on): a board hiding most of itself has
+     to say so somewhere that is always on screen, or you go looking for terminals that are simply
+     not being drawn. */
+  #markcount:empty{display:none}
+  #traybadge:empty{display:none}
+  #traybadge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;
+    border-radius:999px;background:var(--accent);color:var(--onAccent);font-size:11px;font-weight:500;
+    line-height:16px;text-align:center;padding:0 4px}
   #tray{display:none;position:sticky;top:0;z-index:6;background:var(--panel);
-    border-bottom:1px solid var(--stroke);max-height:min(60vh,420px);overflow-y:auto;
+    border-bottom:1px solid var(--outlineVariant);max-height:min(60vh,420px);overflow-y:auto;
     padding:8px 12px}
   #tray.on{display:block}
-  #tray .f{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;margin-bottom:6px;
-    background:var(--card);border:1px solid var(--stroke);border-radius:10px;
-    color:var(--text);text-decoration:none}
-  #tray .f:active{background:var(--accent);color:var(--onAccent)}
-  #tray .f .fi{flex:none;font-size:17px;line-height:1;padding-top:1px}
+  #tray .f{display:flex;align-items:flex-start;gap:12px;padding:10px 14px;margin-bottom:6px;
+    background:var(--card);border-radius:12px;color:var(--text);text-decoration:none}
+  #tray .f:active{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  #tray .f .fi{flex:none;color:var(--sub);padding-top:1px}
   /* Name, facts and note each on a line of their own. They were inline spans, so the name and
      everything after it ran together as one line, past the card's edge — and an inline box
      ignores text-overflow, so nothing was ever clipped with an ellipsis either. */
   #tray .f .fb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-  #tray .f .fn{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #tray .f .fm{display:block;font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tray .f .fn{display:block;font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tray .f .fm{display:block;font-size:11px;line-height:16px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #tray .f .fd{font-variant-numeric:tabular-nums}
-  #tray .f .fnote{font-size:11px;color:var(--sub);overflow:hidden;overflow-wrap:anywhere;
+  #tray .f .fnote{font-size:11px;line-height:16px;color:var(--sub);overflow:hidden;overflow-wrap:anywhere;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #tray .tnone{color:var(--sub);font-size:12px;padding:10px 4px}
   /* project file browser — the project's own directory, walkable from the phone. An agent says "see
      Sources/FleetView/Remote/WebServer.swift:120" and until now there was no way to look. */
-  .fbbtn{font-size:12px;font-weight:600;color:var(--sub);background:var(--card);
-    border:1px solid var(--stroke);border-radius:7px;padding:5px 9px;cursor:pointer}
-  .fbbtn:active{transform:scale(.96)}
   #fb{position:fixed;top:0;left:0;right:0;height:100%;height:100dvh;z-index:56;background:var(--bg);
     padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);
     display:none;flex-direction:column;overflow:hidden;overscroll-behavior:none}
   #fb.show{display:flex}
   /* Same swipe-back treatment as #term — one gesture, so one look (see swipeBack). */
   #fb.dragging{transition:none}
-  #fb.settle{transition:transform .24s cubic-bezier(.22,.8,.3,1)}
+  #fb.settle{transition:transform .2s cubic-bezier(.22,.8,.3,1)}
   #fb.dragging,#fb.settle{box-shadow:-22px 0 46px rgba(0,0,0,.55)}
-  #fbbar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--panel);
-    border-bottom:1px solid var(--stroke);padding-top:max(10px,env(safe-area-inset-top))}
-  #fbbar button{flex:none;background:var(--card);color:var(--text);border:1px solid var(--stroke);
-    border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer}
-  #fbbar button[disabled]{opacity:.35}
-  #fbbar .fbname{font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+  #fbbar{display:flex;align-items:center;gap:4px;padding:8px 8px;background:var(--panel);
+    border-bottom:1px solid var(--outlineVariant);padding-top:max(8px,env(safe-area-inset-top))}
+  #fbbar button{flex:none;display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:999px;
+    background:transparent;color:var(--text);cursor:pointer}
+  #fbbar button:active{background:color-mix(in srgb,var(--text) 12%,transparent)}
+  #fbbar button[disabled]{opacity:.38}
+  #fbbar .fbname{font-size:16px;line-height:24px;font-weight:500;flex:1;min-width:0;padding:0 4px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis}
   /* The absolute path in full, wrapped rather than clipped: knowing exactly where you are is the
      point, and an ellipsis through the middle of a path defeats it. Selectable, because
      long-press-to-select is the fallback when the clipboard API is missing (plain http is not a
      secure context, so on the LAN it usually is). */
-  #fbpath{display:flex;align-items:flex-start;gap:8px;padding:8px 14px;background:var(--panel);
-    border-bottom:1px solid var(--stroke);font-size:11px;color:var(--sub);
+  #fbpath{display:flex;align-items:center;gap:8px;padding:8px 12px 8px 16px;background:var(--panel);
+    border-bottom:1px solid var(--outlineVariant);font-size:12px;line-height:16px;color:var(--sub);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   #fbcrumbs{flex:1;min-width:0;word-break:break-all;user-select:text;-webkit-user-select:text}
-  #fbcrumbs b{color:var(--accent);font-weight:600;cursor:pointer}
-  .fbcopy{flex:none;background:var(--card);color:var(--sub);border:1px solid var(--stroke);
-    border-radius:6px;font-size:11px;padding:3px 7px;cursor:pointer;font-family:inherit}
-  .fbcopy:active{background:var(--accent);color:var(--onAccent)}
+  #fbcrumbs b{color:var(--accent);font-weight:500;cursor:pointer}
+  .fbcopy{flex:none;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;background:var(--card);color:var(--sub);
+    border:0;border-radius:999px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit}
+  .fbcopy:active{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
   #fbbody{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:10px 12px}
   #fbbody > *{max-width:900px;margin-left:auto;margin-right:auto}
-  .fbrow{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;
-    background:var(--card);border:1px solid var(--stroke);border-radius:10px;cursor:pointer}
+  .fbrow{display:flex;align-items:center;gap:12px;padding:6px 6px 6px 16px;min-height:48px;margin-bottom:6px;
+    background:var(--card);border-radius:12px;cursor:pointer}
   .fbrow:active{background:var(--cardHover)}
-  .fbrow .fbi{flex:none;font-size:15px;line-height:1}
-  .fbrow .fbn{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fbrow .fbi{flex:none;color:var(--sub)}
+  .fbrow .fbn{flex:1;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .fbrow .fbs{flex:none;font-size:11px;color:var(--sub)}
-  .fbrow .fbc{flex:none;background:transparent;color:var(--sub);border:1px solid var(--stroke);
-    border-radius:6px;font-size:11px;padding:3px 6px;cursor:pointer}
+  .fbrow .fbc{flex:none;display:grid;place-items:center;width:36px;height:36px;padding:0;background:transparent;color:var(--sub);
+    border:0;border-radius:999px;cursor:pointer}
+  .fbrow .fbc:active{background:color-mix(in srgb,var(--text) 12%,transparent)}
   .fbnote{color:var(--sub);font-size:12px;padding:14px 4px;text-align:center}
   .fbnote a{color:var(--accent)}
-  pre.fbtext{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:1.55;
+  pre.fbtext{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:18px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
-    background:var(--codeBg);border:1px solid var(--stroke);border-radius:10px;padding:12px 13px}
-  img.fbimg{max-width:100%;display:block;margin:0 auto;border-radius:10px;background:var(--card)}
-  iframe.fbpdf{width:100%;height:78vh;border:1px solid var(--stroke);border-radius:10px;background:#fff}
-  #fbbar{gap:8px}
+    background:var(--codeBg);border:1px solid var(--outlineVariant);border-radius:12px;padding:12px 14px}
+  img.fbimg{max-width:100%;display:block;margin:0 auto;border-radius:12px;background:var(--card)}
+  iframe.fbpdf{width:100%;height:78vh;border:1px solid var(--outlineVariant);border-radius:12px;background:#fff}
   /* A markdown file: rendered by default, editable in place. The bar stays in view over a long
      document, because Save is the button you need wherever you have scrolled to. */
   .fbtools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:sticky;top:-10px;z-index:1;
     background:var(--bg);padding:6px 0 8px}
-  .fbtools button{font-size:12px;font-weight:600;color:var(--text);background:var(--card);
-    border:1px solid var(--stroke);border-radius:7px;padding:6px 10px;cursor:pointer}
-  .fbtools button[disabled]{opacity:.35;cursor:default}
-  .fbtools button.on{color:var(--onAccent);background:var(--accent);border-color:transparent}
-  .fbtools button.save:not([disabled]){color:var(--onAccent);background:var(--accent);border-color:transparent}
+  .fbtools button{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 12px;
+    font-size:12px;font-weight:500;color:var(--text);background:var(--card);border:0;border-radius:999px;cursor:pointer}
+  .fbtools button svg.ic{width:16px;height:16px}
+  .fbtools button[disabled]{opacity:.38;cursor:default}
+  .fbtools button.on{color:var(--onSecondaryContainer);background:var(--secondaryContainer)}
+  .fbtools button.save:not([disabled]){color:var(--onAccent);background:var(--accent)}
   .fbtools .fbstate{flex:1;min-width:0;text-align:right;font-size:11px;color:var(--sub)}
   .fbtools .fbstate.dirty{color:var(--amber)}
-  .fbmd{font-size:14px;line-height:1.65;padding:2px 2px 30px}
-  .fbmd h1{font-size:19px}.fbmd h2{font-size:16px}.fbmd h3{font-size:14.5px}
+  .fbmd{font-size:14px;line-height:22px;padding:2px 2px 30px}
+  .fbmd h1{font-size:20px;line-height:28px}.fbmd h2{font-size:16px}.fbmd h3{font-size:14px}
   textarea.fbedit{display:block;width:100%;box-sizing:border-box;height:calc(100dvh - 210px);min-height:240px;
-    resize:vertical;margin:0;padding:12px 13px;font-size:13px;line-height:1.6;
+    resize:vertical;margin:0;padding:12px 14px;font-size:14px;line-height:22px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);background:var(--codeBg);
-    border:1px solid var(--stroke);border-radius:10px;outline:none;tab-size:4}
+    border:1px solid var(--outlineVariant);border-radius:12px;outline:none;tab-size:4}
   textarea.fbedit:focus{border-color:var(--accent)}
   /* iOS zooms the page into any field under 16px the moment it is focused. */
   @media (pointer:coarse){ textarea.fbedit{font-size:16px} }
 </style>
 </head>
 <body>
-<div id="panel"><button class="pcollapse" onclick="togglePanel()">▾ hide</button>
+<div id="panel"><button class="pcollapse" onclick="togglePanel()"><i data-ic="chevron-up" class="s16"></i><span>收起</span></button>
   <iframe id="panelframe" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" src="about:blank"></iframe></div>
 <header>
-  <span class="logo"><b>▉</b> FleetView</span>
-  <span class="muted" id="counts">…</span>
-  <span id="pills"></span>
+  <span class="brand"><span class="logo"><i data-ic="layout-grid"></i></span><span class="bname tm">FleetView</span></span>
+  <span class="muted lm" id="counts"></span>
   <span class="spacer"></span>
-  <button id="markbtn" onclick="toggleOnlyMarked()" title="Only show marked terminals">🔖<span id="markcount"></span></button>
-  <button id="schemebtn" onclick="cycleScheme()">🖥</button>
-  <button id="projbtn" onclick="toggleProjects()" title="Open a project from ~/PycharmProjects">📂</button>
-  <button id="traybtn" onclick="toggleTray()" title="Files agents have sent you">📥<span id="traybadge"></span></button>
-  <button class="netsig" id="netsig" onclick="netToast()" aria-label="Connection"></button>
+  <span id="pills"></span>
+  <button id="markbtn" class="tb" onclick="toggleOnlyMarked()" title="只显示加了书签的终端"><i data-ic="bookmark"></i><span id="markcount"></span></button>
+  <button id="schemebtn" class="tb" onclick="cycleScheme()"></button>
+  <button id="projbtn" class="tb" onclick="toggleProjects()" title="从 ~/PycharmProjects 打开项目" aria-label="打开项目"><i data-ic="folder-open"></i></button>
+  <button id="traybtn" class="tb" onclick="toggleTray()" title="agent 发给你的文件" aria-label="收到的文件"><i data-ic="inbox"></i><span id="traybadge"></span></button>
+  <button class="netsig" id="netsig" onclick="netToast()" aria-label="连接"></button>
 </header>
 <div id="tray"><div id="traylist"></div></div>
 <div id="projs">
   <label class="nsearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
-    <input id="pquery" type="search" enterkeyhint="go" autocomplete="off" placeholder="Search ~/PycharmProjects" oninput="renderProjects()"></label>
+    <input id="pquery" type="search" enterkeyhint="go" autocomplete="off" placeholder="搜索 ~/PycharmProjects" oninput="renderProjects()"></label>
   <div id="projlist"></div>
 </div>
-<main id="root"><div class="empty">Loading…</div></main>
+<main id="root"><div class="empty">加载中…</div></main>
 
 <div id="chip"></div>
 <div id="dock"></div>
@@ -816,27 +919,27 @@ enum WebDashboardPage {
        read and come back when you scroll up (see headBar). The status strip is its subtitle. -->
   <div id="thead">
     <div id="termbar">
-      <button class="ib" onclick="closeTerm()" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="ib" onclick="closeTerm()" aria-label="返回" title="返回"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
       <div class="ttl"><span class="tname" id="termname"></span><div id="sinfo"></div></div>
-      <button class="netsig tsig" id="tnetsig" onclick="netToast()" aria-label="Connection"></button>
+      <button class="netsig tsig" id="tnetsig" onclick="netToast()" aria-label="连接"></button>
       <div id="tabs">
-        <button id="tabChat" class="on" onclick="setView('chat')">Chat</button>
-        <button id="tabTerm" onclick="setView('term')">Terminal</button>
+        <button id="tabChat" class="on" onclick="setView('chat')">对话</button>
+        <button id="tabTerm" onclick="setView('term')">终端</button>
       </div>
-      <button class="ib" onclick="popTerm()" title="Open the terminal in a new tab" aria-label="Open in new tab"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+      <button class="ib" onclick="popTerm()" title="在新标签页打开终端" aria-label="在新标签页打开终端"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
     </div>
   </div>
-  <div id="chat" class="on"><div id="chatnote">Loading…</div></div>
+  <div id="chat" class="on"><div id="chatnote">加载中…</div></div>
   <div id="stickyq"><div class="sq"></div></div>
-  <button id="jump" onclick="jumpLatest()">↓</button>
+  <button id="jump" onclick="jumpLatest()" title="跳到最新" aria-label="跳到最新"><i data-ic="arrow-down"></i></button>
   <iframe id="termframe" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
   <div id="termerr"></div>
   <div id="perm"></div>
   <div id="inputbar">
     <div id="grip"><span class="gbar"></span><span class="gtools">
-      <button class="fsz" onclick="taFont(-1)" title="Smaller text">A−</button>
-      <button class="fsz" onclick="taFont(1)" title="Bigger text">A+</button>
-      <button id="expand" onclick="toggleBig()" title="Collapse the editor">⤡</button>
+      <button class="fsz" onclick="taFont(-1)" title="缩小字号">A−</button>
+      <button class="fsz" onclick="taFont(1)" title="放大字号">A+</button>
+      <button id="expand" onclick="toggleBig()" title="收起编辑器"></button>
     </span></div>
     <div id="keys">
       <button class="skey" onclick="scrollTerm('up')">⇞</button>
@@ -847,16 +950,16 @@ enum WebDashboardPage {
       <button onclick="key('Down')">↓</button>
       <button onclick="key('Left')">←</button>
       <button onclick="key('Right')">→</button>
-      <button onclick="typeRaw('/')" title="Open the agent's slash-command menu">/</button>
+      <button onclick="typeRaw('/')" title="打开 agent 的斜杠命令菜单">/</button>
       <button onclick="key('Tab')">Tab</button>
       <button onclick="key('C-c')">^C</button>
       <button onclick="key('BSpace')">⌫</button>
     </div>
     <div id="sendrow">
-      <button id="notesbtn" class="rb" data-pane="notes" title="Quick commands (your Notes)" aria-label="Quick commands"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button>
-      <textarea id="inputtext" rows="1" placeholder="Type here (中文 OK) — Enter to send, Shift+Enter for newline"></textarea>
-      <button id="morebtn" class="rb" data-pane="more" title="Attach, editor, keys" aria-label="More"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
-      <button id="sendbtn">Send</button>
+      <button id="notesbtn" class="rb" data-pane="notes" title="快捷命令（你的笔记）" aria-label="快捷命令"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button>
+      <textarea id="inputtext" rows="1" placeholder="输入消息 — 回车发送，Shift+回车换行"></textarea>
+      <button id="morebtn" class="rb" data-pane="more" title="附件、编辑器、按键" aria-label="更多"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
+      <button id="sendbtn">发送</button>
     </div>
   </div>
   <!-- Under the composer, where the keyboard would be — the WeChat arrangement. -->
@@ -864,19 +967,19 @@ enum WebDashboardPage {
     <div class="dpane" data-pane="notes">
       <div class="nhead">
         <label class="nsearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
-          <input id="pfind" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search quick commands" oninput="renderPresets()"></label>
-        <button class="nact" onclick="addNote()" title="Add a quick command">＋</button>
-        <button class="nact" id="nedit" onclick="toggleEditPresets()">Edit</button>
+          <input id="pfind" type="search" enterkeyhint="search" autocomplete="off" placeholder="搜索快捷命令" oninput="renderPresets()"></label>
+        <button class="nact" onclick="addNote()" title="添加快捷命令" aria-label="添加快捷命令"><i data-ic="plus"></i></button>
+        <button class="nact" id="nedit" onclick="toggleEditPresets()">编辑</button>
       </div>
       <div id="presets"></div>
     </div>
     <div class="dpane" data-pane="more">
       <input id="imgfile" type="file" multiple hidden>
       <div class="tiles">
-        <button class="tile" id="imgbtn" title="It uploads to the Mac and its path goes in the prompt"><span class="ti"><svg viewBox="0 0 24 24"><path d="M20 11.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></span><span class="tl">Attach</span></button>
-        <button class="tile" onclick="closeDrawer();toggleBig()"><span class="ti"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></span><span class="tl" id="bigLabel">Editor</span></button>
-        <button class="tile" onclick="closeDrawer();typeRaw('/')" title="Open the agent's slash-command menu"><span class="ti ttxt">/</span><span class="tl">Commands</span></button>
-        <button class="tile" onclick="closeDrawer();key('Escape')" title="Interrupt the agent"><span class="ti ttxt">esc</span><span class="tl">Interrupt</span></button>
+        <button class="tile" id="imgbtn" title="上传到 Mac，路径会填进输入框"><span class="ti"><svg viewBox="0 0 24 24"><path d="M20 11.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></span><span class="tl">附件</span></button>
+        <button class="tile" onclick="closeDrawer();toggleBig()"><span class="ti"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></span><span class="tl" id="bigLabel">编辑器</span></button>
+        <button class="tile" onclick="closeDrawer();typeRaw('/')" title="打开 agent 的斜杠命令菜单"><span class="ti ttxt">/</span><span class="tl">命令</span></button>
+        <button class="tile" onclick="closeDrawer();key('Escape')" title="打断 agent"><span class="ti ttxt">esc</span><span class="tl">中断</span></button>
       </div>
     </div>
   </div>
@@ -884,24 +987,129 @@ enum WebDashboardPage {
 
 <div id="fb">
   <div id="fbbar">
-    <button onclick="fbClose()">‹</button>
+    <button onclick="fbClose()" title="返回" aria-label="返回"><i data-ic="chevron-left"></i></button>
     <span class="fbname" id="fbname"></span>
-    <button id="fbreload" onclick="fbRefresh()" title="Reload from disk">↻</button>
-    <button id="fbtab" onclick="fbNewTab()" title="Open in a new tab">↗</button>
-    <button id="fbup" onclick="fbUp()" title="Up one level">↑</button>
+    <button id="fbreload" onclick="fbRefresh()" title="从磁盘重新读取" aria-label="从磁盘重新读取"><i data-ic="rotate-cw"></i></button>
+    <button id="fbtab" onclick="fbNewTab()" title="在新标签页打开" aria-label="在新标签页打开"><i data-ic="external-link"></i></button>
+    <button id="fbup" onclick="fbUp()" title="上一级" aria-label="上一级"><i data-ic="corner-left-up"></i></button>
   </div>
-  <div id="fbpath"><span id="fbcrumbs"></span><button class="fbcopy" onclick="fbCopyHere()">⧉ path</button></div>
+  <div id="fbpath"><span id="fbcrumbs"></span><button class="fbcopy" onclick="fbCopyHere()"><i data-ic="copy" class="s14"></i>路径</button></div>
   <div id="fbbody"></div>
 </div>
 
 <script>
-const COLORS={working:'var(--green)',shell:'var(--teal)',idle:'var(--gray)',
-  needsYou:'var(--amber)',exited:'var(--red)',closed:'rgba(255,255,255,.22)'};
 let curUrl='',curId='',state=null,dragging=false,curView='chat',chatTimer=null,termLoaded=false,curInfo={},sentAt=0,stickBottom=false,flyNext=false;
 
+/* ---------- icons and status shapes ----------
+   Line icons are Lucide's geometry (the library the design names for the web side), inlined so the
+   page still needs nothing from outside the LAN. Emoji were the icons before, and they drew in a
+   different weight and colour on every platform. One icon means one thing; a button that is only an
+   icon always carries a title. */
+const IC={
+  'layout-grid':'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  bookmark:'<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+  'bookmark-x':'<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/><path d="m14.5 7.5-5 5M9.5 7.5l5 5"/>',
+  'eye-off':'<path d="M10.73 5.08A10.74 10.74 0 0 1 21.94 11.65a1 1 0 0 1 0 .7 10.75 10.75 0 0 1-1.44 2.49"/><path d="M14.08 14.16a3 3 0 0 1-4.24-4.24"/><path d="M17.48 17.5a10.75 10.75 0 0 1-15.42-5.15 1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14"/><path d="m2 2 20 20"/>',
+  eye:'<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  monitor:'<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  'folder-open':'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  plus:'<path d="M5 12h14M12 5v14"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  circle:'<circle cx="12" cy="12" r="8"/>',
+  copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  'copy-plus':'<path d="M15 12v6M12 15h6"/><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  pencil:'<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
+  trash:'<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/>',
+  'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+  'chevron-left':'<path d="m15 18-6-6 6-6"/>',
+  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
+  'chevron-up':'<path d="m18 15-6-6-6 6"/>',
+  'square-terminal':'<path d="m7 11 2-2-2-2M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  sigma:'<path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/>',
+  'square-stack':'<path d="M4 10c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2"/><path d="M10 16c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2"/><rect width="8" height="8" x="14" y="14" rx="2"/>',
+  'arrow-down':'<path d="M12 5v14M19 12l-7 7-7-7"/>',
+  'external-link':'<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  'rotate-cw':'<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  'corner-left-up':'<path d="M14 9 9 4 4 9"/><path d="M20 20h-7a4 4 0 0 1-4-4V4"/>',
+  'corner-down-left':'<path d="M20 4v7a4 4 0 0 1-4 4H4"/><path d="m9 10-5 5 5 5"/>',
+  'maximize-2':'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
+  'minimize-2':'<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
+  'undo-2':'<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  'redo-2':'<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  'file-text':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/>',
+  image:'<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
+  sheet:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 9v12M15 9v12"/>',
+  archive:'<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/>',
+  film:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4"/>',
+  paperclip:'<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  lightbulb:'<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/>',
+  terminal:'<path d="m4 17 6-6-6-6M12 19h8"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>',
+  bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+  dot:'<circle cx="12" cy="12" r="2.5" fill="currentColor"/>'
+};
+function ic(name,cls){
+  return '<svg class="ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+(IC[name]||'')+'</svg>';
+}
+/* Static markup names its icons as <i data-ic>; they are drawn here once, before anything renders. */
+function paintIcons(root){
+  for(const el of (root||document).querySelectorAll('i[data-ic]')) el.outerHTML=ic(el.dataset.ic,el.className);
+}
+const STATUS_TEXT={working:'运行中',idle:'空闲',needsYou:'等你处理',shell:'Shell',
+  exited:'已退出',closed:'已关闭'};
+/* The six states as still shapes — the Mac's StatusGlyph, point for point. The fuller the mark, the
+   more it wants you: a soft burst for running (Material's shape, not a spinner), a diamond with the
+   "!" cut out of it (even-odd, so it stays a hole on any ground) for needs-you, a small disc for idle,
+   a prompt in a box for a shell, an empty ring for closed and a crossed one for exited. Nothing here
+   moves; the word is the title. */
+const BURST=(()=>{
+  let d='';
+  for(let i=0;i<96;i++){
+    const a=i/96*2*Math.PI, r=7.4*(.87+.13*Math.cos(9*a));
+    d+=(i?'L':'M')+(8+r*Math.cos(a)).toFixed(2)+' '+(8+r*Math.sin(a)).toFixed(2);
+  }
+  return d+'Z';
+})();
+const GLYPH={
+  working:'<path d="'+BURST+'" fill="currentColor"/>',
+  needsYou:'<path fill="currentColor" fill-rule="evenodd" d="M8 .8 15.2 8 8 15.2 .8 8Z M8 4.26a.94.94 0 0 1 .94.94v2.73a.94.94 0 0 1-1.88 0V5.2A.94.94 0 0 1 8 4.26Z M8 9.87a1.08 1.08 0 1 1 0 2.16a1.08 1.08 0 1 1 0-2.16Z"/>',
+  idle:'<circle cx="8" cy="8" r="4" fill="currentColor"/>',
+  shell:'<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.56" width="12" height="10.88" rx="2.72" stroke-width="1.4"/><path d="M5.36 6.15 7.52 8l-2.16 1.85M8.48 10.18h2.4" stroke-width="1.3"/></g>',
+  exited:'<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.6"/><path d="M6.08 6.08l3.84 3.84M9.92 6.08l-3.84 3.84"/></g>',
+  closed:'<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+};
+function glyph(status,cls){
+  const s=GLYPH[status]?status:'closed', label=STATUS_TEXT[s];
+  return '<svg class="g '+s+(cls?' '+cls:'')+'" viewBox="0 0 16 16" role="img" aria-label="'+label+'"><title>'+label+'</title>'+GLYPH[s]+'</svg>';
+}
+/* Who is behind a card — identity, so it is a mark in the footer and never a colour on the card:
+   Claude's eight rays in its own orange, Codex's hexagon in the ink colour. */
+const AGENT={
+  claude:'<path d="M1.1 8h13.8M8 1.1v13.8M3.12 3.12l9.76 9.76M12.88 3.12l-9.76 9.76" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>',
+  codex:'<path d="M8 1.1l5.98 3.45v6.9L8 14.9l-5.98-3.45v-6.9Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/>'
+};
+function agentMark(a){
+  if(!AGENT[a]) return '';
+  const n=a==='claude'?'Claude':'Codex';
+  return '<svg class="ag '+a+'" viewBox="0 0 16 16" role="img" aria-label="'+n+'"><title>'+n+'</title>'+AGENT[a]+'</svg>';
+}
+paintIcons(document);
+
 function short(n){if(n<1000)return ''+n;if(n<1000000)return (n/1000).toFixed(n<10000?1:0)+'k';return (n/1000000).toFixed(1)+'M';}
-function ago(sec){if(sec<0)return '';if(sec<5)return 'just now';if(sec<60)return sec+'s ago';
-  const m=Math.floor(sec/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
+function ago(sec){if(sec<0)return '';if(sec<60)return '刚刚';
+  const m=Math.floor(sec/60);if(m<60)return m+' 分钟前';const h=Math.floor(m/60);if(h<24)return h+' 小时前';return Math.floor(h/24)+' 天前';}
+/* How long ago, as compactly as it can be said — RelativeTime.compact on the Mac: "刚刚", "25m", "5h",
+   "4d". What a card shows when nothing is running; the unit letter is enough once seen. */
+function rel(sec){if(sec<60)return '刚刚';const m=Math.floor(sec/60);if(m<60)return m+'m';
+  const h=Math.floor(m/60);if(h<24)return h+'h';return Math.floor(h/24)+'d';}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function termOpen(){return document.getElementById('term').classList.contains('show');}
 
@@ -1154,7 +1362,7 @@ async function termReachable(url,tries=5){
 function termError(msg,hint){
   const el=document.getElementById('termerr');
   el.innerHTML='<div class="te"><b>'+esc(msg)+'</b>'+(hint?'<span>'+esc(hint)+'</span>':'')
-              +'<button onclick="retryTerm()">Retry</button></div>';
+              +'<button onclick="retryTerm()">重试</button></div>';
   el.classList.add('on');
 }
 function retryTerm(){
@@ -1196,9 +1404,9 @@ async function ensureTerm(){
   document.getElementById('termerr').classList.remove('on');
   let j;
   try{ j=await(await fetch('/open?id='+encodeURIComponent(curId))).json(); }
-  catch(e){ termLoaded=false; termError('Could not reach the Mac','The dashboard itself answered, so this is usually a moment of network trouble.'); return; }
+  catch(e){ termLoaded=false; termError('连不上 Mac','看板本身有回应，所以这通常只是网络暂时不稳。'); return; }
   if(want!==curId) return;                 // you moved on while it was starting
-  if(!j.port){termLoaded=false;toast('This terminal is not open on the Mac right now');return;}
+  if(!j.port){termLoaded=false;toast('这个终端现在没有在 Mac 上打开');return;}
   curUrl=location.protocol+'//'+location.hostname+':'+j.port+'/';
   /* Each terminal is served by its OWN ttyd on its own port, so the Chat tab working says nothing
      about whether this one is reachable — different port, and possibly a different address family
@@ -1206,9 +1414,9 @@ async function ensureTerm(){
   if(!await termReachable(curUrl)){
     if(want!==curId) return;
     termLoaded=false;
-    termError('The terminal port is not answering',
-              'Chat talks to FleetView on :'+location.port+'; a terminal is a separate server on :'
-              +j.port+'. If this keeps happening, that port is being blocked between here and the Mac.');
+    termError('终端端口没有回应',
+              '对话走的是 FleetView 的 :'+location.port+'；终端是另一个服务，在 :'
+              +j.port+'。如果一直这样，说明这个端口在这里和 Mac 之间被挡住了。');
     return;
   }
   if(want!==curId) return;
@@ -1217,7 +1425,7 @@ async function ensureTerm(){
 async function popTerm(){await ensureTerm();if(curUrl)window.open(curUrl,'_blank');}
 
 /* ---------- conversation view ---------- */
-const TOOLICON={terminal:'$',edit:'✎',read:'▤',search:'⌕',web:'⬡',task:'⚙',other:'•'};
+const TOOLICON={terminal:'terminal',edit:'pencil',read:'file-text',search:'search',web:'globe',task:'bot',other:'dot'};
 function startChatPoll(){stopChatPoll();chatTimer=setInterval(loadChat,3000);}
 function stopChatPoll(){if(chatTimer){clearInterval(chatTimer);chatTimer=null;}}
 /* Consecutive failures, so a persistent one can be told apart from a slow one. It used to be
@@ -1388,44 +1596,42 @@ async function renderShell(){
   const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<120;
   el.dataset.sig=sig;
   el.innerHTML=txt?'<pre class="shellout">'+esc(txt)+'</pre>'
-                  :'<div id="chatnote">Nothing on screen yet.</div>';
+                  :'<div id="chatnote">屏幕上还没有内容。</div>';
   if(nearBottom)el.scrollTop=el.scrollHeight;
   updateStickyPrompt();
 }
 /* model / permission-mode / context-window strip */
-const STATUS_TEXT={working:'运行中',idle:'空闲',needsYou:'等你处理',shell:'Shell',
-  exited:'已退出',closed:'已关闭'};
 function renderInfo(i){
   const el=document.getElementById('sinfo');
-  document.getElementById('tabChat').textContent=(i&&i.shell)?'Output':'Chat';   // shell has no chat
+  document.getElementById('tabChat').textContent=(i&&i.shell)?'输出':'对话';   // shell has no chat
   if(!i||(!i.model&&!i.contextTokens&&!i.status)){el.innerHTML='';return;}
   let h='';
   // Chat had no sign of whether the agent was actually working — the transcript just stopped growing.
   if(i.status){
-    const c=COLORS[i.status]||COLORS.closed;
-    h+='<span class="live'+(i.status==='working'?' run':'')+'" style="color:'+c+'">'+
-       '<span class="dot" style="background:'+c+'"></span>'+(STATUS_TEXT[i.status]||i.status)+'</span>';
+    const ink=i.status==='working'?'var(--accent)':i.status==='needsYou'?'var(--amber)':'var(--sub)';
+    h+='<span class="live" style="color:'+ink+'">'+glyph(i.status)+(STATUS_TEXT[i.status]||i.status)+'</span>';
   }
   if(i.model) h+='<span class="chip">'+esc(i.model.replace(/^claude-/,''))+'</span>';
   if(i.permissionMode&&i.permissionMode!=='default'){
     const risky=/bypass|yolo|accept/i.test(i.permissionMode);
     // A subtitle has room for a word, not an identifier: "bypassPermissions" alone was a third of it.
-    const pm=i.permissionMode.replace(/Permissions$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
+    const PM={bypassPermissions:'跳过权限',acceptEdits:'自动接受编辑',plan:'计划模式'};
+    const pm=PM[i.permissionMode]||i.permissionMode.replace(/Permissions$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
     h+='<span class="chip'+(risky?' danger':'')+'" title="'+esc(i.permissionMode)+'">'+esc(pm)+'</span>';
   }
   // Several terminals can be attached to one agent session — then the chat is identical for all of
   // them by definition. Say so, rather than letting it look like the wrong conversation.
-  if(i.shared>1) h+='<span class="chip warn" title="This conversation belongs to one session that '+
-    i.shared+' terminals share — use the Terminal tab to see this pane on its own">⇉ shared by '+i.shared+' terminals</span>';
-  if(i.session) h+='<span class="chip" title="session '+esc(i.session)+'">'+esc(i.session.slice(0,8))+'</span>';
+  if(i.shared>1) h+='<span class="chip warn" title="这段对话属于 '+
+    i.shared+' 个终端共用的同一个会话 — 想单独看这个终端，切到「终端」">⇉ '+i.shared+' 个终端共用</span>';
+  if(i.session) h+='<span class="chip" title="会话 '+esc(i.session)+'">'+esc(i.session.slice(0,8))+'</span>';
   // The session is a tree; only the live branch is shown. Say when earlier attempts exist.
-  if(i.branches>0) h+='<span class="chip" title="This session has '+i.branches+
-    ' branch point(s) from rewinds/edits — only the active branch is shown">⑂ '+i.branches+'</span>';
+  if(i.branches>0) h+='<span class="chip" title="这个会话因为回退或改写有 '+i.branches+
+    ' 个分叉点 — 这里只显示当前分支">⑂ '+i.branches+'</span>';
   if(i.contextWindow>0&&i.contextTokens>0){
     const pct=Math.min(100,Math.round(i.contextTokens*100/i.contextWindow));
     const lvl=pct>=95?'danger':(pct>=90?'warn':'');
     h+='<span class="ctx '+lvl+'"><span class="bar"><i style="width:'+pct+'%"></i></span>'+
-       pct+'% ctx · '+short(i.contextTokens)+'</span>';
+       '上下文 '+pct+'% · '+short(i.contextTokens)+'</span>';
   }
   el.innerHTML=h;
 }
@@ -1433,7 +1639,7 @@ function renderInfo(i){
 function renderPerm(i){
   const el=document.getElementById('perm');
   if(!i||!i.options||!i.options.length){ el.classList.remove('on'); el.innerHTML=''; return; }
-  el.innerHTML='<div class="q">'+esc(i.question||'Waiting for your decision')+'</div>'+
+  el.innerHTML='<div class="q">'+esc(i.question||'等你决定')+'</div>'+
     (i.pendingTool?'<div class="what">'+esc(i.pendingTool)+(i.pendingText?' · '+esc(i.pendingText):'')+'</div>':'')+
     '<div class="opts">'+i.options.map(o=>'<button data-n="'+esc(o.n)+'">'+esc(o.n)+'. '+esc(o.label)+'</button>').join('')+'</div>';
   el.classList.add('on');
@@ -1449,8 +1655,9 @@ document.getElementById('perm').addEventListener('click',e=>{
 function syncSendBtn(){
   const btn=document.getElementById('sendbtn'), ta=document.getElementById('inputtext');
   const stop=!ta.value.trim() && curInfo && curInfo.status==='working';
-  btn.textContent=stop?'Stop':'Send';
-  btn.style.background=stop?'var(--red)':'var(--accent)';
+  btn.textContent=stop?'停止':'发送';
+  btn.style.background=stop?'var(--errorContainer)':'var(--accent)';
+  btn.style.color=stop?'var(--onErrorContainer)':'var(--onAccent)';
   btn.dataset.stop=stop?'1':'';
 }
 function jumpLatest(){ const el=document.getElementById('chat'); el.scrollTop=el.scrollHeight; }
@@ -1490,11 +1697,11 @@ if(window.ResizeObserver){
 }
 /* clipboard needs a secure context; plain-HTTP over Tailscale isn't one, so fall back */
 function copyText(t){
-  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t); toast('Copied'); return; } }catch(e){}
+  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t); toast('已复制'); return; } }catch(e){}
   const ta=document.createElement('textarea');
   ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
   document.body.appendChild(ta); ta.select();
-  try{ document.execCommand('copy'); toast('Copied'); }catch(e){ toast('Copy failed'); }
+  try{ document.execCommand('copy'); toast('已复制'); }catch(e){ toast('复制失败'); }
   document.body.removeChild(ta);
 }
 function hhmm(ts){
@@ -1601,11 +1808,11 @@ function diffRows(rows){
   rows.forEach((r,i)=>{
     if(r[0]==='+') add++; else if(r[0]==='-') del++;
     if(!keep[i]){ gap++; return; }
-    if(gap){ html+='<div class="dgap">⋯ '+gap+' unchanged</div>'; gap=0; }
+    if(gap){ html+='<div class="dgap">⋯ '+gap+' 行未改动</div>'; gap=0; }
     const cls=r[0]==='+'?'add':(r[0]==='-'?'del':'ctx');
     html+='<div class="dl '+cls+'">'+esc(r[0]+' '+r[1])+'</div>';
   });
-  if(gap) html+='<div class="dgap">⋯ '+gap+' unchanged</div>';
+  if(gap) html+='<div class="dgap">⋯ '+gap+' 行未改动</div>';
   return {html:html,add:add,del:del};
 }
 function diffHTML(edits){
@@ -1615,7 +1822,7 @@ function diffHTML(edits){
     let rows=lcsDiff(a,b);
     if(!rows) rows=a.map(l=>['-',l]).concat(b.map(l=>['+',l]));
     const r=diffRows(rows); add+=r.add; del+=r.del;
-    body+=(edits.length>1?'<div class="dhead">edit '+(idx+1)+'</div>':'')+r.html;
+    body+=(edits.length>1?'<div class="dhead">第 '+(idx+1)+' 处修改</div>':'')+r.html;
   });
   return {html:'<div class="diff">'+body+'</div>',add:add,del:del};
 }
@@ -1655,8 +1862,8 @@ function toolView(m){
     return '<div class="todo">'+d.todos.map(t=>{
       const s=t.status||'';
       const cls=s==='completed'?'d':(s==='in_progress'?'p':'');
-      const box=s==='completed'?'☑':(s==='in_progress'?'▸':'☐');
-      return '<div class="'+cls+'">'+box+' '+esc(t.activeForm&&s==='in_progress'?t.activeForm:(t.content||''))+'</div>';
+      const box=ic(s==='completed'?'check':(s==='in_progress'?'chevron-right':'circle'),'s14');
+      return '<div class="'+cls+'">'+box+'<span>'+esc(t.activeForm&&s==='in_progress'?t.activeForm:(t.content||''))+'</span></div>';
     }).join('')+'</div>';
   }
   if(m.tool==='ExitPlanMode'&&d.plan) return '<div class="mtext md">'+md(d.plan)+'</div>';
@@ -1667,7 +1874,7 @@ function toolView(m){
     ).join('')+'</div>';
   }
   if(m.tool==='Task'&&d.prompt)
-    return '<b>subagent</b><div>'+esc(d.description||'')+'</div><div class="mtext md">'+md(d.prompt)+'</div>';
+    return '<b>子代理</b><div>'+esc(d.description||'')+'</div><div class="mtext md">'+md(d.prompt)+'</div>';
   return null;
 }
 /* Stable-ish identity for a message, so an expanded card stays expanded across refreshes. */
@@ -1679,7 +1886,7 @@ function msgKey(m){
 function msgHTML(m){
   if(m.kind==='thinking')
     return '<div class="msg think" data-k="'+msgKey(m)+'">'+
-      '<div class="mhead">💭<span class="sum">thinking</span></div><div class="mtext">'+esc(m.text)+'</div></div>';
+      '<div class="mhead">'+ic('lightbulb','s16')+'<span class="sum">思考</span></div><div class="mtext">'+esc(m.text)+'</div></div>';
   if(m.kind==='tool'){
     // Tools whose payload IS the content get a purpose-built view; edits get a diff;
     // everything else falls back to input/output.
@@ -1689,18 +1896,18 @@ function msgHTML(m){
       else if(m.patch) d=patchHTML(m.patch);
     }
     const det=special ? special : (d ? d.html
-      : (m.detail?'<b>input</b><div>'+esc(m.detail)+'</div>':'')+
-        (m.output?'<b>output</b><div>'+esc(m.output)+'</div>':''));
+      : (m.detail?'<b>输入</b><div>'+esc(m.detail)+'</div>':'')+
+        (m.output?'<b>输出</b><div>'+esc(m.output)+'</div>':''));
     return '<div class="msg tool'+(m.ok===false?' bad':'')+(m.pending?' run':'')+'" data-k="'+msgKey(m)+'">'+
-      '<div class="mhead">'+(m.pending?'<span class="spin"></span>':'<span>'+(TOOLICON[m.cat]||'•')+'</span>')+
+      '<div class="mhead">'+(m.pending?'<span class="spin"></span>':ic(TOOLICON[m.cat]||'dot','s16'))+
       '<b>'+esc(m.tool||'')+'</b><span class="sum">'+esc(m.text)+'</span>'+(d?statHTML(d):'')+
       (m.pending?'<span class="when">'+since(m.ts)+'</span>':'')+
-      (m.ok===false?'<span style="color:var(--red)">✕</span>':'')+'</div>'+
+      (m.ok===false?'<span style="color:var(--red)" title="失败">'+ic('x','s16')+'</span>':'')+'</div>'+
       (det?'<div class="mbody">'+det+'</div>':'')+'</div>';
   }
   return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'">'+
-    '<span class="cp" data-copy="1">copy</span>'+
-    (m.sub?'<div class="tag">subagent</div>':'')+
+    '<span class="cp" data-copy="1">复制</span>'+
+    (m.sub?'<div class="tag">子代理</div>':'')+
     (m.ts?'<span class="when">'+hhmm(m.ts)+'</span>':'')+
     '<div class="mtext md">'+md(m.text)+'</div></div>';
 }
@@ -1709,17 +1916,17 @@ function msgHTML(m){
 function runBarHTML(){
   const i=curInfo||{};
   if(i.status==='working')
-    return '<div class="runbar"><span class="spin"></span><b>running</b>'+
+    return '<div class="runbar"><span class="spin"></span><b>运行中</b>'+
            (i.pendingTool?'<span class="what">'+esc(i.pendingTool)+
              (i.pendingText?' · '+esc(i.pendingText):'')+'</span>':'')+'</div>';
   if(i.status==='needsYou' && !(i.options&&i.options.length))
-    return '<div class="runbar wait"><b>waiting for you</b>'+
-           '<span class="what">switch to Terminal to answer</span></div>';
+    return '<div class="runbar wait">'+glyph('needsYou')+'<b>等你处理</b>'+
+           '<span class="what">切到「终端」里回答</span></div>';
   return '';
 }
 function renderChat(msgs,note){
   const el=document.getElementById('chat');
-  if(!msgs.length){el.innerHTML='<div id="chatnote">'+esc(note||'No conversation yet — send a prompt to start.')+'</div>';return;}
+  if(!msgs.length){el.innerHTML='<div id="chatnote">'+esc(note||'还没有对话 — 发一条消息开始。')+'</div>';return;}
   const last=msgs[msgs.length-1]||{};
   const st=curInfo||{};
   const sig=msgs.length+':'+(last.text||'').length+':'+(last.output||'').length+
@@ -1741,7 +1948,7 @@ function renderChat(msgs,note){
     flyNext=false;
     const all=el.querySelectorAll('.msg'), n=all.length, from=Math.max(0,n-8);
     for(let i=from;i<n;i++){ all[i].classList.add('fly');
-      all[i].style.animationDelay=((i-from)*46)+'ms'; }
+      all[i].style.animationDelay=((i-from)*20)+'ms'; }
   }
   if(nearBottom){el.scrollTop=el.scrollHeight;stickBottom=false;}
   updateStickyPrompt();
@@ -1764,13 +1971,13 @@ function renderPresets(){
   const q=(document.getElementById('pfind').value||'').trim().toLowerCase();
   const notes=q?all.filter(n=>(n.text||'').toLowerCase().includes(q)):all;
   let html=notes.map(n=>presetEdit
-    ?`<div class="nrow"><span class="ntext">${esc(n.text)}</span><button class="ndel" onclick="delNote('${n.id}')">Delete</button></div>`
-    :`<button class="nrow" onclick="usePreset('${n.id}')" title="${esc(n.text).replace(/"/g,'&quot;')}"><span class="ntext">${esc(n.text)}</span><span class="nuse">↵</span></button>`).join('');
+    ?`<div class="nrow"><span class="ntext">${esc(n.text)}</span><button class="ndel" onclick="delNote('${n.id}')">删除</button></div>`
+    :`<button class="nrow" onclick="usePreset('${n.id}')" title="${esc(n.text).replace(/"/g,'&quot;')}"><span class="ntext">${esc(n.text)}</span><span class="nuse">${ic('corner-down-left','s16')}</span></button>`).join('');
   if(!notes.length) html='<div class="nempty">'+
-    (q?'Nothing matches “'+esc(q)+'”':'No quick commands yet — tap ＋, or add Notes on the Mac')+'</div>';
+    (q?'没有匹配“'+esc(q)+'”的命令':'还没有快捷命令 — 点 + 添加，或在 Mac 的笔记里添加')+'</div>';
   document.getElementById('presets').innerHTML=html;
   const ed=document.getElementById('nedit');
-  ed.textContent=presetEdit?'Done':'Edit'; ed.classList.toggle('on',presetEdit);
+  ed.textContent=presetEdit?'完成':'编辑'; ed.classList.toggle('on',presetEdit);
 }
 /* Append, never replace. A quick command is a fragment you stack onto what you are already writing
    — "run the tests" then "and fix what fails" — and replacing threw away a half-typed prompt with
@@ -1785,7 +1992,7 @@ function usePreset(id){
   autoGrow(ta); ta.focus();
   syncSendBtn();
 }
-async function addNote(){const c=prompt('Add a quick command (saved to Notes on the Mac)');
+async function addNote(){const c=prompt('添加快捷命令（保存到 Mac 的笔记）');
   if(c&&c.trim()){await fetch('/note?add='+encodeURIComponent(c.trim()));await refreshState();renderPresets();}}
 async function delNote(id){await fetch('/note?del='+encodeURIComponent(id));await refreshState();renderPresets();}
 function toggleEditPresets(){presetEdit=!presetEdit;renderPresets();}
@@ -1942,8 +2149,9 @@ function applyBar(){
     bar.classList.add('big');
     bar.style.height=Math.min(barMax(),Math.max(BAR_MIN,barH))+'px';
   }
-  document.getElementById('expand').textContent=barH?'⤡':'⤢';
-  document.getElementById('bigLabel').textContent=barH?'Collapse':'Editor';
+  const ex=document.getElementById('expand');
+  ex.innerHTML=ic(barH?'minimize-2':'maximize-2'); ex.title=barH?'收起编辑器':'展开编辑器';
+  document.getElementById('bigLabel').textContent=barH?'收起':'编辑器';
   autoGrow(document.getElementById('inputtext'));
   placeJump();                      // the bar just changed height; the ↓ rides on top of it
 }
@@ -1988,8 +2196,8 @@ function autoGrow(ta){
 const NARROW=matchMedia('(max-width:560px)');
 function fitPlaceholder(){
   document.getElementById('inputtext').placeholder=NARROW.matches
-    ? 'Type here (中文 OK)'
-    : 'Type here (中文 OK) — Enter to send, Shift+Enter for newline';
+    ? '输入消息'
+    : '输入消息 — 回车发送，Shift+回车换行';
 }
 NARROW.addEventListener('change',fitPlaceholder);
 fitPlaceholder();
@@ -2063,13 +2271,13 @@ async function sendText(){
    file that lands while you are looking appears on its own. */
 let trayFiles=[];
 function fileIcon(ext){
-  if(['png','jpg','jpeg','gif','webp','heic','avif','svg'].includes(ext))return '🖼';
-  if(ext==='pdf')return '📄';
-  if(['csv','xlsx','xls'].includes(ext))return '📊';
-  if(['zip','tar','gz','tgz'].includes(ext))return '🗜';
-  if(['mp4','mov','mp3','wav','m4a'].includes(ext))return '🎬';
-  if(['txt','log','md','json','yml','yaml'].includes(ext))return '📝';
-  return '📎';
+  if(['png','jpg','jpeg','gif','webp','heic','avif','svg'].includes(ext))return ic('image');
+  if(ext==='pdf')return ic('file-text');
+  if(['csv','xlsx','xls'].includes(ext))return ic('sheet');
+  if(['zip','tar','gz','tgz'].includes(ext))return ic('archive');
+  if(['mp4','mov','mp3','wav','m4a'].includes(ext))return ic('film');
+  if(['txt','log','md','json','yml','yaml'].includes(ext))return ic('file-text');
+  return ic('file');
 }
 const kb=n=>n<1024?n+'B':(n<1048576?(n/1024).toFixed(0)+'KB':(n/1048576).toFixed(1)+'MB');
 async function loadFiles(){
@@ -2098,7 +2306,7 @@ function fileWhen(ts){
 }
 function renderTray(){
   const el=document.getElementById('traylist');
-  if(!trayFiles.length){ el.innerHTML='<div class="tnone">nothing yet</div>'; return; }
+  if(!trayFiles.length){ el.innerHTML='<div class="tnone">还没有收到文件</div>'; return; }
   /* `from` is a terminal id — the server deliberately leaves naming to us, since the dashboard
      already knows every terminal from /state. */
   const names={};
@@ -2134,7 +2342,7 @@ async function toggleProjects(){
   el.classList.add('on'); document.getElementById('projbtn').classList.add('on');
   const q=document.getElementById('pquery'); q.value='';
   q.focus();                                   // inside the tap, so a phone raises its keyboard
-  document.getElementById('projlist').innerHTML='<div class="tnone">loading…</div>';
+  document.getElementById('projlist').innerHTML='<div class="tnone">加载中…</div>';
   try{ wsFolders=(await(await fetch('/workspace',{cache:'no-store'})).json()).folders||[]; }
   catch(e){ wsFolders=[]; }
   renderProjects();
@@ -2148,15 +2356,15 @@ function renderProjects(){
   const q=(document.getElementById('pquery').value||'').trim().toLowerCase();
   const list=q?wsFolders.filter(f=>f.name.toLowerCase().includes(q)):wsFolders;
   const el=document.getElementById('projlist');
-  if(!list.length){ el.innerHTML='<div class="tnone">'+(q?'no folder matches':'no folders in ~/PycharmProjects')+'</div>'; return; }
+  if(!list.length){ el.innerHTML='<div class="tnone">'+(q?'没有匹配的文件夹':'~/PycharmProjects 里没有文件夹')+'</div>'; return; }
   el.innerHTML=list.map((f,i)=>{
     const when=f.modified?ago(Math.round(Date.now()/1000-f.modified)):'';
     const meta=[f.git?'git':'', when].filter(Boolean).join(' · ');
-    return '<div class="prow"><span class="pn"><b>'+esc(f.name)+(f.projectId?'<span class="onb">on board</span>':'')+
+    return '<div class="prow"><span class="pn"><b>'+esc(f.name)+(f.projectId?'<span class="onb">已在看板</span>':'')+
       '</b><span>'+esc(meta)+'</span></span>'+
-      (f.projectId?'<button onclick="openProject('+i+',false)">Go to</button>'
-                  :'<button onclick="openProject('+i+',false)">Open</button>')+
-      '<button class="go" onclick="openProject('+i+',true)">+ Terminal</button></div>';
+      (f.projectId?'<button onclick="openProject('+i+',false)">前往</button>'
+                  :'<button onclick="openProject('+i+',false)">打开</button>')+
+      '<button class="go" onclick="openProject('+i+',true)">新终端</button></div>';
   }).join('');
 }
 /* Open it (a no-op if it is already on the board), then take the board there — and with the second
@@ -2168,7 +2376,7 @@ async function openProject(i,withTerm){
   try{
     if(!pid){
       const r=await fetch('/project/open?path='+encodeURIComponent(f.path));
-      if(!r.ok){ toast('could not open '+f.name); return; }
+      if(!r.ok){ toast('打不开 '+f.name); return; }
       pid=(await r.json()).id;
     }
     closeProjects();
@@ -2178,11 +2386,12 @@ async function openProject(i,withTerm){
       if(t.id){ openTerm(t.id,f.name); return; }
     }
     await tick();
-    const sec=document.querySelector('.proj[data-pid="'+pid+'"]');
+    // A project that has been quiet for two hours is a one-line row rather than a section.
+    const sec=document.querySelector('.proj[data-pid="'+pid+'"],.drow[data-pid="'+pid+'"]');
     if(sec) sec.scrollIntoView({block:'start',behavior:'smooth'});
     showBoardHead();
-    toast(f.projectId?f.name:'opened '+f.name);
-  }catch(e){ toast('could not open '+f.name); }
+    toast(f.projectId?f.name:'已打开 '+f.name);
+  }catch(e){ toast('打不开 '+f.name); }
 }
 
 /* Files: an agent reads a file by opening it, so getting one out of a phone and into a prompt means
@@ -2203,12 +2412,12 @@ function uprogBox(){
   if(p) return p;
   p=document.createElement('div');p.id='uprog';
   p.style.cssText='position:fixed;left:50%;bottom:112px;transform:translateX(-50%);z-index:71;'+
-    'pointer-events:none;background:var(--card);border:1px solid var(--stroke);color:var(--text);'+
-    'padding:9px 12px;border-radius:10px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.5);'+
+    'pointer-events:none;background:var(--inverseSurface);color:var(--inverseOnSurface);'+
+    'padding:10px 14px;border-radius:8px;font-size:12px;line-height:16px;box-shadow:0 6px 20px rgba(0,0,0,.35);'+
     'min-width:200px;max-width:78vw;opacity:0;transition:opacity .15s';
   p.innerHTML='<div id="uprogtext" style="margin-bottom:6px;white-space:nowrap;overflow:hidden;'+
     'text-overflow:ellipsis"></div>'+
-    '<div style="height:4px;background:var(--stroke);border-radius:2px;overflow:hidden">'+
+    '<div style="height:4px;background:color-mix(in srgb,var(--inverseOnSurface) 24%,transparent);border-radius:2px;overflow:hidden">'+
     '<div id="uprogbar" style="height:100%;width:0;background:var(--accent);transition:width .12s">'+
     '</div></div>';
   document.body.appendChild(p);
@@ -2223,7 +2432,7 @@ function uploadOne(f,label){
   return new Promise((resolve,reject)=>{
     const box=uprogBox();
     const txt=document.getElementById('uprogtext'), bar=document.getElementById('uprogbar');
-    const name=f.name||'file';
+    const name=f.name||'文件';
     bar.style.width='0';
     txt.textContent=label+name;
     box.style.opacity='1';
@@ -2256,8 +2465,8 @@ function uploadOne(f,label){
       if(j&&j.path){ bar.style.width='100%'; resolve(j.path); }
       else reject(new Error((j&&j.error)||('HTTP '+x.status)));
     };
-    x.onerror=()=>reject(new Error('network error'));
-    x.onabort=()=>reject(new Error('aborted'));
+    x.onerror=()=>reject(new Error('网络错误'));
+    x.onabort=()=>reject(new Error('已取消'));
     x.send(f);
   });
 }
@@ -2281,7 +2490,7 @@ async function attachFiles(files){
     }catch(e){
       lab.textContent='✕';
       setTimeout(()=>{lab.textContent=was;},1400);
-      toast('upload failed: '+e.message);
+      toast('上传失败：'+e.message);
     }
   }
   uprogHide();
@@ -2400,7 +2609,7 @@ const fbBase=p=>p.replace(/\/+$/,'').split('/').pop()||p;
    http on the LAN, so the old selection trick is not a fallback — it is the normal path. */
 async function copyText(s){
   try{
-    if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(s); toast('copied'); return; }
+    if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(s); toast('已复制'); return; }
   }catch(e){}
   try{
     const ta=document.createElement('textarea');
@@ -2412,8 +2621,8 @@ async function copyText(s){
     ta.focus(); ta.setSelectionRange(0,s.length);
     const ok=document.execCommand('copy');
     document.body.removeChild(ta);
-    toast(ok?'copied':'copy failed — long-press the path to select it');
-  }catch(e){ toast('copy failed — long-press the path to select it'); }
+    toast(ok?'已复制':'复制失败 — 长按路径手动选择');
+  }catch(e){ toast('复制失败 — 长按路径手动选择'); }
 }
 function fbOpen(path){
   document.getElementById('fb').classList.add('show');
@@ -2462,25 +2671,25 @@ function fbHead(){
 }
 async function fbList(dir){
   const body=document.getElementById('fbbody');
-  body.innerHTML='<div class="fbnote">Loading…</div>';
+  body.innerHTML='<div class="fbnote">加载中…</div>';
   let j;
   try{
     const r=await fetch('/browse?path='+encodeURIComponent(dir),{cache:'no-store'});
     j=await r.json();
     if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||'could not list that folder')+'</div>'; return false; }
+  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||'无法列出这个文件夹')+'</div>'; return false; }
   fbFile=''; fbDir=j.path; fbRoot=j.root; fbDoc=null;
   fbHead();
   let html='';
-  if(j.truncated) html+='<div class="fbnote">showing the first '+j.entries.length+' entries of this folder</div>';
+  if(j.truncated) html+='<div class="fbnote">只显示这个文件夹的前 '+j.entries.length+' 项</div>';
   for(const e of j.entries){
     html+='<div class="fbrow" data-p="'+att(fbJoin(j.path,e.name))+'" data-d="'+(e.dir?1:0)+'">'
-        + '<span class="fbi">'+(e.dir?'📁':fileIcon(extOf(e.name)))+'</span>'
+        + '<span class="fbi">'+(e.dir?ic('folder'):fileIcon(extOf(e.name)))+'</span>'
         + '<span class="fbn">'+esc(e.name)+'</span>'
         + '<span class="fbs">'+(e.dir?'':kb(e.size||0))+'</span>'
-        + '<button class="fbc" title="Copy path">⧉</button></div>';
+        + '<button class="fbc" title="复制路径" aria-label="复制路径">'+ic('copy','s16')+'</button></div>';
   }
-  if(!j.entries.length) html+='<div class="fbnote">this folder is empty</div>';
+  if(!j.entries.length) html+='<div class="fbnote">这个文件夹是空的</div>';
   body.innerHTML=html;
   body.scrollTop=0;
   return true;
@@ -2492,7 +2701,7 @@ async function fbShow(path){
   if(MDEXT.includes(e)) return fbLoadMd(path,'view');
   if(IMGEXT.includes(e)){ body.innerHTML='<img class="fbimg" src="'+att(url)+'">'; body.scrollTop=0; return; }
   if(e==='pdf'){ body.innerHTML='<iframe class="fbpdf" src="'+att(url)+'"></iframe>'; return; }
-  body.innerHTML='<div class="fbnote">Loading…</div>';
+  body.innerHTML='<div class="fbnote">加载中…</div>';
   try{
     const r=await fetch(url,{cache:'no-store'});
     const type=r.headers.get('content-type')||'';
@@ -2500,14 +2709,14 @@ async function fbShow(path){
       // 415 is the server saying "this is binary" — the answer to that is a download, not an error.
       const msg=esc(await r.text());
       body.innerHTML='<div class="fbnote">'+msg+(r.status===415
-        ?'<br><a href="'+att(url)+'&dl=1">download it</a>':'')+'</div>';
+        ?'<br><a href="'+att(url)+'&dl=1">下载</a>':'')+'</div>';
       return;
     }
     if(type.startsWith('image/')){ body.innerHTML='<img class="fbimg" src="'+att(url)+'">'; return; }
     const t=await r.text();
     body.innerHTML='<pre class="fbtext"></pre>';
     body.querySelector('pre').textContent=t;      // textContent, so a file of HTML stays a file
-  }catch(err){ body.innerHTML='<div class="fbnote">could not read that file</div>'; }
+  }catch(err){ body.innerHTML='<div class="fbnote">读不了这个文件</div>'; }
   body.scrollTop=0;
 }
 document.getElementById('fbbody').addEventListener('click',e=>{
@@ -2561,10 +2770,10 @@ const FB_WHY={large:'文件太大（超过 512 KB），这里只读',encoding:'�
               readonly:'这个文件没有写权限'};
 async function fbLoadMd(path,mode,scrollTo){
   const body=document.getElementById('fbbody');
-  if(!fbDoc) body.innerHTML='<div class="fbnote">Loading…</div>';
+  if(!fbDoc) body.innerHTML='<div class="fbnote">加载中…</div>';
   let r,text;
   try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store'}); text=await r.text(); }
-  catch(e){ body.innerHTML='<div class="fbnote">could not read that file</div>'; return; }
+  catch(e){ body.innerHTML='<div class="fbnote">读不了这个文件</div>'; return; }
   if(fbFile!==path) return;                      // walked away while it loaded
   if(!r.ok){ body.innerHTML='<div class="fbnote">'+esc(text)+'</div>'; return; }
   const ed=r.headers.get('X-FV-Editable')||'';
@@ -2584,9 +2793,9 @@ function fbRenderMd(mode){
   const body=document.getElementById('fbbody'), d=fbDoc;
   body.innerHTML='<div class="fbtools">'
     +'<button data-a="view"'+(mode==='view'?' class="on"':'')+'>预览</button>'
-    +'<button data-a="edit"'+(mode==='edit'?' class="on"':'')+(d.editable?'':' disabled')+'>✎ 编辑</button>'
-    +'<button data-a="undo" title="撤销 (⌘Z)">↶ 撤销</button>'
-    +'<button data-a="redo" title="重做 (⇧⌘Z)">↷ 重做</button>'
+    +'<button data-a="edit"'+(mode==='edit'?' class="on"':'')+(d.editable?'':' disabled')+'>'+ic('pencil')+'编辑</button>'
+    +'<button data-a="undo" title="撤销 (⌘Z)">'+ic('undo-2')+'撤销</button>'
+    +'<button data-a="redo" title="重做 (⇧⌘Z)">'+ic('redo-2')+'重做</button>'
     +'<span class="fbstate"></span>'
     +'<button data-a="save" class="save" title="保存 (⌘S)">保存</button></div>'
     +(mode==='edit'?'<textarea class="fbedit" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>'
@@ -2697,18 +2906,20 @@ function endDrag(){
   document.getElementById('dock').style.display='none';
 }
 function zonesFor(cluster,done,win){
-  const z=[{k:'done',t:done?'Unmark':'🔖 Mark'},{k:'duplicate',t:'⧉ Duplicate'},{k:'rename',t:'✎ Rename'}];
+  // The same words the Mac's dock and card menu use, so one action has one name on both.
+  const z=[{k:'done',t:done?'取消书签':'加书签',i:done?'bookmark-x':'bookmark'},
+           {k:'duplicate',t:'复制',i:'copy-plus'},{k:'rename',t:'重命名',i:'pencil'}];
   /* The Mac's window for this terminal, not anything on this page: hiding keeps the agent running
      with nothing drawing it on the desktop; showing puts the window back there. */
-  if(win==='open')z.push({k:'hide',t:'🙈 Hide window'});
-  if(win==='hidden')z.push({k:'show',t:'👁 Show window'});
-  if(cluster)z.push({k:'leaveCluster',t:'⇤ Leave'});
-  z.push({k:'remove',t:'🗑 Remove',danger:true});
+  if(win==='open')z.push({k:'hide',t:'隐藏窗口',i:'eye-off'});
+  if(win==='hidden')z.push({k:'show',t:'显示窗口',i:'eye'});
+  if(cluster)z.push({k:'leaveCluster',t:'移出组',i:'log-out'});
+  z.push({k:'remove',t:'移除',i:'trash',danger:true});
   return z;
 }
 function buildDock(cluster,done,win){
   const dock=document.getElementById('dock');
-  dock.innerHTML=zonesFor(cluster,done,win).map(z=>`<div class="zone${z.danger?' danger':''}" data-zone="${z.k}">${z.t}</div>`).join('');
+  dock.innerHTML=zonesFor(cluster,done,win).map(z=>`<div class="zone${z.danger?' danger':''}" data-zone="${z.k}" data-label="${z.t}">${ic(z.i)}<span>${z.t}</span></div>`).join('');
 }
 function zoneAt(x,y){
   for(const el of document.querySelectorAll('#dock .zone')){
@@ -2767,6 +2978,9 @@ function onMove(e){
   const hot=zoneAt(e.clientX,e.clientY);
   drag.hotAct=hot?hot.dataset.zone:null;   // remember target NOW; the dock is hidden before onUp reads it
   if(hot)hot.classList.add('hot');
+  // The label by the finger says what letting go will do, not just what is being carried.
+  const say=hot?'松开：'+hot.dataset.label:drag.name;
+  if(chip.textContent!==say) chip.textContent=say;
 }
 function onUp(e){
   clearTimeout(drag.holdTimer);
@@ -2786,11 +3000,11 @@ function onUp(e){
   // happen, not a slow tap. Opening the terminal there surprised people who had only paused.
   if(heldStill) return;
   if(!wasActive){ // a tap, not a drag
-    if(drag.canopen)openTerm(drag.id,drag.name);else toast('Open this terminal on the Mac first');
+    if(drag.canopen)openTerm(drag.id,drag.name);else toast('先在 Mac 上打开这个终端');
     return;
   }
   if(!act)return;
-  if(act==='rename'){const n=prompt('Rename terminal',drag.name);if(n)doAction(drag.id,'rename',n);}
+  if(act==='rename'){const n=prompt('重命名终端',drag.name);if(n)doAction(drag.id,'rename',n);}
   else doAction(drag.id,act);
 }
 document.getElementById('root').addEventListener('pointerdown',onDown);
@@ -2815,32 +3029,33 @@ function toast(msg,ms){
     /* pointer-events:none, because it is only ever faded out and never removed: an invisible node
        parked 70px off the bottom at z-index 70 otherwise goes on swallowing every tap that lands on
        it — which is precisely where the composer's key row sits. */
-    t.style.cssText='position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:70;pointer-events:none;background:var(--card);border:1px solid var(--stroke);color:var(--text);padding:9px 14px;border-radius:10px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+    // Material's snackbar: inverse surface, so it reads as on top of whatever is under it.
+    t.style.cssText='position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:70;pointer-events:none;background:var(--inverseSurface);color:var(--inverseOnSurface);padding:10px 16px;border-radius:8px;font-size:14px;line-height:20px;max-width:min(560px,calc(100vw - 32px));box-shadow:0 6px 20px rgba(0,0,0,.35)';
     document.body.appendChild(t);}
   t.textContent=msg;t.style.opacity='1';
   clearTimeout(toastT);toastT=setTimeout(()=>{t.style.opacity='0';},ms||1600);
 }
 
 // ---------- render ----------
-function card(t){
-  const locked=!t.canOpen;
-  const sig=t.status==='shell'?'$':'›';
-  const agent=t.agent?`<span class="agent" style="color:${t.agent==='codex'?'var(--codex)':'var(--claude)'};background:transparent">${t.agent}</span>`:'';
-  const tok=t.tokens>0?`<span style="font-size:10px;color:var(--accent);margin-left:5px">${short(t.tokens)} tok</span>`:'';
-  const dn=(t.done?'🔖 ':'')+(t.window==='hidden'?'<span title="Its window on the Mac is hidden; the agent keeps running">🙈</span> ':'');
-  return `<div class="card ${locked?'locked':''} ${t.done?'done':''}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
-    <div class="cardtop">
-      <span class="dot" style="background:${COLORS[t.status]||COLORS.closed}"></span>
-      <span class="name">${dn}${esc(t.name)}</span>${agent}
-      <span class="status" style="color:${COLORS[t.status]||COLORS.closed}">${esc(t.statusLabel)}${tok}</span>
-    </div>
-    <div class="prompt"><span class="sig">${sig}</span><span class="txt">${t.prompt?esc(t.prompt):'—'}</span></div>
-    <div class="foot">
-      <span class="uid" onclick="event.stopPropagation();copyTermAddress('${t.id}')"
-            title="Click to copy this terminal's ip/uuid">${t.id.slice(0,8).toLowerCase()}</span>
-      ${t.running>=0?`<span class="ago"><span class="run" data-run="${t.id}"></span></span>`
-                    :((t.lastRun>=0||t.idle>=0)?`<span class="ago">${t.lastRun>=0?`<span class="run done">⏱ ${clockText(t.lastRun*1000)}</span> `:''}${t.idle>=0?ago(t.idle):''}</span>`:'<span></span>')}
-    </div>
+/* One card, the Mac's three rows: the status shape, the name and the clock (or how long ago); the
+   last prompt, always two lines tall so every card in a grid is the same height; the agent's mark
+   and its tokens. No status word and no agent chip — the shape and the mark say both, and the word
+   is the shape's title. `now` is the copy in 进行中, which takes its state's container colour. */
+function card(t,now){
+  const ended=t.status==='exited'||t.status==='closed';
+  const tint=now&&(t.status==='working'||t.status==='needsYou');
+  const cls='card'+(tint?(t.status==='working'?' tint run':' tint need'):'')+(ended?' ghost':'')+(t.canOpen?'':' locked');
+  const time=t.running>=0
+    ? `<span class="when clock lm" data-run="${t.id}"></span>`
+    : (t.idle>=0?`<span class="when lm" title="${t.lastRun>=0?'上一轮用了 '+clockText(t.lastRun*1000):'最后一次活动'}">${rel(t.idle)}</span>`:'');
+  const extra=(t.done?`<span class="mk" title="已加书签">${ic('bookmark','s14')}</span>`:'')+
+    (t.window==='hidden'?`<span class="hid" title="窗口已隐藏，agent 在后台继续运行">${ic('eye-off','s14')}</span>`:'');
+  const tok=t.tokens>0?`<span class="ls" title="${t.tokens} tokens">${short(t.tokens)}</span>`:'';
+  return `<div class="${cls}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
+    <div class="hd">${glyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
+    <div class="pr bs"><span class="sig">${t.status==='shell'?'$':'›'}</span><span class="tx">${t.prompt?esc(t.prompt):'—'}</span></div>
+    <div class="ft">${agentMark(t.agent)}${tok}<button class="uid" onclick="event.stopPropagation();copyTermAddress('${t.id}')"
+      title="复制这个终端的地址（ip/uuid）" aria-label="复制终端地址">${ic('copy','s14')}</button></div>
   </div>`;
 }
 /* The id in the form another machine can act on: `ip/uuid`, which splits straight into
@@ -2878,23 +3093,88 @@ function syncRuns(terms){
   for(const id in runStart){ if(!live[id]) delete runStart[id]; }
   paintRuns();
 }
-/* `[data-run]` only: a finished run's chip carries the same class but its figure is fixed and
-   already in the markup, and blanking it a second after it rendered is exactly what a blind
-   `.run` sweep would do. */
+/* `[data-run]` only, and the card's own class: `.run` also names a pending tool card in the
+   conversation, and a blind sweep would write a clock into that. The figure is bare, "2:12", as on
+   the Mac — the shape beside it already says it is running. */
 function paintRuns(){
-  for(const el of document.querySelectorAll('.run[data-run]')){
+  for(const el of document.querySelectorAll('.clock[data-run]')){
     const st=runStart[el.dataset.run];
-    el.textContent=st?('⏱ '+clockText(Date.now()-st)):'';
+    const v=st?clockText(Date.now()-st):'';
+    if(el.textContent!==v) el.textContent=v;
   }
 }
 setInterval(paintRuns,1000);
+/* The board, top to bottom, in the Mac's order of priority:
+   1. 进行中 — what needs you, then what is running, lifted out of their projects and tinted;
+   2. every project touched in the last two hours — or with something live in it, or with nothing in
+      it yet — each under a full-width rule;
+   3. 两小时内没动过 — the rest, one line each, opened in place with a tap.
+   Ended terminals stay in their project as outlined cards. The Mac's 最近使用 tray has no
+   counterpart here: the board has never had one, and it is not invented for the sake of matching. */
+const DORMANT_AFTER=2*3600;
+/* Dormant projects opened from their row. Not stored: it is a look, not a setting, and the next
+   visit should fold them again — the Mac's `wokenProjects`. */
+const woken=new Set();
+/* `idle` is seconds since a terminal was last really used, -1 if never. Any one terminal being used
+   brings the whole project back; a project with no terminals is never dormant, because its empty row
+   is the way to start one. */
+function lastIdle(all){ const v=all.filter(t=>t.idle>=0).map(t=>t.idle); return v.length?Math.min(...v):-1; }
+function isDormant(all){
+  if(!all.length) return false;
+  if(all.some(t=>t.status==='working'||t.status==='needsYou')) return false;
+  const last=lastIdle(all);
+  return last<0||last>DORMANT_AFTER;
+}
+function wake(pid){ if(woken.has(pid)) woken.delete(pid); else woken.add(pid); if(state) render(state); }
+function projSection(s,p,all,terms,isWoken){
+  const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
+  let h=`<section class="proj" data-pid="${p.id}"><div class="ph">`+
+    `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
+    // Same rule as the cluster header: the project's real size, and what is on screen of it.
+    `<span class="meta lm"><span title="${all.length} 个终端">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
+    (tot>0?`<span title="${tot} tokens">${ic('sigma','s14')}${short(tot)}</span>`:'')+
+    (last>=0?`<span title="最后活动">${rel(last)}</span>`:'')+`</span>`+
+    `<span class="acts">`+
+    (isWoken?`<button class="icb" onclick="wake('${p.id}')" title="收回成一行" aria-label="收回成一行">${ic('chevron-up')}</button>`:'')+
+    // The path rides in a data attribute rather than in the handler's text: it is arbitrary user
+    // data, and a project directory with a quote in it would otherwise end the attribute.
+    `<button class="icb" data-path="${att(p.path)}" onclick="fbOpen(this.dataset.path)" title="浏览项目文件" aria-label="浏览项目文件">${ic('folder')}</button>`+
+    `<button class="icb" onclick="newTerm('${p.id}')" title="新建终端" aria-label="新建终端">${ic('plus')}</button>`+
+    `</span></div>`;
+  if(!all.length) h+=`<button class="emptyrow" onclick="newTerm('${p.id}')">${ic('plus','s16')}新终端</button>`;
+  const cids=[...new Set(terms.filter(t=>t.clusterId).map(t=>t.clusterId))];
+  for(const cid of cids){
+    const c=s.clusters.find(x=>x.id===cid), mem=terms.filter(t=>t.clusterId===cid);
+    // The cluster's real size, and what is being shown of it — the header must not claim a
+    // two-terminal task when the task has six and four are filtered out.
+    const memAll=all.filter(t=>t.clusterId===cid);
+    const size=mem.length===memAll.length?`${memAll.length}`:`${mem.length} / ${memAll.length}`;
+    h+=`<div class="cluster"><div class="chead">${ic('square-stack','s14')}<span class="cname ts">${esc(c?c.name:'')}</span>`+
+       `<span class="ts" title="${memAll.length} 个终端">${size}</span></div>`+
+       `<div class="grid">${mem.map(t=>card(t)).join('')}</div></div>`;
+  }
+  const solo=terms.filter(t=>!t.clusterId);
+  if(solo.length) h+=`<div class="grid">${solo.map(t=>card(t)).join('')}</div>`;
+  return h+'</section>';
+}
+function dormRow(p,all,terms){
+  const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
+  // Every terminal as its status shape — the project's state at a glance without a single card.
+  // Capped so a big project does not run the row off the edge.
+  const marks=terms.slice(0,24).map(t=>glyph(t.status,'s12')).join('')+
+    (terms.length>24?`<span class="ls">+${terms.length-24}</span>`:'');
+  return `<button class="drow" data-pid="${p.id}" onclick="wake('${p.id}')" title="${att(p.path)}&#10;点开查看这个项目的终端">`+
+    `${ic('chevron-right','s16')}<span class="dn ts">${esc(p.name)}</span><span class="marks">${marks}</span>`+
+    `<span class="r lm">${tot>0?`<span title="${tot} tokens">${short(tot)}</span>`:''}`+
+    `${last>=0?`<span title="最后活动">${rel(last)}</span>`:''}</span></button>`;
+}
 function render(s){
   const cnt=document.getElementById('counts');
-  const cntText=`${s.projects.length} project${s.projects.length===1?'':'s'} · ${s.terminals.length} terminal${s.terminals.length===1?'':'s'}`;
+  const cntText=`${s.projects.length} 个项目 · ${s.terminals.length} 个终端`;
   if(cnt.textContent!==cntText) cnt.textContent=cntText;
   let pills='';
-  if(s.working>0)pills+=`<span class="pill" style="color:var(--onPrimaryContainer);background:var(--primaryContainer)">${s.working} working</span> `;
-  if(s.needs>0)pills+=`<span class="pill" style="color:var(--onWarnContainer);background:var(--warnContainer)">${s.needs} needs you</span>`;
+  if(s.needs>0)pills+=`<span class="badge need" title="${s.needs} 个等你处理">${glyph('needsYou')}${s.needs}</span>`;
+  if(s.working>0)pills+=`<span class="badge run" title="${s.working} 个运行中">${glyph('working')}${s.working}</span>`;
   const pillEl=document.getElementById('pills');
   if(pillEl.innerHTML!==pills) pillEl.innerHTML=pills;
   // The mark filter is this device's, not the fleet's: it is kept in localStorage rather than sent
@@ -2905,59 +3185,48 @@ function render(s){
   mb.classList.toggle('on',onlyMarked);
   document.getElementById('markcount').textContent=marked?marked:'';
   let html='';
-  if(!s.remoteOK)html+=`<div class="banner">Web terminals are disabled — run <b>${esc(s.remoteHint)}</b> and relaunch FleetView. Status is still shown.</div>`;
-  /* What is moving, before what exists. The board below is grouped by project because that is how
-     work is organised; this answers the other question, which otherwise means scrolling every
-     section looking for green dots. Same cards — a second place to see a terminal, not a second
-     kind — each tagged with the project it came from, since this row cannot say it by grouping.
-     Absent rather than empty when nothing runs. */
-  const runList=(onlyMarked?s.terminals.filter(t=>t.done):s.terminals).filter(t=>t.status==='working');
-  if(runList.length){
+  if(!s.remoteOK)html+=`<div class="banner">网页终端不可用 — 运行 <b>${esc(s.remoteHint)}</b> 后重新启动 FleetView。状态仍会照常显示。</div>`;
+  /* What wants you and what is moving, before what exists. The board below is grouped by project
+     because that is how work is organised; this answers the other question, which otherwise means
+     scanning every section for a shape. Same cards — a second place to see a terminal, not a second
+     kind — each tagged with the project it came from, since this zone cannot say it by grouping.
+     Absent rather than empty when nothing qualifies. */
+  const vis=onlyMarked?s.terminals.filter(t=>t.done):s.terminals;
+  const live=[...vis.filter(t=>t.status==='needsYou'),...vis.filter(t=>t.status==='working')];
+  if(live.length){
     const pname=id=>{const p=s.projects.find(x=>x.id===id);return p?p.name:'—';};
-    html+=`<div class="proj runbox"><div class="projhead">`
-        + `<span class="rlabel">⚡ RUNNING NOW</span><span class="count">${runList.length}</span></div>`
-        + `<div class="grid">${runList.map(t=>
-            `<div class="rcard"><div class="rtag">📁 ${esc(pname(t.projectId))}</div>${card(t)}</div>`
-          ).join('')}</div></div>`;
+    html+=`<section class="now"><div class="zh"><span class="ts">进行中</span><span class="ts n">${live.length}</span></div>`
+        + `<div class="grid">${live.map(t=>
+            `<div class="rc"><div class="from ls">${ic('folder','s12')}<span>${esc(pname(t.projectId))}</span></div>${card(t,true)}</div>`
+          ).join('')}</div></section>`;
   }
+  const dorm=[];
   for(const p of s.projects){
     const all=s.terminals.filter(t=>t.projectId===p.id);
     const terms=onlyMarked?all.filter(t=>t.done):all;
     // A project with nothing marked is left out whole, the way the Mac's board does it — the point
     // of the filter is a board with only the work you are tracking on it.
     if(!terms.length&&onlyMarked) continue;
-    const tot=all.reduce((a,t)=>a+t.tokens,0);
-    html+=`<div class="proj" data-pid="${p.id}"><div class="projhead"><span class="name">${esc(p.name)}</span>`+
-      // Same rule as the cluster header: the project's real size, and what is on screen of it.
-      `<span class="count">${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
-      (tot>0?`<span class="tok">Σ ${short(tot)}</span>`:'')+
-      `<button class="addbtn" onclick="newTerm('${p.id}')">+ Terminal</button>`+
-      // The path rides in a data attribute rather than in the handler's text: it is arbitrary user
-      // data, and a project directory with a quote in it would otherwise end the attribute.
-      `<button class="fbbtn" data-path="${att(p.path)}" onclick="fbOpen(this.dataset.path)" title="${att(p.path)}">📁 Files</button></div>`;
-    const cids=[...new Set(terms.filter(t=>t.clusterId).map(t=>t.clusterId))];
-    for(const cid of cids){
-      const c=s.clusters.find(x=>x.id===cid);const mem=terms.filter(t=>t.clusterId===cid);
-      // The cluster's real size, and what is being shown of it — the header must not claim a
-      // two-terminal task when the task has six and four are filtered out.
-      const memAll=all.filter(t=>t.clusterId===cid);
-      const size=mem.length===memAll.length?`· ${memAll.length}`:`· ${mem.length} of ${memAll.length}`;
-      html+=`<div class="cluster"><div class="chead"><span class="clabel">CLUSTER</span><span class="cname">${esc(c?c.name:'')}</span><span class="muted" style="margin-left:8px">${size}</span></div><div class="grid">${mem.map(card).join('')}</div></div>`;
-    }
-    const solo=terms.filter(t=>!t.clusterId);
-    if(solo.length)html+=`<div class="grid">${solo.map(card).join('')}</div>`;
-    html+='</div>';
+    if(isDormant(all)){ dorm.push([p,all,terms]); continue; }
+    html+=projSection(s,p,all,terms,false);
+  }
+  if(dorm.length){
+    html+=`<section class="dorm"><div class="zh"><span class="ts">两小时内没动过</span><span class="ts n">${dorm.length}</span></div>`;
+    for(const [p,all,terms] of dorm)
+      html+=woken.has(p.id)?projSection(s,p,all,terms,true):dormRow(p,all,terms);
+    html+='</section>';
   }
   // Every 1.5s this used to replace the whole board, which forces a layout in the middle of a
   // flick and shows up as a stall at the end of a scroll. Almost every tick is identical, so the
   // rebuild only happens when the markup actually differs.
   const out=html||(onlyMarked
-    ? '<div class="empty">Nothing is marked.<br><span style="font-size:12px">The board is filtered to marked terminals only.</span>'
-      +'<br><button class="addbtn" style="margin:14px auto 0;display:block" onclick="toggleOnlyMarked()">Show all terminals</button></div>'
-    : '<div class="empty">No projects yet. Add one on the Mac.</div>');
+    ? '<div class="empty">'+ic('bookmark')+'<span class="et ts">没有加了书签的终端</span>'
+      +'<span class="bs">看板现在只显示加了书签的终端。</span>'
+      +'<button class="tonal" onclick="toggleOnlyMarked()">显示全部终端</button></div>'
+    : '<div class="empty"><span class="et ts">还没有项目</span><span class="bs">在 Mac 上添加一个。</span></div>');
   const root=document.getElementById('root');
   if(out!==lastBoard){ lastBoard=out; root.innerHTML=out; }
-  syncRuns(s.terminals);   // after any rebuild, so fresh chips are filled in the same frame
+  syncRuns(s.terminals);   // after any rebuild, so fresh clocks are filled in the same frame
 }
 let lastBoard='';
 /* Marked-only view. Device-local (localStorage, never sent to the Mac): which cards you want to
@@ -2968,7 +3237,7 @@ function toggleOnlyMarked(){
   onlyMarked=!onlyMarked;
   localStorage.setItem('fv_onlymark',onlyMarked?'1':'0');
   if(state) render(state);
-  toast(onlyMarked?'showing marked only':'showing all terminals');
+  toast(onlyMarked?'只显示加了书签的终端':'显示全部终端');
 }
 
 /* Appearance. Following the Mac is still the default — the dashboard is a mirror of that window and
@@ -2988,16 +3257,18 @@ function applyScheme(dark){
   document.documentElement.classList.toggle('light',
     scheme==='light'||(scheme==='auto'&&macDark===false));
   const b=document.getElementById('schemebtn');
-  if(b){
-    b.textContent=scheme==='auto'?'🖥':(scheme==='dark'?'🌙':'☀️');
-    b.title=scheme==='auto'?'Appearance: following the Mac':('Appearance: '+scheme+' (tap to change)');
+  if(b&&b.dataset.s!==scheme){            // runs on every poll; only touch the button on a change
+    b.dataset.s=scheme;
+    b.innerHTML=ic(scheme==='auto'?'monitor':(scheme==='dark'?'moon':'sun'));
+    b.title=scheme==='auto'?'外观：跟随 Mac':('外观：'+(scheme==='dark'?'深色':'浅色')+'（点按切换）');
+    b.setAttribute('aria-label',b.title);
   }
 }
 function cycleScheme(){
   scheme=scheme==='auto'?'dark':(scheme==='dark'?'light':'auto');
   localStorage.setItem('fv_scheme',scheme);
   applyScheme();
-  toast(scheme==='auto'?'appearance follows the Mac':('appearance: '+scheme));
+  toast(scheme==='auto'?'外观跟随 Mac':('外观：'+(scheme==='dark'?'深色':'浅色')));
 }
 /* Before the first /state lands, so a saved choice is on the page it paints rather than one poll
    later — and so the button carries the right glyph from the start. */
@@ -3032,8 +3303,8 @@ function openPendingTerm(s){
   if(!pendingT||!s) return;
   const id=pendingT; pendingT=null;
   const t=(s.terminals||[]).find(x=>x.id===id);
-  if(!t){ toast('That terminal is no longer on the board'); termSyncHash(); return; }
-  if(t.canOpen) openTerm(t.id,t.name); else { toast('Open this terminal on the Mac first'); termSyncHash(); }
+  if(!t){ toast('这个终端已经不在看板上了'); termSyncHash(); return; }
+  if(t.canOpen) openTerm(t.id,t.name); else { toast('先在 Mac 上打开这个终端'); termSyncHash(); }
 }
 /* The address bar follows the open conversation, so a reload or a shared link comes back to it.
    replaceState: opening a terminal is not a page of history. The file browser owns the hash while
@@ -3119,7 +3390,8 @@ renderNet();ping();setInterval(ping,2000);
 let panelMtime=-1;
 function togglePanel(){
   const el=document.getElementById('panel');el.classList.toggle('min');
-  el.querySelector('.pcollapse').textContent=el.classList.contains('min')?'▸ show':'▾ hide';
+  const min=el.classList.contains('min');
+  el.querySelector('.pcollapse').innerHTML=ic(min?'chevron-down':'chevron-up','s16')+'<span>'+(min?'展开':'收起')+'</span>';
 }
 async function pollPanel(){
   try{
