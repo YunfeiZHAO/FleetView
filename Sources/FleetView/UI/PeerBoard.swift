@@ -65,46 +65,40 @@ struct PeerTaskList: View {
 
     var body: some View {
         if state.peerTerminals.isEmpty {
-            Text(state.peerNotesLoading ? "Reading \(peer.label)…"
-                                        : "No terminals on \(peer.label)")
-                .font(.system(size: 12)).foregroundColor(Theme.subtext.opacity(0.55))
-                .padding(.horizontal, 16).padding(.top, 6)
+            Text(state.peerNotesLoading ? L(.peerReading(peer.label)) : L(.peerNoTerminals(peer.label)))
+                .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+                .padding(.horizontal, 18).padding(.top, 6)
             Spacer(minLength: 0)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(groups.enumerated()), id: \.element.name) { idx, g in
-                        if idx > 0 { DashedLine().padding(.horizontal, 12).padding(.vertical, 7) }
-                        HStack(spacing: 5) {
-                            Image(systemName: "folder.fill").font(.system(size: 8))
-                                .foregroundColor(Theme.subtext.opacity(0.55))
-                            Text(g.name)
-                                .font(.fvLabelSmall)
-                                .foregroundColor(Theme.subtext.opacity(0.6)).lineLimit(1)
-                        }
-                        .padding(.horizontal, 12).padding(.bottom, 3)
-                        ForEach(g.terms) { t in row(t) }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(groups, id: \.name) { g in
+                        SidebarGroupHeader(name: g.name)
+                        ForEach(g.terms) { t in row(t).padding(.leading, Sidebar.rowIndent) }
                     }
                 }
-                .padding(.horizontal, 8).padding(.top, 2)
+                .padding(.horizontal, 12).padding(.bottom, 8)
             }
             .frame(maxHeight: .infinity)
         }
     }
 
+    /// The same row as this Mac's (TaskRow), read-only: the shape, the name, and the shape's word in
+    /// the tooltip rather than beside it.
     private func row(_ t: PeerTerminal) -> some View {
-        HStack(spacing: 7) {
-            Circle().fill(Theme.statusColor(TermStatus(rawValue: t.status) ?? .closed))
-                .frame(width: 7, height: 7)
+        let status = TermStatus(rawValue: t.status) ?? .closed
+        let ended = status == .exited || status == .closed
+        return HStack(spacing: 12) {
+            StatusGlyph(status: status)
             Text(t.name.isEmpty ? String(t.id.prefix(8)) : t.name)
-                .font(.fvBody).foregroundColor(Theme.onSurface).lineLimit(1)
+                .font(.fvBody).lineLimit(1)
+                .foregroundColor(ended ? Theme.onSurfaceVariant : Theme.onSurface)
             Spacer(minLength: 4)
-            Text(TermStatus(rawValue: t.status)?.label ?? t.status)
-                .font(.fvLabelSmall)
-                .foregroundColor(Theme.statusColor(TermStatus(rawValue: t.status) ?? .closed))
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .frame(height: 32)
         .contentShape(Rectangle())
+        .help("\(t.name) · \(status.label)")
     }
 }
 

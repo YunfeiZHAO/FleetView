@@ -383,10 +383,10 @@ struct Sidebar: View {
 
             // Terminals (collapsible) — the selected peer's while one is being viewed, so the
             // sidebar turns to that machine along with the board rather than describing this one.
-            sectionHeader(title: L(.sidebarTerminals),
-                          count: state.peerSelected == nil ? state.tasks.count
-                                                           : state.peerTerminals.count,
-                          collapsed: state.tasksCollapsed) {
+            SidebarSectionHeader(title: L(.sidebarTerminals),
+                                 count: state.peerSelected == nil ? state.tasks.count
+                                                                  : state.peerTerminals.count,
+                                 collapsed: state.tasksCollapsed) {
                 withAnimation(.easeOut(duration: 0.18)) { state.tasksCollapsed.toggle() }
                 state.save()
             }
@@ -466,32 +466,15 @@ struct Sidebar: View {
     }
 
     @ViewBuilder private func groupView(_ group: TaskGroup) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "folder").font(.system(size: 12))
-            Text(group.project.name).font(.fvLabelSmall).lineLimit(1)
-        }
-        .foregroundColor(Theme.onSurfaceVariant)
-        .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
-        ForEach(group.tasks) { task in TaskRow(task: task) }
+        SidebarGroupHeader(name: group.project.name)
+        ForEach(group.tasks) { task in TaskRow(task: task).padding(.leading, Sidebar.rowIndent) }
     }
 
-    /// A collapsible section header (chevron + title + count).
-    private func sectionHeader(title: String, count: Int, collapsed: Bool,
-                               toggle: @escaping () -> Void) -> some View {
-        Button(action: toggle) {
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onSurfaceVariant)
-                    .rotationEffect(.degrees(collapsed ? 0 : 90))
-                Text(title).font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
-                Spacer()
-                Text("\(count)").font(.fvLabel).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 18).padding(.vertical, 9)
-    }
+    /// How far a terminal row sits in from its project's heading. The rows' status shapes used to
+    /// line up with the headings' folder icons, so a project read as one more row in the list
+    /// rather than as the thing the rows below it belong to. Indented, the shape sits under the
+    /// project's name.
+    static let rowIndent: CGFloat = 20
 
     private func footerButton(_ icon: String, help: String,
                               _ action: @escaping () -> Void) -> some View {
@@ -542,6 +525,57 @@ struct SidebarDivider: View {
                             .onEnded { _ in startWidth = nil; state.save() }
                     )
             )
+    }
+}
+
+/// A collapsible sidebar section's heading: chevron, title, whatever the section adds, count.
+///
+/// One view for every section so they line up. 终端 and 笔记 were two copies with different insets
+/// and spacing, and the chevrons, titles and counts visibly did not sit in the same columns.
+struct SidebarSectionHeader<Accessory: View>: View {
+    let title: String
+    let count: Int
+    let collapsed: Bool
+    let toggle: () -> Void
+    let accessory: Accessory
+
+    init(title: String, count: Int, collapsed: Bool, toggle: @escaping () -> Void,
+         @ViewBuilder accessory: () -> Accessory = { EmptyView() }) {
+        self.title = title; self.count = count; self.collapsed = collapsed
+        self.toggle = toggle; self.accessory = accessory()
+    }
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                    .frame(width: 10)
+                Text(title).font(.fvLabel)
+                accessory
+                Spacer()
+                Text("\(count)").font(.fvLabel).monospacedDigit()
+            }
+            .foregroundColor(Theme.onSurfaceVariant)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 18).padding(.vertical, 9)
+    }
+}
+
+/// A project's name over its terminals in the sidebar, this Mac's or a peer's.
+struct SidebarGroupHeader: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder").font(.system(size: 12))
+            Text(name).font(.fvLabelSmall).lineLimit(1)
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
+        .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
     }
 }
 

@@ -323,6 +323,8 @@ extension UIText {
         case .errNoCwd(let a): return "读不出这个会话的工作目录\n\(a)"
         case .errNodeNotFound: return "项目目录里找不到这一轮"
         case .errForkWrite(let a): return "无法写入分叉出的会话：\(a)"
+        case .peerReading(let a): return "正在读取 \(a)…"
+        case .peerNoTerminals(let a): return "\(a) 上没有终端"
         }
     }
 }

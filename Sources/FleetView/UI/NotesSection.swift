@@ -98,33 +98,23 @@ struct NotesSection: View {
     }
 
     private var header: some View {
-        Button {
+        SidebarSectionHeader(title: L(.notesTitle),
+                             count: viewingPeer == nil ? state.notes.count : shownPeer.count,
+                             collapsed: state.notesCollapsed) {
             withAnimation(.easeOut(duration: 0.18)) { state.notesCollapsed.toggle() }
             state.save()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onSurfaceVariant)
-                    .rotationEffect(.degrees(state.notesCollapsed ? 0 : 90))
-                Text(L(.notesTitle)).font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
-                if let p = viewingPeer {
-                    // Named in the header, not only on the rows: this list is somebody else's while
-                    // a peer is selected, and every edit made in it lands on their machine.
-                    Text(L(.notesFrom(p.label)))
-                        .font(.fvLabelSmall).foregroundColor(Theme.primary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                if state.peerNotesLoading && viewingPeer != nil {
+        } accessory: {
+            if let p = viewingPeer {
+                // Named in the header, not only on the rows: this list is somebody else's while
+                // a peer is selected, and every edit made in it lands on their machine.
+                Text(L(.notesFrom(p.label)))
+                    .font(.fvLabelSmall).foregroundColor(Theme.primary)
+                    .lineLimit(1)
+                if state.peerNotesLoading {
                     ProgressView().controlSize(.small).scaleEffect(0.45)
                 }
-                Text(viewingPeer == nil ? "\(state.notes.count)" : "\(shownPeer.count)")
-                    .font(.fvLabel).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16).padding(.vertical, 9)
     }
 
     private var addField: some View {

@@ -323,6 +323,8 @@ extension UIText {
         case .errNoCwd(let a): return "Couldn't determine the conversation's working directory\n\(a)"
         case .errNodeNotFound: return "This turn isn't in the project directory"
         case .errForkWrite(let a): return "Couldn't write the forked conversation: \(a)"
+        case .peerReading(let a): return "Reading \(a)…"
+        case .peerNoTerminals(let a): return "No terminals on \(a)"
         }
     }
 }

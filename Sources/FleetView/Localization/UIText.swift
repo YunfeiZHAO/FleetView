@@ -331,6 +331,8 @@ enum UIText {
     case errNoCwd(String)
     case errNodeNotFound
     case errForkWrite(String)
+    case peerReading(String)
+    case peerNoTerminals(String)
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,
