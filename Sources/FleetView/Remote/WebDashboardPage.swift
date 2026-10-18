@@ -1867,11 +1867,13 @@ function updateStickyPrompt(){
   // that edge moves when the header slides away.
   const cover=document.getElementById('term').classList.contains('headhide')?0:
     document.getElementById('thead').offsetHeight;
-  const users=chat.querySelectorAll('.msg.user');
+  const users=chat.querySelectorAll('.msg.user'), line=chat.scrollTop+cover+6;
   for(let i=0;i<users.length;i++){
-    if(users[i].offsetTop < chat.scrollTop+cover+6) cur=users[i]; else break;
+    if(users[i].offsetTop < line) cur=users[i]; else break;
   }
-  if(!cur){bar.classList.remove('on');return;}
+  // Not while that prompt's own bubble still shows below the header: the bar used to appear the
+  // moment its top edge passed, and sat over the rest of the same bubble — one question, twice.
+  if(!cur||cur.offsetTop+cur.offsetHeight > line){bar.classList.remove('on');return;}
   const t=cur.querySelector('.mtext');
   bar.firstElementChild.textContent=t?(t.innerText||t.textContent||''):'';
   bar.style.top=(chat.offsetTop+cover)+'px';
