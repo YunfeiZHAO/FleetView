@@ -332,7 +332,7 @@ enum WebDashboardPage {
   /* Quiet for two hours: each project as nothing but its own header, folded — the same row as any
      project, with a chevron that opens it in place for this visit. */
   .dorm{display:flex;flex-direction:column;gap:12px}
-  .dorm .proj.folded .ph{margin-bottom:0}
+  .proj.folded .ph{margin-bottom:0}
   .ph .chev{margin-left:-8px;flex:none}
   .ph .chev svg{transition:transform .15s}
   .ph .chev.open svg{transform:rotate(90deg)}
@@ -3536,14 +3536,23 @@ function isDormant(all){
   return last<0||last>DORMANT_AFTER;
 }
 function wake(pid){ if(woken.has(pid)) woken.delete(pid); else woken.add(pid); if(state) render(state); }
-/* `fold`: undefined for an ordinary project; 'closed' or 'open' for one in the dormant zone, which
-   gets a chevron and — closed — nothing below its header. */
-function projSection(s,p,all,terms,fold){
+/* Ordinary projects folded on this device, as the Mac's project headers fold. Kept in the browser
+   rather than sent to the Mac: a phone and the desk want different things open, and the Mac's folds
+   are its own. Storage can be missing or refuse (private mode), and then folds last the visit. */
+const folded=(()=>{ try{ return new Set(JSON.parse(localStorage.getItem('fv_folded')||'[]')); }catch(e){ return new Set(); } })();
+function foldProj(pid){
+  if(folded.has(pid)) folded.delete(pid); else folded.add(pid);
+  try{ localStorage.setItem('fv_folded',JSON.stringify([...folded])); }catch(e){}
+  if(state) render(state);
+}
+/* `fold`: 'closed' — nothing below the header — or 'open'. `dorm`: the project sits in the dormant
+   zone, where the chevron wakes it for this visit instead of folding it on this device. */
+function projSection(s,p,all,terms,fold,dorm){
   const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
-  const chev=fold?`<button class="icb chev${fold==='open'?' open':''}" onclick="wake('${p.id}')" `+
-    `title="${tr(fold==='open'?'common.collapse':'common.expand')}" aria-label="${tr(fold==='open'?'common.collapse':'common.expand')}">${ic('chevron-right','s16')}</button>`:'';
+  const chev=`<button class="icb chev${fold==='open'?' open':''}" onclick="${dorm?'wake':'foldProj'}('${p.id}')" `+
+    `title="${tr(fold==='open'?'common.collapse':'common.expand')}" aria-label="${tr(fold==='open'?'common.collapse':'common.expand')}">${ic('chevron-right','s16')}</button>`;
   // Only a top-level section slides on its own; one inside the dormant zone moves with that zone.
-  let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"${fold?'':` data-flip="p:${p.id}"`}><div class="ph">`+chev+
+  let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"${dorm?'':` data-flip="p:${p.id}"`}><div class="ph">`+chev+
     `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
     // Same rule as the cluster header: the project's real size, and what is on screen of it.
     `<span class="meta lm"><span title="${tr('count.terminals',{n:all.length})}">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
@@ -3630,12 +3639,12 @@ function render(s,poll){
     // of the filter is a board with only the work you are tracking on it.
     if(!terms.length&&onlyMarked) continue;
     if(isDormant(all)){ dorm.push([p,all,terms]); continue; }
-    html+=projSection(s,p,all,terms);
+    html+=projSection(s,p,all,terms,folded.has(p.id)?'closed':'open',false);
   }
   if(dorm.length){
     html+=`<section class="dorm" data-flip="dorm"><div class="zh"><span class="ts">${tr('zone.dormant')}</span><span class="ts n">${dorm.length}</span></div>`;
     for(const [p,all,terms] of dorm)
-      html+=projSection(s,p,all,terms,woken.has(p.id)?'open':'closed');
+      html+=projSection(s,p,all,terms,woken.has(p.id)?'open':'closed',true);
     html+='</section>';
   }
   // Every 1.5s this used to replace the whole board, which forces a layout in the middle of a
