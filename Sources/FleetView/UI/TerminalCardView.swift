@@ -52,7 +52,6 @@ struct TerminalCardView: View {
                 .onEnded { value in state.dragEnded(at: value.location) }
         )
         .animation(.easeOut(duration: 0.15), value: hovering)
-        .animation(.easeOut(duration: 0.2), value: terminal.status)
         .animation(.easeOut(duration: 0.2), value: done)
         .animation(.easeOut(duration: 0.2), value: highlighted)
         .contextMenu {
@@ -322,16 +321,7 @@ struct TerminalCardView: View {
 
 struct StatusDot: View {
     let status: TermStatus
+    var onColor: Color? = nil
 
-    var body: some View {
-        ZStack {
-            if status == .working {
-                PulseRing(color: Theme.statusColor(.working), alpha: 0.35,
-                          scale: 0.5...1.0, opacity: 0.6, duration: 1.1)
-                    .frame(width: 18, height: 18)
-            }
-            Circle().fill(Theme.statusColor(status)).frame(width: 9, height: 9)
-        }
-        .frame(width: 18, height: 18)
-    }
+    var body: some View { StatusGlyph(status: status, onColor: onColor) }
 }

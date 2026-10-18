@@ -1,25 +1,21 @@
 import SwiftUI
 import AppKit
 
-/// A restrained palette in two appearances, following the system.
+/// The palette, the type scale and the shapes — Material 3, generated rather than chosen.
 ///
-/// Every colour is a dynamic `NSColor`, so the system resolves it per appearance: the ~340
-/// `Theme.x` call sites needed no changes, there is nothing to observe or invalidate, and no view
-/// can be left holding a stale colour. Keeping both values on one line is also the only way a pair
-/// like `card`/`cardHover` stays coherent.
+/// Every colour below comes out of Google's material-color-utilities (`SchemeTonalSpot`) for the
+/// seed #6750A4, dark and light. They are not hand-tuned on purpose: the previous palette was, and
+/// it drifted into a Claude orange 11° from the "needs you" amber, a Codex teal identical to the
+/// shell status in light mode, and an accent used for a dozen unrelated things. Regenerate the whole
+/// scheme from a new seed rather than nudging one value. DESIGN.md (kept with the redesign mockups)
+/// is the reference for which role is used where.
 ///
-/// Written as hex because the web dashboard's CSS variables are the same palette — the dark column
-/// below is `:root` in WebDashboardPage verbatim, so the two can be compared by eye.
-///
-/// The light column is **GitHub Primer light**, which is tuned for exactly this kind of dense,
-/// text-heavy tool UI and whose semantic colours land on the status dots already in use:
-/// `fg.default #1f2328`, `fg.muted #59636e`, `border.default #d1d9e0`, `accent.fg #0969da`,
-/// `success.fg #1a7f37`, `attention.fg #9a6700`, `danger.fg #d1242f`.
+/// Every colour is a dynamic `NSColor`, so the system resolves it per appearance: nothing observes
+/// the appearance and no view can be left holding a stale colour. The web dashboard's CSS variables
+/// carry the same values (see `:root` in WebDashboardPage) so the two can be compared by eye.
 enum Theme {
 
-    /// A colour with a value per appearance, each `0xRRGGBB`. Alpha is per side because the two
-    /// appearances do not always agree on it: a hairline is a translucent wash over dark and a
-    /// solid line over light.
+    /// A colour with a value per appearance, each `0xRRGGBB`.
     private static func dual(_ dark: UInt32, _ light: UInt32,
                              darkAlpha: Double = 1, lightAlpha: Double = 1) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -38,44 +34,69 @@ enum Theme {
         NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
-    // Surfaces. The dark theme stacks board → panel → card from darkest to lightest, so light
-    // inverts the stack rather than the hues: a grey board, a near-white panel, and white cards
-    // that sit clearly on top of both. A pure-white board would leave the cards nowhere to go.
-    static let bg        = dual(0x14171C, 0xEEF1F5)
-    static let panel     = dual(0x1C1F25, 0xF7F8FA)
-    static let card      = dual(0x25282F, 0xFFFFFF)
-    static let cardHover = dual(0x2E3039, 0xF1F3F6)
-    // A hairline is a wash of the opposite end: a light film over dark. Primer's border.default is
-    // already a solid colour, so light needs no transparency at all.
-    static let stroke    = dual(0xFFFFFF, 0xD1D9E0, darkAlpha: 0.07)
-    static let text      = dual(0xEBEDF2, 0x1F2328)
-    static let subtext   = dual(0x99A1B0, 0x59636E)
-    // The dark blue is built to glow on near-black and reads washed out on white; Primer's accent
-    // is built the other way round. Both carry `onAccent`, never a hard-coded black or white.
-    static let accent    = dual(0x7A9EFF, 0x0969DA)
+    // MARK: Material 3 roles (SchemeTonalSpot, seed #6750A4)
 
-    /// Foreground for content sitting ON `accent` or another saturated fill. Hard-coding black here
-    /// is what makes a filled button unreadable in one appearance or the other.
-    static let onAccent  = dual(0x0B1020, 0xFFFFFF)
+    static let primary                 = dual(0xCFBDFE, 0x65558F)
+    static let onPrimary               = dual(0x36275D, 0xFFFFFF)
+    static let primaryContainer        = dual(0x4D3D75, 0xE9DDFF)
+    static let onPrimaryContainer      = dual(0xE9DDFF, 0x4D3D75)
+    static let secondaryContainer      = dual(0x4A4458, 0xE8DEF8)
+    static let onSecondaryContainer    = dual(0xE8DEF8, 0x4A4458)
+    static let tertiary                = dual(0xEFB8C8, 0x7E5260)
+    static let tertiaryContainer       = dual(0x633B48, 0xFFD9E3)
+    static let onTertiaryContainer     = dual(0xFFD9E3, 0x633B48)
+    static let surface                 = dual(0x141218, 0xFDF7FF)
+    static let surfaceContainerLow     = dual(0x1D1B20, 0xF8F2FA)
+    static let surfaceContainer        = dual(0x211F24, 0xF2ECF4)
+    static let surfaceContainerHigh    = dual(0x2B292F, 0xECE6EE)
+    static let surfaceContainerHighest = dual(0x36343A, 0xE6E0E9)
+    static let onSurface               = dual(0xE6E0E9, 0x1D1B20)
+    static let onSurfaceVariant        = dual(0xCAC4CF, 0x49454E)
+    static let outline                 = dual(0x948F99, 0x7A757F)
+    static let outlineVariant          = dual(0x49454E, 0xCAC4CF)
+    static let inverseSurface          = dual(0xE6E0E9, 0x322F35)
+    static let inverseOnSurface        = dual(0x322F35, 0xF5EFF7)
+    static let error                   = dual(0xFFB4AB, 0xBA1A1A)
+    static let errorContainer          = dual(0x93000A, 0xFFDAD6)
+    static let onErrorContainer        = dual(0xFFDAD6, 0x93000A)
 
-    // A marked card. Violet, and deliberately not green: green is `working`, so a marked terminal
-    // and a running one were the same colour and could not be told apart at a glance. Green also
-    // still said "done", which stopped being what the flag means when it became a mark — a bookmark
-    // is about finding something again, not about having finished it.
-    //
-    // Violet is the one hue in the palette carrying no status meaning (working/needsYou/exited/
-    // shell/idle/accent are green/amber/red/teal/grey/blue), so it cannot be misread as live state.
-    // It is ≥40° from every one of them in hue, and the same violet the tree already uses for a
-    // branch lane. Light is Primer's done.fg.
-    static let markTint = dual(0xB58FE6, 0x8250DF)
-    static let markCard = dual(0x241D33, 0xF7F0FF)
-    static let green    = dual(0x5CD18C, 0x1A7F37)        // Primer success.fg
-    static let amber      = dual(0xFAB852, 0x9A6700)      // Primer attention.fg
-    static let red        = dual(0xD96B73, 0xD1242F)      // Primer danger.fg
+    // "Needs you". Material has no warning role, so this is what M3 does with a custom colour:
+    // #E0A100 harmonised toward the seed, then taken at tones 80/40 (colour) and 30/90 (container).
+    static let warn                    = dual(0xFFB86A, 0x895200)
+    static let warnContainer           = dual(0x683D00, 0xFFDCBC)
+    static let onWarnContainer         = dual(0xFFDCBC, 0x2C1700)
 
-    // Agent cues — a warm tone for Claude, a cool teal for Codex, so the two are easy to tell apart.
-    static let claudeTint = dual(0xE69459, 0xBC4C00)      // light: Primer severe.fg
-    static let codexTint  = dual(0x66CCD9, 0x0E7490)
+    /// Content that is shown but not live — an exited or closed terminal. M3's disabled opacity.
+    static let endedOpacity: Double = 0.38
+
+    // MARK: The names the views use
+
+    // Surfaces, darkest to lightest in dark mode: the board, the panels on it, the cards on those.
+    static let bg        = surface
+    static let panel     = surfaceContainerLow
+    static let card      = surfaceContainerHigh
+    static let cardHover = surfaceContainerHighest
+    /// Hairlines and dividers.
+    static let stroke    = outlineVariant
+    static let text      = onSurface
+    static let subtext   = onSurfaceVariant
+    /// Selection, focus, the path you are on, a running agent. Nothing decorative.
+    static let accent    = primary
+    /// Foreground for content sitting ON `accent`.
+    static let onAccent  = onPrimary
+    /// A marked (bookmarked) card. Identity, not state: a glyph only, never the card's fill.
+    static let markTint  = tertiary
+    static let markCard  = surfaceContainerHigh
+    /// Positive feedback ("copied", tokens still flowing). The scheme has no green and does not need
+    /// one: the accent already means "live".
+    static let green     = primary
+    static let amber     = warn
+    static let red       = error
+
+    // Agent identity: a small mark at the foot of a card, never a border or a fill. Codex is
+    // monochrome, like its own mark — which also keeps it clear of every status colour.
+    static let claudeTint = dual(0xD97757, 0xB4552F)
+    static let codexTint  = onSurface
 
     static func agentColor(_ k: AgentKind) -> Color {
         switch k {
@@ -85,28 +106,53 @@ enum Theme {
         }
     }
 
-    // Session-tree branch lanes: the active path is always `accent`; each side branch takes the
-    // next palette colour so parallel attempts stay visually distinct (muted, never louder than
-    // the active lane).
-    static let lanePalette: [Color] = [
-        dual(0x66CCD9, 0x0E7490),   // teal
-        dual(0xE69459, 0xBC4C00),   // orange
-        dual(0xB58FE6, 0x8250DF),   // purple — light: Primer done.fg
-        dual(0x5CD18C, 0x1A7F37),   // green
-        dual(0xFAB852, 0x9A6700),   // amber
-    ]
-    static func laneColor(_ index: Int) -> Color {
-        index < 0 ? accent : lanePalette[index % lanePalette.count]
-    }
+    /// Session-tree lanes. The path you are on is the accent; every abandoned branch is the same
+    /// neutral grey. They used to take a palette colour each — teal, orange, violet, green, amber —
+    /// which put the status colours on lines that have no status, and made a tree with three
+    /// branches the loudest thing in the window.
+    static func laneColor(_ index: Int) -> Color { index < 0 ? accent : outline }
 
     static func statusColor(_ s: TermStatus) -> Color {
         switch s {
-        case .working:  return dual(0x5CD18C, 0x1A7F37)   // green
-        case .shell:    return dual(0x4DADC2, 0x0E7490)   // teal — plain shell
-        case .idle:     return dual(0x8C94A3, 0x6E7781)   // grey — agent idle
-        case .needsYou: return dual(0xFAB852, 0x9A6700)   // amber
-        case .exited:   return dual(0xD96B73, 0xD1242F)   // red
-        case .closed:   return dual(0xFFFFFF, 0x1F2328, darkAlpha: 0.22, lightAlpha: 0.22)
+        case .working:  return primary
+        case .needsYou: return warn
+        case .idle:     return outline
+        case .shell:    return outline
+        case .exited:   return onSurface.opacity(endedOpacity)
+        case .closed:   return onSurface.opacity(endedOpacity)
         }
     }
+
+    // MARK: Shapes and sizes
+
+    enum Radius {
+        static let chip: CGFloat = 8
+        static let card: CGFloat = 12
+        static let sheet: CGFloat = 16
+        static let dialog: CGFloat = 28
+    }
+
+    /// Every control that sits in a bar is this tall, and either all of a bar's controls have a
+    /// container or none do.
+    static let controlHeight: CGFloat = 36
+}
+
+/// The Material 3 type scale, set in the system font. Six sizes and three weights; anything that
+/// is not one of these is a mistake, not a style.
+extension Font {
+    /// 16/24 medium — project names, panel titles.
+    static let fvTitleMedium = Font.system(size: 16, weight: .medium)
+    /// 14/20 medium — card names, section titles.
+    static let fvTitleSmall  = Font.system(size: 14, weight: .medium)
+    /// 14/20 — sidebar rows, tree prompts, fields.
+    static let fvBody        = Font.system(size: 14)
+    /// 12/16 — a card's last prompt, reply previews, secondary text.
+    static let fvBodySmall   = Font.system(size: 12)
+    /// 12/16 medium — timers, badges, buttons, chips.
+    static let fvLabel       = Font.system(size: 12, weight: .medium)
+    /// 11/16 medium — group names, token counts, metadata.
+    static let fvLabelSmall  = Font.system(size: 11, weight: .medium)
+    /// Ids, paths, commands.
+    static let fvMono        = Font.system(size: 11, design: .monospaced)
+    static let fvMonoBody    = Font.system(size: 12, design: .monospaced)
 }

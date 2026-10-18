@@ -18,10 +18,11 @@ import Foundation
 /// Dismissal follows the same order in reverse: a click on empty space closes the deepest open
 /// layer first, so 2 before 1.
 struct LayerConfig: Codable {
-    /// Gaussian blur on a layer that has one above it.
-    var blur: Double = 3
-    /// Black wash over a layer that has one above it.
-    var dim: Double = 0.28
+    /// Gaussian blur on a layer that has one above it. Off: Material's scrim is a wash alone, and
+    /// a blurred board reads as finished with rather than behind.
+    var blur: Double = 0
+    /// Black wash over a layer that has one above it — Material 3's scrim, 32%.
+    var dim: Double = 0.32
     /// How long receding and returning take.
     var duration: Double = 0.2
 

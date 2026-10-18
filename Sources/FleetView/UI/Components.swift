@@ -65,119 +65,116 @@ struct EditableText: View {
     }
 }
 
-/// A ring that grows out of a dot and fades, over and over: a working card's status dot, the
-/// session tree's current leaf. Played by Core Animation, not SwiftUI.
+/// A terminal's status as a shape. Still, always: nothing on screen moves unless you moved it.
 ///
-/// Both were SwiftUI `repeatForever` animations, and SwiftUI plays those from the app's main thread
-/// a frame at a time, laying out the board's hosting view and committing its layers for every one.
-/// A 10 s sample of the running app with two cards working had the main thread busy half the time,
-/// most of it in exactly that. A CAAnimation is played by the render server; the app does nothing
-/// per frame.
-struct PulseRing: NSViewRepresentable {
-    var color: Color
-    /// Kept apart from `color` because that is usually dynamic (dark and light differ), and the
-    /// alpha has to go on after it has been resolved for an appearance.
-    var alpha: CGFloat
-    /// nil fills the disc; a width draws only its outline, centred on the circle the way a SwiftUI
-    /// stroke is.
-    var lineWidth: CGFloat? = nil
-    var scale: ClosedRange<CGFloat>
-    /// At the start of each pulse; it fades to nothing.
-    var opacity: Float
-    var duration: CFTimeInterval
+/// Every state has its own shape, so they read without colour and without a word — the word is in
+/// the tooltip. Running is a scalloped "soft burst" (Material 3's shape for an active indicator),
+/// deliberately not a ring with an arc, which reads as progress, and not a dashed ring, which reads
+/// as loading. Needs-you is the only angular mark on the board.
+///
+/// `onColor` paints the live states in a container's foreground instead of their own colour, for a
+/// glyph that sits on a running or needs-you card.
+struct StatusGlyph: View {
+    let status: TermStatus
+    var size: CGFloat = 16
+    var onColor: Color? = nil
 
-    func makeNSView(context: Context) -> PulseRingView { PulseRingView() }
-    func updateNSView(_ view: PulseRingView, context: Context) { view.show(self) }
+    var body: some View {
+        glyph
+            .frame(width: size, height: size)
+            .help(status.label)
+            .accessibilityLabel(Text(status.label))
+    }
+
+    @ViewBuilder private var glyph: some View {
+        let s = size
+        switch status {
+        case .working:
+            SoftBurst().fill(onColor ?? Theme.primary)
+                .frame(width: s * 0.92, height: s * 0.92)
+        case .needsYou:
+            ZStack {
+                Diamond().fill(onColor ?? Theme.warn)
+                VStack(spacing: s * 0.07) {
+                    Capsule().frame(width: s * 0.12, height: s * 0.26)
+                    Circle().frame(width: s * 0.13, height: s * 0.13)
+                }
+                .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .frame(width: s * 0.9, height: s * 0.9)
+        case .idle:
+            Circle().fill(Theme.outline).frame(width: s * 0.5, height: s * 0.5)
+        case .shell:
+            ZStack {
+                RoundedRectangle(cornerRadius: s * 0.17)
+                    .stroke(Theme.outline, lineWidth: 1.4)
+                    .frame(width: s * 0.75, height: s * 0.68)
+                PromptMark().stroke(Theme.outline, style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
+                    .frame(width: s * 0.75, height: s * 0.68)
+            }
+        case .exited:
+            ZStack {
+                Circle().stroke(lineWidth: 1.5).frame(width: s * 0.7, height: s * 0.7)
+                Cross().stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .frame(width: s * 0.24, height: s * 0.24)
+            }
+            .foregroundColor(Theme.onSurface.opacity(Theme.endedOpacity))
+        case .closed:
+            Circle().stroke(Theme.onSurface.opacity(Theme.endedOpacity), lineWidth: 1.5)
+                .frame(width: s * 0.7, height: s * 0.7)
+        }
+    }
 }
 
-final class PulseRingView: NSView {
-    private let ring = CALayer()
-    private var spec: PulseRing?
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        // What shows if the animation is ever not running: nothing, rather than a still halo.
-        ring.opacity = 0
-        layer?.addSublayer(ring)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not built from a nib") }
-
-    /// Called on every update of the view around it, which for a card is every re-render of the
-    /// board — so only what changed is touched. Restarting the animation would visibly restart the
-    /// pulse, and a dynamic colour compares unequal to itself, so the colour is compared resolved.
-    func show(_ new: PulseRing) {
-        let old = spec
-        spec = new
-        if old?.lineWidth != new.lineWidth { place() }
-        paint()
-        if old?.scale != new.scale || old?.opacity != new.opacity || old?.duration != new.duration {
-            restart()
+/// Nine soft scallops around a disc.
+struct SoftBurst: Shape {
+    func path(in rect: CGRect) -> Path {
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let R = min(rect.width, rect.height) / 2
+        var p = Path()
+        let n = 96
+        for i in 0...n {
+            let t = Double(i) / Double(n) * 2 * .pi
+            let r = R * (0.87 + 0.13 * cos(9 * t))
+            let pt = CGPoint(x: c.x + r * cos(t), y: c.y + r * sin(t))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
         }
+        p.closeSubpath()
+        return p
     }
+}
 
-    // Clicks belong to whatever is underneath.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        place()
+struct Diamond: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.midX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.midY))
+        p.closeSubpath()
+        return p
     }
+}
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        paint()
+/// "›_" inside the shell glyph's frame.
+private struct PromptMark: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + r.width * 0.28, y: r.minY + r.height * 0.33))
+        p.addLine(to: CGPoint(x: r.minX + r.width * 0.46, y: r.midY))
+        p.addLine(to: CGPoint(x: r.minX + r.width * 0.28, y: r.minY + r.height * 0.67))
+        p.move(to: CGPoint(x: r.minX + r.width * 0.54, y: r.minY + r.height * 0.7))
+        p.addLine(to: CGPoint(x: r.minX + r.width * 0.74, y: r.minY + r.height * 0.7))
+        return p
     }
+}
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        restart()
-    }
-
-    private func place() {
-        // A border is drawn inside the layer's bounds; grow them by half the width so the line is
-        // centred on the circle instead.
-        let r = bounds.insetBy(dx: -(spec?.lineWidth ?? 0) / 2, dy: -(spec?.lineWidth ?? 0) / 2)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        ring.frame = r
-        ring.cornerRadius = min(r.width, r.height) / 2
-        CATransaction.commit()
-    }
-
-    private func paint() {
-        guard let spec else { return }
-        var c: CGColor?
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            c = NSColor(spec.color).withAlphaComponent(spec.alpha).cgColor
-        }
-        let fill = spec.lineWidth == nil ? c : nil
-        let line = spec.lineWidth == nil ? nil : c
-        guard ring.backgroundColor != fill || ring.borderColor != line
-                || ring.borderWidth != (spec.lineWidth ?? 0) else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        ring.backgroundColor = fill
-        ring.borderColor = line
-        ring.borderWidth = spec.lineWidth ?? 0
-        CATransaction.commit()
-    }
-
-    private func restart() {
-        ring.removeAnimation(forKey: "pulse")
-        guard window != nil, let spec else { return }
-        let grow = CABasicAnimation(keyPath: "transform.scale")
-        grow.fromValue = spec.scale.lowerBound
-        grow.toValue = spec.scale.upperBound
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = spec.opacity
-        fade.toValue = 0
-        let pulse = CAAnimationGroup()
-        pulse.animations = [grow, fade]
-        pulse.duration = spec.duration
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        pulse.repeatCount = .infinity
-        ring.add(pulse, forKey: "pulse")
+private struct Cross: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.move(to: CGPoint(x: r.maxX, y: r.minY)); p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+        return p
     }
 }

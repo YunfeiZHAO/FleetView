@@ -2561,7 +2561,7 @@ final class AppState: ObservableObject {
         let terms = terminals.map { t in
             WebSnapshot.Term(id: t.id.uuidString, name: t.name, projectId: t.projectId.uuidString,
                              clusterId: t.clusterId?.uuidString, status: t.status.rawValue,
-                             statusLabel: t.status.label, agent: t.agentKind.label,
+                             statusLabel: t.status.apiLabel, agent: t.agentKind.label,
                              prompt: t.lastPrompt, tokens: t.newTokens,
                              canOpen: live.contains(RemoteServer.sessionName(for: t.id)),  // authoritative: only if THIS instance has the session
                              done: t.subtaskDone,

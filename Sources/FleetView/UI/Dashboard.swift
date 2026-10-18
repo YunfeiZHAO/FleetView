@@ -557,7 +557,7 @@ struct TaskRow: View {
                 }
             }
             Spacer(minLength: 4)
-            Text(status.taskLabel).font(.system(size: 10, weight: .medium)).foregroundColor(Theme.statusColor(status))
+            Text(status.label).font(.system(size: 10, weight: .medium)).foregroundColor(Theme.statusColor(status))
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(isSelected ? Theme.accent.opacity(0.16) : (hover ? Theme.card : Color.clear))
@@ -1310,7 +1310,7 @@ struct ProjectSection: View {
                 .help("Click to copy · double-click to open in Finder")
             if copied {
                 Text("Copied").font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 1)
+                    .foregroundColor(Theme.onAccent).padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Theme.green).clipShape(Capsule()).transition(.opacity)
             }
             Spacer(minLength: 10)
@@ -1522,7 +1522,7 @@ struct EmptyState: View {
             Button(action: action) {
                 Text(button).font(.system(size: 13, weight: .medium)).padding(.horizontal, 16).padding(.vertical, 8)
             }
-            .buttonStyle(.plain).foregroundColor(.white)
+            .buttonStyle(.plain).foregroundColor(Theme.onAccent)
             .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.top, 4)
             Spacer()

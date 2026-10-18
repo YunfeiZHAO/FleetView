@@ -8,7 +8,21 @@ enum TermStatus: String, Codable {
     case needsYou  // Claude needs attention (permission / notification)
     case exited    // process ended
 
+    /// What the window calls it — one word per state, and the same word everywhere it appears.
     var label: String {
+        switch self {
+        case .closed:   return "已关闭"
+        case .shell:    return "Shell"
+        case .idle:     return "空闲"
+        case .working:  return "运行中"
+        case .needsYou: return "等你处理"
+        case .exited:   return "已退出"
+        }
+    }
+
+    /// What `/state` reports as `statusLabel`. English and unchanged on purpose: `project-manager`
+    /// prints it, and scripts that babysit a fleet read that output.
+    var apiLabel: String {
         switch self {
         case .closed:   return "closed"
         case .shell:    return "shell"
@@ -24,18 +38,6 @@ enum TermStatus: String, Codable {
 
     /// A Claude agent session is (or was) active in this terminal.
     var isAgent: Bool { self == .idle || self == .working || self == .needsYou }
-
-    /// Task-oriented label for the sidebar: is the agent running, or has it returned a result?
-    var taskLabel: String {
-        switch self {
-        case .working:  return "running"
-        case .idle:     return "returned"
-        case .needsYou: return "needs you"
-        case .shell:    return "shell"
-        case .exited:   return "exited"
-        case .closed:   return "closed"
-        }
-    }
 }
 
 /// Which agent CLI a terminal is running — drives a subtle colour cue on the card.

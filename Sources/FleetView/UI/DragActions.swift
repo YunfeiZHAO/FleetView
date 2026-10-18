@@ -78,9 +78,9 @@ struct ActionZoneView: View {
         switch zone {
         case .done:         return Theme.markTint
         case .duplicate:    return Theme.accent
-        case .rename:       return Color(red: 0.62, green: 0.64, blue: 0.72)
-        case .leaveCluster: return Color(red: 0.98, green: 0.72, blue: 0.32)
-        case .remove:       return Color(red: 0.90, green: 0.42, blue: 0.45)
+        case .rename:       return Theme.onSurfaceVariant
+        case .leaveCluster: return Theme.warn
+        case .remove:       return Theme.error
         }
     }
 }

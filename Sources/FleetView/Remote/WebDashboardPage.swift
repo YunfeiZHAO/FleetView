@@ -20,68 +20,69 @@ enum WebDashboardPage {
      palettes can be compared line by line. `html.light` below is the other appearance; which one is
      applied follows the Mac (state.dark) until this browser says otherwise — see `applyScheme`. */
   :root{
-    --bg:#14171c; --panel:#1c1f25; --card:#25282f; --cardHover:#2e3039;
-    --stroke:rgba(255,255,255,.08); --text:#ebedf2; --sub:#99a1b0; --accent:#7a9eff;
-    --green:#5cd18c; --teal:#4dadc2; --gray:#8c93a3; --amber:#fab852; --red:#d96b73;
-    --claude:#e69459; --codex:#66ccd9;
-    /* Foreground for anything sitting ON --accent. Was #0b1020 in ten places, which meant the
-       light theme's darker blue would have carried near-black text. */
-    --onAccent:#0b1020;
-    /* Your own words are a raised layer over the conversation — inverted glass, so on a dark page
-       that is white with dark text, and on a light page the reverse. */
-    --quoteBg:rgba(255,255,255,.86); --quoteFg:#15181d; --quoteEdge:rgba(255,255,255,.6);
-    --markBg:#241d33; --markTint:#b58fe6;
-    --quoteBgSoft:rgba(255,255,255,.78);
-    --codeBg:#0e1116;
-    /* An opaque surface, so it cannot be a wash of anything — it has to be stated per appearance or
-       it stays whatever it was hard-coded to. This one is why the header stayed black. */
-    --headerBg:rgba(28,31,37,.92);
-    /* Tints and edges. Each is a wash of a palette hue, and the hue itself differs per appearance:
-       the dark blue is #7a9eff and the light one #0969da, so a literal rgba() of the dark one is
-       washed out on a light page even though it is "the same" colour. */
-    --accentSoft:rgba(122,158,255,.13); --accentFaint:rgba(122,158,255,.055);
-    --accentEdge:rgba(122,158,255,.28); --accentEdgeOn:rgba(122,158,255,.5);
-    --amberSoft:rgba(250,184,82,.12);   --amberEdge:rgba(250,184,82,.34);
-    --greenSoft:rgba(92,209,140,.12);   --greenEdge:rgba(92,209,140,.28); --greenFg:#9fe3bd;
-    --redSoft:rgba(217,107,115,.14);    --redEdge:rgba(217,107,115,.45);  --redFg:#f0a8ad;
-    /* Inline code outside the quote card, and the loading shimmer: both are a film of the opposite
-       end, so both invert. */
+    /* Material 3, SchemeTonalSpot for seed #6750A4 — the same values as Theme.swift. The old names
+       are kept and mapped onto roles so every rule below keeps working: --card is a filled card
+       (surface-container-high), --green is "live" (the primary), --teal/--gray are the outline. */
+    --bg:#141218; --panel:#1d1b20; --card:#2b292f; --cardHover:#36343a;
+    --stroke:#49454e; --text:#e6e0e9; --sub:#cac4cf; --accent:#cfbdfe;
+    --green:#cfbdfe; --teal:#948f99; --gray:#948f99; --amber:#ffb86a; --red:#ffb4ab;
+    --claude:#d97757; --codex:#e6e0e9;
+    --primaryContainer:#4d3d75; --onPrimaryContainer:#e9ddff;
+    --secondaryContainer:#4a4458; --onSecondaryContainer:#e8def8;
+    --tertiary:#efb8c8; --outline:#948f99; --outlineVariant:#49454e;
+    --surfaceLowest:#0f0d13; --surfaceHighest:#36343a;
+    --warnContainer:#683d00; --onWarnContainer:#ffdcbc;
+    --errorContainer:#93000a; --onErrorContainer:#ffdad6;
+    --inverseSurface:#e6e0e9; --inverseOnSurface:#322f35;
+    --scrim:rgba(0,0,0,.32);
+    --onAccent:#36275d;
+    /* Your own words: a primary-container bubble, as in Material's chat patterns. */
+    --quoteBg:#4d3d75; --quoteFg:#e9ddff; --quoteEdge:rgba(233,221,255,.08);
+    --markBg:#2b292f; --markTint:#efb8c8;
+    --quoteBgSoft:rgba(77,61,117,.88);
+    --codeBg:#0f0d13;
+    --headerBg:rgba(20,18,24,.94);
+    --accentSoft:rgba(207,189,254,.14); --accentFaint:rgba(207,189,254,.06);
+    --accentEdge:rgba(207,189,254,.30); --accentEdgeOn:rgba(207,189,254,.55);
+    --amberSoft:rgba(255,184,106,.12);  --amberEdge:rgba(255,184,106,.38);
+    --greenSoft:rgba(207,189,254,.14);  --greenEdge:rgba(207,189,254,.30); --greenFg:#e9ddff;
+    --redSoft:rgba(255,180,171,.12);    --redEdge:rgba(255,180,171,.42);  --redFg:#ffdad6;
     --codeInline:rgba(255,255,255,.08);
     --skel1:rgba(255,255,255,.05); --skel2:rgba(255,255,255,.11);
     --skelU1:rgba(255,255,255,.10); --skelU2:rgba(255,255,255,.20);
-    /* Inside the quote card, which is itself inverted — light glass here, dark glass there — so its
-       contents invert with it rather than with the page. */
-    --quoteCode:rgba(0,0,0,.07); --quoteCodeFg:#12151a; --quoteLink:#1b4bd0;
-    --quoteEdgeSoft:rgba(21,24,29,.28);
+    --quoteCode:rgba(255,255,255,.10); --quoteCodeFg:#e9ddff; --quoteLink:#cfbdfe;
+    --quoteEdgeSoft:rgba(233,221,255,.28);
     --scheme:dark;
   }
-  /* Light: GitHub Primer, which is built for dense text-heavy tool UI and whose semantic colours
-     land on the status dots already in use — fg.default #1f2328, fg.muted #59636e,
-     border.default #d1d9e0, accent.fg #0969da, success #1a7f37, attention #9a6700, danger #d1242f.
-     The surface stack inverts rather than the hues: a grey board, near-white panels, white cards. */
   html.light{
-    --bg:#eef1f5; --panel:#f7f8fa; --card:#ffffff; --cardHover:#f1f3f6;
-    --stroke:#d1d9e0; --text:#1f2328; --sub:#59636e; --accent:#0969da;
-    --green:#1a7f37; --teal:#0e7490; --gray:#6e7781; --amber:#9a6700; --red:#d1242f;
-    --claude:#bc4c00; --codex:#0e7490;
+    --bg:#fdf7ff; --panel:#f8f2fa; --card:#ece6ee; --cardHover:#e6e0e9;
+    --stroke:#cac4cf; --text:#1d1b20; --sub:#49454e; --accent:#65558f;
+    --green:#65558f; --teal:#7a757f; --gray:#7a757f; --amber:#895200; --red:#ba1a1a;
+    --claude:#b4552f; --codex:#1d1b20;
+    --primaryContainer:#e9ddff; --onPrimaryContainer:#4d3d75;
+    --secondaryContainer:#e8def8; --onSecondaryContainer:#4a4458;
+    --tertiary:#7e5260; --outline:#7a757f; --outlineVariant:#cac4cf;
+    --surfaceLowest:#ffffff; --surfaceHighest:#e6e0e9;
+    --warnContainer:#ffdcbc; --onWarnContainer:#2c1700;
+    --errorContainer:#ffdad6; --onErrorContainer:#93000a;
+    --inverseSurface:#322f35; --inverseOnSurface:#f5eff7;
+    --scrim:rgba(0,0,0,.32);
     --onAccent:#ffffff;
-    --quoteBg:rgba(28,32,38,.92); --quoteFg:#f2f4f7; --quoteEdge:rgba(255,255,255,.10);
-    --markBg:#f7f0ff; --markTint:#8250df;
-    --quoteBgSoft:rgba(28,32,38,.82);
-    --codeBg:#f6f8fa;
-    --headerBg:rgba(247,248,250,.92);
-    /* Dark-on-light reads stronger than light-on-dark at the same alpha, so the washes are lighter
-       and the edges heavier — matching weight, not matching numbers. */
-    --accentSoft:rgba(9,105,218,.10);   --accentFaint:rgba(9,105,218,.045);
-    --accentEdge:rgba(9,105,218,.32);   --accentEdgeOn:rgba(9,105,218,.55);
-    --amberSoft:rgba(154,103,0,.10);    --amberEdge:rgba(154,103,0,.38);
-    --greenSoft:rgba(26,127,55,.10);    --greenEdge:rgba(26,127,55,.32);  --greenFg:#116329;
-    --redSoft:rgba(209,36,47,.10);      --redEdge:rgba(209,36,47,.42);    --redFg:#a40e26;
-    --codeInline:rgba(31,35,40,.07);
-    --skel1:rgba(31,35,40,.05); --skel2:rgba(31,35,40,.11);
-    --skelU1:rgba(255,255,255,.10); --skelU2:rgba(255,255,255,.20);
-    --quoteCode:rgba(255,255,255,.10); --quoteCodeFg:#f2f4f7; --quoteLink:#9fc4ff;
-    --quoteEdgeSoft:rgba(255,255,255,.22);
+    --quoteBg:#e9ddff; --quoteFg:#4d3d75; --quoteEdge:rgba(77,61,117,.12);
+    --markBg:#ece6ee; --markTint:#7e5260;
+    --quoteBgSoft:rgba(233,221,255,.9);
+    --codeBg:#f2ecf4;
+    --headerBg:rgba(253,247,255,.94);
+    --accentSoft:rgba(101,85,143,.10);  --accentFaint:rgba(101,85,143,.045);
+    --accentEdge:rgba(101,85,143,.32);  --accentEdgeOn:rgba(101,85,143,.55);
+    --amberSoft:rgba(137,82,0,.10);     --amberEdge:rgba(137,82,0,.38);
+    --greenSoft:rgba(101,85,143,.10);   --greenEdge:rgba(101,85,143,.32); --greenFg:#4d3d75;
+    --redSoft:rgba(186,26,26,.08);      --redEdge:rgba(186,26,26,.40);    --redFg:#93000a;
+    --codeInline:rgba(29,27,32,.07);
+    --skel1:rgba(29,27,32,.05); --skel2:rgba(29,27,32,.11);
+    --skelU1:rgba(77,61,117,.10); --skelU2:rgba(77,61,117,.20);
+    --quoteCode:rgba(77,61,117,.10); --quoteCodeFg:#4d3d75; --quoteLink:#65558f;
+    --quoteEdgeSoft:rgba(77,61,117,.28);
     --scheme:light;
   }
   /* Tells the browser to render form controls, scrollbars and the like to match. */
@@ -151,9 +152,8 @@ enum WebDashboardPage {
   .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
   /* "running now" — the same cards, tinted with the running colour so the strip reads as a state
      rather than as another project. */
-  .runbox{padding:12px;border-radius:14px;background:rgba(92,209,140,.055);
-    border:1px solid rgba(92,209,140,.22)}
-  html.light .runbox{background:rgba(26,127,55,.06);border-color:rgba(26,127,55,.22)}
+  .runbox{padding:12px;border-radius:16px;background:var(--panel);
+    border:1px solid var(--stroke)}
   .runbox .projhead{margin-bottom:10px}
   .rlabel{font-size:10px;font-weight:700;color:var(--green);letter-spacing:.04em}
   .rtag{font-size:10px;font-weight:500;color:var(--sub);opacity:.85;margin:0 0 4px 2px;
@@ -455,8 +455,6 @@ enum WebDashboardPage {
   #sinfo .ctx.danger{color:var(--red)}
   #sinfo .live{display:inline-flex;align-items:center;gap:5px;font-weight:600}
   #sinfo .live .dot{width:7px;height:7px;border-radius:50%}
-  #sinfo .live.run .dot{animation:live 1.1s ease-out infinite}
-  @keyframes live{0%{box-shadow:0 0 0 0 rgba(92,209,140,.55)}100%{box-shadow:0 0 0 6px rgba(92,209,140,0)}}
   /* what the agent is doing right now, pinned under the last message */
   .runbar{display:flex;align-items:center;gap:8px;padding:9px 11px;margin:2px 0 10px;
     background:var(--greenSoft);border:1px solid var(--greenEdge);border-radius:10px;
@@ -466,14 +464,15 @@ enum WebDashboardPage {
   .runbar.wait{background:var(--amberSoft);border-color:var(--amberEdge);color:var(--amber)}
   /* a tool still running (no result yet) */
   .msg.tool.run{border-color:var(--accentEdgeOn)}
-  .spin{display:inline-block;width:9px;height:9px;border:1.5px solid var(--accent);border-right-color:transparent;
-    border-radius:50%;animation:sp .7s linear infinite;flex:none}
-  @keyframes sp{to{transform:rotate(360deg)}}
+  /* "Running" — Material's soft-burst shape, still. It was a spinner; nothing on the page moves
+     unless you moved it. Same mark as the Mac's StatusGlyph. */
+  .spin{display:inline-block;width:11px;height:11px;flex:none;background:var(--accent);
+    -webkit-mask:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M16.00%208.00%20L15.81%208.51%20L15.30%208.96%20L14.63%209.32%20L14.01%209.61%20L13.62%209.91%20L13.54%2010.30%20L13.72%2010.82%20L14.03%2011.48%20L14.27%2012.19%20L14.28%2012.82%20L14.00%2013.26%20L13.44%2013.44%20L12.72%2013.39%20L11.99%2013.21%20L11.39%2013.07%20L10.96%2013.13%20L10.70%2013.47%20L10.51%2014.06%20L10.30%2014.78%20L9.99%2015.43%20L9.56%2015.83%20L9.03%2015.85%20L8.49%2015.52%20L8.00%2014.96%20L7.58%2014.37%20L7.22%2013.95%20L6.84%2013.83%20L6.39%2014.01%20L5.83%2014.40%20L5.18%2014.80%20L4.54%2015.02%20L4.00%2014.93%20L3.65%2014.51%20L3.52%2013.84%20L3.54%2013.08%20L3.60%2012.40%20L3.53%2011.92%20L3.24%2011.65%20L2.69%2011.55%20L1.97%2011.48%20L1.24%2011.33%20L0.68%2011.03%20L0.44%2010.57%20L0.57%209.99%20L0.97%209.40%20L1.49%208.86%20L1.92%208.40%20L2.08%208.00%20L1.92%207.60%20L1.49%207.14%20L0.97%206.60%20L0.57%206.01%20L0.44%205.43%20L0.68%204.97%20L1.24%204.67%20L1.97%204.52%20L2.69%204.45%20L3.24%204.35%20L3.53%204.08%20L3.60%203.60%20L3.54%202.92%20L3.52%202.16%20L3.65%201.49%20L4.00%201.07%20L4.54%200.98%20L5.18%201.20%20L5.83%201.60%20L6.39%201.99%20L6.84%202.17%20L7.22%202.05%20L7.58%201.63%20L8.00%201.04%20L8.49%200.48%20L9.03%200.15%20L9.56%200.17%20L9.99%200.57%20L10.30%201.22%20L10.51%201.94%20L10.70%202.53%20L10.96%202.87%20L11.39%202.93%20L11.99%202.79%20L12.72%202.61%20L13.44%202.56%20L14.00%202.74%20L14.28%203.18%20L14.27%203.81%20L14.03%204.52%20L13.72%205.18%20L13.54%205.70%20L13.62%206.09%20L14.01%206.39%20L14.63%206.68%20L15.30%207.04%20L15.81%207.49Z%22/%3E%3C/svg%3E') center/contain no-repeat;mask:url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M16.00%208.00%20L15.81%208.51%20L15.30%208.96%20L14.63%209.32%20L14.01%209.61%20L13.62%209.91%20L13.54%2010.30%20L13.72%2010.82%20L14.03%2011.48%20L14.27%2012.19%20L14.28%2012.82%20L14.00%2013.26%20L13.44%2013.44%20L12.72%2013.39%20L11.99%2013.21%20L11.39%2013.07%20L10.96%2013.13%20L10.70%2013.47%20L10.51%2014.06%20L10.30%2014.78%20L9.99%2015.43%20L9.56%2015.83%20L9.03%2015.85%20L8.49%2015.52%20L8.00%2014.96%20L7.58%2014.37%20L7.22%2013.95%20L6.84%2013.83%20L6.39%2014.01%20L5.83%2014.40%20L5.18%2014.80%20L4.54%2015.02%20L4.00%2014.93%20L3.65%2014.51%20L3.52%2013.84%20L3.54%2013.08%20L3.60%2012.40%20L3.53%2011.92%20L3.24%2011.65%20L2.69%2011.55%20L1.97%2011.48%20L1.24%2011.33%20L0.68%2011.03%20L0.44%2010.57%20L0.57%209.99%20L0.97%209.40%20L1.49%208.86%20L1.92%208.40%20L2.08%208.00%20L1.92%207.60%20L1.49%207.14%20L0.97%206.60%20L0.57%206.01%20L0.44%205.43%20L0.68%204.97%20L1.24%204.67%20L1.97%204.52%20L2.69%204.45%20L3.24%204.35%20L3.53%204.08%20L3.60%203.60%20L3.54%202.92%20L3.52%202.16%20L3.65%201.49%20L4.00%201.07%20L4.54%200.98%20L5.18%201.20%20L5.83%201.60%20L6.39%201.99%20L6.84%202.17%20L7.22%202.05%20L7.58%201.63%20L8.00%201.04%20L8.49%200.48%20L9.03%200.15%20L9.56%200.17%20L9.99%200.57%20L10.30%201.22%20L10.51%201.94%20L10.70%202.53%20L10.96%202.87%20L11.39%202.93%20L11.99%202.79%20L12.72%202.61%20L13.44%202.56%20L14.00%202.74%20L14.28%203.18%20L14.27%203.81%20L14.03%204.52%20L13.72%205.18%20L13.54%205.70%20L13.62%206.09%20L14.01%206.39%20L14.63%206.68%20L15.30%207.04%20L15.81%207.49Z%22/%3E%3C/svg%3E') center/contain no-repeat}
   .msg .when{font-size:9px;color:var(--sub);opacity:.55;margin-left:6px;font-weight:400}
   .msg .cp{font-size:9px;color:var(--sub);opacity:.45;cursor:pointer;padding:0 5px;float:right}
   .msg .cp:active{opacity:1;color:var(--accent)}
   /* permission / question card */
-  #perm{display:none;background:var(--amberSoft);border-top:1px solid rgba(250,184,82,.4);padding:10px 12px}
+  #perm{display:none;background:var(--amberSoft);border-top:1px solid var(--amberEdge);padding:10px 12px}
   #perm.on{display:block}
   #perm .q{font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px}
   #perm .what{font-size:11px;color:var(--sub);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -1394,8 +1393,8 @@ async function renderShell(){
   updateStickyPrompt();
 }
 /* model / permission-mode / context-window strip */
-const STATUS_TEXT={working:'running',idle:'idle',needsYou:'needs you',shell:'shell',
-  exited:'exited',closed:'closed'};
+const STATUS_TEXT={working:'运行中',idle:'空闲',needsYou:'等你处理',shell:'Shell',
+  exited:'已退出',closed:'已关闭'};
 function renderInfo(i){
   const el=document.getElementById('sinfo');
   document.getElementById('tabChat').textContent=(i&&i.shell)?'Output':'Chat';   // shell has no chat
@@ -2826,7 +2825,7 @@ function toast(msg,ms){
 function card(t){
   const locked=!t.canOpen;
   const sig=t.status==='shell'?'$':'›';
-  const agent=t.agent?`<span class="agent" style="color:${t.agent==='codex'?'var(--codex)':'var(--claude)'};background:${t.agent==='codex'?'rgba(102,204,217,.16)':'rgba(230,148,89,.16)'}">${t.agent}</span>`:'';
+  const agent=t.agent?`<span class="agent" style="color:${t.agent==='codex'?'var(--codex)':'var(--claude)'};background:transparent">${t.agent}</span>`:'';
   const tok=t.tokens>0?`<span style="font-size:10px;color:var(--accent);margin-left:5px">${short(t.tokens)} tok</span>`:'';
   const dn=(t.done?'🔖 ':'')+(t.window==='hidden'?'<span title="Its window on the Mac is hidden; the agent keeps running">🙈</span> ':'');
   return `<div class="card ${locked?'locked':''} ${t.done?'done':''}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
@@ -2894,8 +2893,8 @@ function render(s){
   const cntText=`${s.projects.length} project${s.projects.length===1?'':'s'} · ${s.terminals.length} terminal${s.terminals.length===1?'':'s'}`;
   if(cnt.textContent!==cntText) cnt.textContent=cntText;
   let pills='';
-  if(s.working>0)pills+=`<span class="pill" style="color:var(--green);background:rgba(92,209,140,.18)">${s.working} working</span> `;
-  if(s.needs>0)pills+=`<span class="pill" style="color:var(--amber);background:rgba(250,184,82,.18)">${s.needs} needs you</span>`;
+  if(s.working>0)pills+=`<span class="pill" style="color:var(--onPrimaryContainer);background:var(--primaryContainer)">${s.working} working</span> `;
+  if(s.needs>0)pills+=`<span class="pill" style="color:var(--onWarnContainer);background:var(--warnContainer)">${s.needs} needs you</span>`;
   const pillEl=document.getElementById('pills');
   if(pillEl.innerHTML!==pills) pillEl.innerHTML=pills;
   // The mark filter is this device's, not the fleet's: it is kept in localStorage rather than sent

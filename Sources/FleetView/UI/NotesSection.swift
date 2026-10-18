@@ -203,7 +203,7 @@ struct PeerNoteRow: View {
     }
 
     private var copiedChip: some View {
-        Text("Copied").font(.system(size: 10, weight: .semibold)).foregroundColor(.white)
+        Text("Copied").font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onAccent)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Theme.green).clipShape(Capsule())
             .padding(6)
@@ -296,7 +296,7 @@ struct NoteRow: View {
             Image(systemName: "checkmark.circle.fill")
             Text("Copied")
         }
-        .font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+        .font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.onAccent)
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Theme.green).clipShape(Capsule())
         .padding(.trailing, 6)

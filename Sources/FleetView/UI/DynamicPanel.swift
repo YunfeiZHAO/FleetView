@@ -48,7 +48,6 @@ struct DynamicPanel: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: state.panelExists)
     }
 
     /// Every version an agent ever wrote is kept, so the menu is a real history, not a cache.

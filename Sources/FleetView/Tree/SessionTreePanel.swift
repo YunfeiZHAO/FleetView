@@ -309,7 +309,7 @@ struct TreeRowView: View {
                     if model.searching, let n = node {
                         let h = model.hits(n)
                         if h.prompt { hitBadge("prompt", Theme.accent) }
-                        if h.answer { hitBadge("回复", Theme.lanePalette[0]) }
+                        if h.answer { hitBadge("回复", Theme.tertiary) }
                     }
                     // Codex's half of the compaction story. Claude's is a row of its own above
                     // the root, because there the earlier turns are somewhere else entirely; here
@@ -404,7 +404,7 @@ struct TreeRowView: View {
     @ViewBuilder private func answerText(_ n: TreeTurn) -> some View {
         let answerHit = model.searching && model.hits(n).answer
         let body = "↳ " + (answerHit ? model.answerSnippet(n) : n.answerPreview)
-        let tint = answerHit ? Theme.lanePalette[0].opacity(0.95) : Theme.subtext.opacity(0.75)
+        let tint = answerHit ? Theme.tertiary : Theme.subtext
         if model.searching {
             Text(treeHighlight(body, query: model.query, base: tint))
         } else {
@@ -501,6 +501,13 @@ struct TreeRailView: View {
                     let r: CGFloat = row.isCurrentLeaf ? 5.5 : 4.5
                     ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: dotY - r, width: r * 2, height: r * 2)),
                              with: .color(color))
+                    // Where you are: a still ring around the node. It used to pulse, and nothing on
+                    // screen moves unless you made it move.
+                    if row.isCurrentLeaf {
+                        let R: CGFloat = 9.5
+                        ctx.stroke(Path(ellipseIn: CGRect(x: x - R, y: dotY - R, width: R * 2, height: R * 2)),
+                                   with: .color(color.opacity(0.4)), lineWidth: 2)
+                    }
                 } else {
                     let r: CGFloat = 4
                     let rect = CGRect(x: x - r, y: dotY - r, width: r * 2, height: r * 2)
@@ -509,22 +516,9 @@ struct TreeRailView: View {
                 }
             }
         }
-        .overlay(alignment: .topLeading) {
-            if row.isCurrentLeaf { LeafPulse().offset(x: TreeLane.x(0) - 9, y: dotY - 9) }
-        }
     }
 
     private func laneColor(_ idx: Int) -> Color { Theme.laneColor(idx) }
-}
-
-/// The current-leaf pulse ring (same animation language as StatusDot).
-struct LeafPulse: View {
-    var body: some View {
-        PulseRing(color: Theme.accent, alpha: 0.5, lineWidth: 2,
-                  scale: 0.5...1.15, opacity: 0.8, duration: 1.4)
-            .frame(width: 18, height: 18)
-            .allowsHitTesting(false)
-    }
 }
 
 /// Paints every occurrence of `query` in a different colour so the match is findable inside a
