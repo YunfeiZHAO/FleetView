@@ -999,85 +999,30 @@ struct RecentStrip: View {
     }
 }
 
-/// The projects nobody has touched in two hours, one line each, below the rest of the board.
-///
-/// A line says what the project is and how its terminals stand — the same shapes the cards use,
-/// in a row — and when it was last used. Clicking it opens the full section in place for this
-/// session (`wokenProjects`).
+/// The projects nobody has touched in two hours, below the rest of the board — each as nothing but
+/// its own header, folded. The same row a project you folded yourself shows, so there is no second
+/// kind of row to learn; its chevron opens it in place for this session (`wokenProjects`).
 struct DormantZone: View {
     @EnvironmentObject var state: AppState
     let projects: [Project]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider().overlay(Theme.outlineVariant).padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: 12) {
             ZoneHeader(title: "两小时内没动过", count: projects.count)
             ForEach(projects) { p in
-                if state.wokenProjects.contains(p.id) {
-                    ProjectSection(project: p, woken: true).id(p.id)
-                } else {
-                    DormantRow(project: p).id(p.id)
-                }
+                ProjectSection(project: p, dormant: !state.wokenProjects.contains(p.id),
+                               woken: state.wokenProjects.contains(p.id)).id(p.id)
             }
         }
-    }
-}
-
-struct DormantRow: View {
-    @EnvironmentObject var state: AppState
-    let project: Project
-    @State private var hovering = false
-
-    private var terminals: [TerminalSession] { state.visible(state.terminals(inProject: project.id)) }
-    private var last: Date? { terminals.compactMap(\.lastActivity).max() }
-    private var tokens: Int { state.projectNewTokens(project.id) }
-
-    var body: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.18)) { _ = state.wokenProjects.insert(project.id) }
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Theme.onSurfaceVariant)
-                Text(project.name).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
-                    .lineLimit(1)
-                    .frame(minWidth: 140, alignment: .leading)
-                // Every terminal as its status shape — the project's state at a glance, without
-                // a single card. Capped so a big project does not run the row off the edge.
-                HStack(spacing: 3) {
-                    ForEach(terminals.prefix(24)) { t in StatusGlyph(status: t.status, size: 12) }
-                    if terminals.count > 24 {
-                        Text("+\(terminals.count - 24)").font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
-                    }
-                }
-                Spacer(minLength: 12)
-                if tokens > 0 {
-                    Text(TokenUsage.short(tokens)).font(.fvLabel).monospacedDigit()
-                        .foregroundColor(Theme.onSurfaceVariant)
-                        .help("\(tokens) tokens")
-                }
-                if let last {
-                    Text(RelativeTime.compact(last)).font(.fvLabel).monospacedDigit()
-                        .foregroundColor(Theme.onSurfaceVariant)
-                        .frame(minWidth: 28, alignment: .trailing)
-                        .help("最后活动")
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 44)
-            .background(hovering ? Theme.surfaceContainer : Theme.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("\(project.path)\n点开查看这个项目的终端")
     }
 }
 
 struct ProjectSection: View {
     @EnvironmentObject var state: AppState
     let project: Project
+    /// In the dormant zone and not opened: shown folded whatever its own fold state says, and its
+    /// chevron wakes it rather than unfolding it for good.
+    var dormant: Bool = false
     /// Opened from the dormant zone: offers to fold it back into its one-line row.
     var woken: Bool = false
 
@@ -1111,7 +1056,9 @@ struct ProjectSection: View {
 
     private var archived: [TerminalArchive] { state.archived(inProject: project.id) }
 
-    private var collapsed: Bool { state.isCollapsed(project.id) }
+    /// A woken dormant project is shown open whatever its own fold state says — its chevron is the
+    /// wake/sleep switch, not the persisted fold.
+    private var collapsed: Bool { dormant || (!woken && state.isCollapsed(project.id)) }
     // Counted over every terminal in the project, not the filtered list: what the header reports
     // about hidden work has to be the truth about all of it.
     private var needsYou: Int { state.terminals(inProject: project.id).filter { $0.status == .needsYou }.count }
@@ -1246,7 +1193,11 @@ struct ProjectSection: View {
                     }
                 // Same chevron idiom as the sidebar's section headers, pointing at the same thing.
                 Button {
-                    withAnimation(.easeOut(duration: 0.18)) { state.toggleProjectCollapsed(project.id) }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        if dormant { _ = state.wokenProjects.insert(project.id) }
+                        else if woken { _ = state.wokenProjects.remove(project.id) }
+                        else { state.toggleProjectCollapsed(project.id) }
+                    }
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
@@ -1328,11 +1279,6 @@ struct ProjectSection: View {
                     iconButton("chart.bar.xaxis", on: showChart,
                                help: showChart ? "隐藏 token 图表" : "显示 token 图表") {
                         withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
-                    }
-                }
-                if woken {
-                    iconButton("arrow.down.right.and.arrow.up.left", help: "收回成一行") {
-                        withAnimation(.easeOut(duration: 0.18)) { _ = state.wokenProjects.remove(project.id) }
                     }
                 }
                 iconButton("folder", help: "在 Finder 中显示") { state.openInFinder(project.id) }

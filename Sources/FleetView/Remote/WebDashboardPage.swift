@@ -282,20 +282,13 @@ enum WebDashboardPage {
   /* A project with no terminals: its empty row is the way to start one. */
   .emptyrow{display:flex;align-items:center;gap:8px;width:100%;padding:16px;border-radius:12px;cursor:pointer;
     background:transparent;color:var(--sub);border:1px dashed var(--outlineVariant);font-size:12px;line-height:16px;font-weight:500}
-  /* Quiet for two hours: one row per project — its name, every terminal as a small status shape, its
-     tokens and when it was last touched. A tap opens the whole section for this visit. */
-  .dorm{border-top:1px solid var(--outlineVariant);padding-top:16px;display:flex;flex-direction:column;gap:8px}
-  .dorm .zh{margin-bottom:4px}
-  .drow{display:flex;align-items:center;gap:14px;width:100%;height:44px;padding:0 16px;border:0;border-radius:12px;
-    background:var(--panel);color:var(--sub);cursor:pointer;text-align:left;min-width:0;transition:background .12s}
-  .drow:active{background:var(--card)}
-  @media (hover:hover){ .drow:hover{background:color-mix(in srgb,var(--card) 50%,var(--panel))} }
-  .drow .dn{color:var(--text);min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .drow .marks{display:flex;gap:3px;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden}
-  .drow .r{margin-left:auto;display:flex;gap:16px;align-items:center;flex:none}
-  .drow .r span:last-child{min-width:28px;text-align:right}
-  @media (max-width:420px){ .drow{gap:10px;padding:0 12px} .drow .r{gap:10px} }
-  .dorm .proj{border-top:0;padding-top:4px}
+  /* Quiet for two hours: each project as nothing but its own header, folded — the same row as any
+     project, with a chevron that opens it in place for this visit. */
+  .dorm{display:flex;flex-direction:column;gap:12px}
+  .dorm .proj.folded .ph{margin-bottom:0}
+  .ph .chev{margin-left:-8px;flex:none}
+  .ph .chev svg{transition:transform .15s}
+  .ph .chev.open svg{transform:rotate(90deg)}
   .banner{background:var(--warnContainer);color:var(--onWarnContainer);padding:12px 16px;border-radius:12px}
   .banner b{font-weight:500}
   .empty{color:var(--sub);text-align:center;padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:8px}
@@ -2387,7 +2380,7 @@ async function openProject(i,withTerm){
     }
     await tick();
     // A project that has been quiet for two hours is a one-line row rather than a section.
-    const sec=document.querySelector('.proj[data-pid="'+pid+'"],.drow[data-pid="'+pid+'"]');
+    const sec=document.querySelector('.proj[data-pid="'+pid+'"]');
     if(sec) sec.scrollIntoView({block:'start',behavior:'smooth'});
     showBoardHead();
     toast(f.projectId?f.name:'已打开 '+f.name);
@@ -3108,7 +3101,7 @@ setInterval(paintRuns,1000);
    1. 进行中 — what needs you, then what is running, lifted out of their projects and tinted;
    2. every project touched in the last two hours — or with something live in it, or with nothing in
       it yet — each under a full-width rule;
-   3. 两小时内没动过 — the rest, one line each, opened in place with a tap.
+   3. 两小时内没动过 — the rest, each folded to its header, opened in place with its chevron.
    Ended terminals stay in their project as outlined cards. The Mac's 最近使用 tray has no
    counterpart here: the board has never had one, and it is not invented for the sake of matching. */
 const DORMANT_AFTER=2*3600;
@@ -3126,21 +3119,25 @@ function isDormant(all){
   return last<0||last>DORMANT_AFTER;
 }
 function wake(pid){ if(woken.has(pid)) woken.delete(pid); else woken.add(pid); if(state) render(state); }
-function projSection(s,p,all,terms,isWoken){
+/* `fold`: undefined for an ordinary project; 'closed' or 'open' for one in the dormant zone, which
+   gets a chevron and — closed — nothing below its header. */
+function projSection(s,p,all,terms,fold){
   const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
-  let h=`<section class="proj" data-pid="${p.id}"><div class="ph">`+
+  const chev=fold?`<button class="icb chev${fold==='open'?' open':''}" onclick="wake('${p.id}')" `+
+    `title="${fold==='open'?'收起':'展开'}" aria-label="${fold==='open'?'收起':'展开'}">${ic('chevron-right','s16')}</button>`:'';
+  let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"><div class="ph">`+chev+
     `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
     // Same rule as the cluster header: the project's real size, and what is on screen of it.
     `<span class="meta lm"><span title="${all.length} 个终端">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
     (tot>0?`<span title="${tot} tokens">${ic('sigma','s14')}${short(tot)}</span>`:'')+
     (last>=0?`<span title="最后活动">${rel(last)}</span>`:'')+`</span>`+
     `<span class="acts">`+
-    (isWoken?`<button class="icb" onclick="wake('${p.id}')" title="收回成一行" aria-label="收回成一行">${ic('chevron-up')}</button>`:'')+
     // The path rides in a data attribute rather than in the handler's text: it is arbitrary user
     // data, and a project directory with a quote in it would otherwise end the attribute.
     `<button class="icb" data-path="${att(p.path)}" onclick="fbOpen(this.dataset.path)" title="浏览项目文件" aria-label="浏览项目文件">${ic('folder')}</button>`+
     `<button class="icb" onclick="newTerm('${p.id}')" title="新建终端" aria-label="新建终端">${ic('plus')}</button>`+
     `</span></div>`;
+  if(fold==='closed') return h+'</section>';
   if(!all.length) h+=`<button class="emptyrow" onclick="newTerm('${p.id}')">${ic('plus','s16')}新终端</button>`;
   const cids=[...new Set(terms.filter(t=>t.clusterId).map(t=>t.clusterId))];
   for(const cid of cids){
@@ -3156,17 +3153,6 @@ function projSection(s,p,all,terms,isWoken){
   const solo=terms.filter(t=>!t.clusterId);
   if(solo.length) h+=`<div class="grid">${solo.map(t=>card(t)).join('')}</div>`;
   return h+'</section>';
-}
-function dormRow(p,all,terms){
-  const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
-  // Every terminal as its status shape — the project's state at a glance without a single card.
-  // Capped so a big project does not run the row off the edge.
-  const marks=terms.slice(0,24).map(t=>glyph(t.status,'s12')).join('')+
-    (terms.length>24?`<span class="ls">+${terms.length-24}</span>`:'');
-  return `<button class="drow" data-pid="${p.id}" onclick="wake('${p.id}')" title="${att(p.path)}&#10;点开查看这个项目的终端">`+
-    `${ic('chevron-right','s16')}<span class="dn ts">${esc(p.name)}</span><span class="marks">${marks}</span>`+
-    `<span class="r lm">${tot>0?`<span title="${tot} tokens">${short(tot)}</span>`:''}`+
-    `${last>=0?`<span title="最后活动">${rel(last)}</span>`:''}</span></button>`;
 }
 function render(s){
   const cnt=document.getElementById('counts');
@@ -3208,12 +3194,12 @@ function render(s){
     // of the filter is a board with only the work you are tracking on it.
     if(!terms.length&&onlyMarked) continue;
     if(isDormant(all)){ dorm.push([p,all,terms]); continue; }
-    html+=projSection(s,p,all,terms,false);
+    html+=projSection(s,p,all,terms);
   }
   if(dorm.length){
     html+=`<section class="dorm"><div class="zh"><span class="ts">两小时内没动过</span><span class="ts n">${dorm.length}</span></div>`;
     for(const [p,all,terms] of dorm)
-      html+=woken.has(p.id)?projSection(s,p,all,terms,true):dormRow(p,all,terms);
+      html+=projSection(s,p,all,terms,woken.has(p.id)?'open':'closed');
     html+='</section>';
   }
   // Every 1.5s this used to replace the whole board, which forces a layout in the middle of a
