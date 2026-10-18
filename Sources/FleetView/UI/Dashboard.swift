@@ -255,8 +255,8 @@ struct DashboardView: View {
         // New Folder button does it without FleetView inventing a second dialog for naming and
         // placing a directory — it is the same control every other Mac app offers here.
         panel.canCreateDirectories = true
-        panel.prompt = "Open Project"
-        panel.message = "Pick a folder for this project — or make a new one."
+        panel.prompt = "打开项目"
+        panel.message = "选一个文件夹作为项目，或者新建一个。"
         if panel.runModal() == .OK { for url in panel.urls { state.addProject(path: url.path) } }
     }
 
@@ -266,10 +266,10 @@ struct DashboardView: View {
     static func newFolder(into state: AppState) {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.nameFieldLabel = "Folder name:"
+        panel.nameFieldLabel = "文件夹名称："
         panel.nameFieldStringValue = "new-project"
-        panel.prompt = "Create"
-        panel.message = "Name the new project folder."
+        panel.prompt = "创建"
+        panel.message = "给新项目文件夹起个名字。"
         // Where this user's projects actually live; the panel falls back to its own last location
         // when that folder is absent.
         let projectsHome = FV.home.appendingPathComponent("PycharmProjects")
@@ -724,10 +724,10 @@ struct TopBar: View {
 
     private var jobsPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("后台任务").font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.text)
+            Text("后台任务").font(.fvTitleSmall).foregroundColor(Theme.onSurface)
             ForEach(jobs.jobs) { job in JobRowView(job: job) }
             Text("这些任务在后台跑，看板、终端和正在工作的 agent 都不受影响。")
-                .font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.85))
+                .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16).frame(width: 320)
@@ -813,16 +813,16 @@ struct MainArea: View {
     var body: some View {
         if state.projects.isEmpty {
             EmptyState(icon: "square.grid.2x2",
-                       title: "Open a project to get started",
-                       subtitle: "Every project can launch clean terminal windows for your agents.",
-                       button: "Open Folder") { DashboardView.pickFolder(into: state) }
+                       title: "打开一个项目开始",
+                       subtitle: "每个项目都可以为你的 agent 开干净的终端窗口。",
+                       button: "打开文件夹") { DashboardView.pickFolder(into: state) }
         } else if state.showOnlyMarked && state.visibleProjects.isEmpty {
             // The filter is on and nothing is marked. Offering the way out here matters: this screen
             // is otherwise indistinguishable from having lost every terminal.
             EmptyState(icon: "bookmark",
-                       title: "No marked terminals",
-                       subtitle: "The board is filtered to marked terminals only. Mark one from its card, or show everything again.",
-                       button: "Show all terminals") { state.showOnlyMarked = false; state.save() }
+                       title: "没有加了书签的终端",
+                       subtitle: "看板现在只显示加了书签的终端。给某张卡片加书签，或者显示全部。",
+                       button: "显示全部终端") { state.showOnlyMarked = false; state.save() }
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -1198,13 +1198,13 @@ struct ProjectSection: View {
             Divider()
             if let s = pickedSkill ?? skills.first {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(s.name).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.text)
-                    Text(s.description.isEmpty ? "SKILL.md declares no description." : s.description)
+                    Text(s.name).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                    Text(s.description.isEmpty ? "SKILL.md 里没有写描述。" : s.description)
                         .font(.system(size: 11)).foregroundColor(Theme.subtext)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text(s.path)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.fvMono)
                             .foregroundColor(Theme.subtext.opacity(0.75))
                             .textSelection(.enabled)
                             .lineLimit(2).truncationMode(.middle)
@@ -1212,7 +1212,7 @@ struct ProjectSection: View {
                             Image(systemName: "doc.on.doc").font(.system(size: 10))
                                 .foregroundColor(Theme.subtext).padding(3)
                         }
-                        .buttonStyle(.plain).help("Copy the absolute path")
+                        .buttonStyle(.plain).help("复制绝对路径")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1529,14 +1529,15 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: icon).font(.system(size: 42, weight: .light)).foregroundColor(Theme.subtext.opacity(0.7))
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundColor(Theme.text)
-            Text(subtitle).font(.system(size: 13)).foregroundColor(Theme.subtext)
+            Image(systemName: icon).font(.system(size: 40, weight: .light)).foregroundColor(Theme.onSurfaceVariant)
+            Text(title).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+            Text(subtitle).font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
             Button(action: action) {
-                Text(button).font(.system(size: 13, weight: .medium)).padding(.horizontal, 16).padding(.vertical, 8)
+                Text(button).font(.fvLabel).padding(.horizontal, 20).frame(height: 40)
             }
-            .buttonStyle(.plain).foregroundColor(Theme.onAccent)
-            .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain).foregroundColor(Theme.onPrimary)
+            .background(Theme.primary).clipShape(Capsule())
             .padding(.top, 4)
             Spacer()
         }
@@ -1598,8 +1599,8 @@ struct TreeDragChip: View {
         var label: String? {
             switch self {
             case .none:        return nil
-            case .newTerminal: return "松开：以此节点开新终端"
-            case .joinCluster: return "松开：开新终端并加入该 cluster"
+            case .newTerminal: return "松开：从这一轮开新终端"
+            case .joinCluster: return "松开：开新终端并加入这个组"
             }
         }
     }
@@ -1612,11 +1613,11 @@ struct TreeDragChip: View {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11, weight: .bold)).foregroundColor(Theme.accent)
                 Text(prompt.replacingOccurrences(of: "\n", with: " ").prefix(24))
-                    .font(.system(size: 12.5, weight: .semibold)).foregroundColor(Theme.text)
+                    .font(.fvTitleSmall).foregroundColor(Theme.onSurface)
                     .lineLimit(1)
             }
             if let label = action.label {
-                Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.accent)
+                Text(label).font(.fvLabelSmall).foregroundColor(Theme.primary)
             }
         }
         .padding(.horizontal, 11).padding(.vertical, 7)
@@ -1643,12 +1644,12 @@ private struct JobRowView: View {
                                          : (job.done ? "checkmark.circle.fill" : job.kind.icon))
                     .font(.system(size: 10))
                     .foregroundColor(broken ? Theme.red : (job.done ? Theme.green : Theme.accent))
-                Text(job.title).font(.system(size: 12, weight: .medium))
+                Text(job.title).font(.fvLabel)
                     .foregroundColor(Theme.text).lineLimit(1)
                 Spacer(minLength: 4)
                 if !broken, let fraction = job.fraction {
                     Text("\(Int(fraction * 100))%")
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                        .font(.fvLabelSmall).monospacedDigit()
                         .foregroundColor(Theme.subtext)
                 }
                 // ✕ means two things here and both are wanted: stop the work while it runs, clear
@@ -1675,7 +1676,7 @@ private struct JobRowView: View {
             // it is selectable either way: the useful half of a clone failure is a URL or a repo
             // name someone is about to paste somewhere else.
             Text(job.failure ?? job.detail)
-                .font(.system(size: 10, design: broken ? .monospaced : .default))
+                .font(broken ? .fvMono : .fvLabelSmall)
                 .foregroundColor(broken ? Theme.red : Theme.subtext.opacity(0.85))
                 .lineLimit(broken ? 6 : 1)
                 .truncationMode(.middle)
@@ -1684,7 +1685,7 @@ private struct JobRowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let label = job.recoverLabel, let recover = job.recover {
                 Button { recover() } label: {
-                    Text(label).font(.system(size: 11, weight: .medium)).foregroundColor(Theme.accent)
+                    Text(label).font(.fvLabel).foregroundColor(Theme.primary)
                 }
                 .buttonStyle(.plain)
             }

@@ -1703,19 +1703,19 @@ final class AppState: ObservableObject {
         guard let proj = project(projectId) else { return }
         nameSheet = NameSheetRequest(kind: .newTerminal(projectId),
                                      initialName: defaultTerminalName(for: proj),
-                                     title: "New Terminal", confirmLabel: "Open")
+                                     title: "新终端", confirmLabel: "打开")
     }
 
     func requestRename(_ termId: UUID) {
         guard let t = terminals.first(where: { $0.id == termId }) else { return }
         nameSheet = NameSheetRequest(kind: .rename(termId), initialName: t.name,
-                                     title: "Rename Terminal", confirmLabel: "Rename")
+                                     title: "重命名终端", confirmLabel: "重命名")
     }
 
     func requestRenameCluster(_ clusterId: UUID) {
         guard let c = cluster(clusterId) else { return }
         nameSheet = NameSheetRequest(kind: .renameCluster(clusterId), initialName: c.name,
-                                     title: "Rename Cluster", confirmLabel: "Rename")
+                                     title: "重命名组", confirmLabel: "重命名")
     }
 
     func confirmName(_ name: String) {

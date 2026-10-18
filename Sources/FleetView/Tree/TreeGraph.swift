@@ -1,6 +1,6 @@
 import Foundation
 
-/// The session-tree engine behind the desktop "会话树" panel — a Swift port of treeflow's
+/// The session-tree engine behind the desktop "对话树" panel — a Swift port of treeflow's
 /// `load_project` + `build_nodes` (the user's own tool; see docs/design/2026-07-27-session-tree.md).
 ///
 /// A Claude project directory is one uuid graph: every record carries `uuid`/`parentUuid`, and

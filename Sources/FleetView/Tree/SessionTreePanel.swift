@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The right-hand "会话树" panel: a GitUp-style vertical lane graph of one agent session's
+/// The right-hand "对话树" panel: a GitUp-style vertical lane graph of one agent session's
 /// prompt tree — active branch in accent, each side branch in its own palette colour, current
 /// leaf pulsing. Rows drag onto the fleet board to fork-open that node in a new terminal.
 struct SessionTreePanel: View {
@@ -199,7 +199,7 @@ struct SessionTreePanel: View {
             Spacer()
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 28, weight: .light)).foregroundColor(Theme.subtext.opacity(0.5))
-            Text(reason).font(.system(size: 12)).foregroundColor(Theme.subtext)
+            Text(reason).font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                 .multilineTextAlignment(.center).padding(.horizontal, 24)
             Spacer()
         }
@@ -210,7 +210,7 @@ struct SessionTreePanel: View {
         VStack(spacing: 12) {
             Spacer()
             ProgressView().controlSize(.regular)
-            Text("正在解析会话树…").font(.system(size: 12)).foregroundColor(Theme.subtext)
+            Text("正在解析对话树…").font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -679,7 +679,7 @@ struct TreeDetailCard: View {
                     // Rendered, not shown raw: agents answer in Markdown, and the monospaced dump
                     // this replaces put `**` and backticks in front of every point that mattered.
                     Text(markdownText(turn.answer, query: query, base: Theme.onSurface))
-                        .font(.system(size: 13))
+                        .font(.fvBody)
                         .lineSpacing(3)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

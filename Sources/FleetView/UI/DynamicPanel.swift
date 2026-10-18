@@ -18,32 +18,34 @@ struct DynamicPanel: View {
         Group {
             if state.panelExists, state.web.port > 0, let url = panelURL {
                 VStack(spacing: 0) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "rectangle.topthird.inset.filled").font(.system(size: 10))
-                            .foregroundColor(Theme.accent.opacity(0.8))
-                        Text("AGENT PANEL").font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.subtext).tracking(0.5)
-                        if let pinned {
-                            Text("· \(pinned.label)").font(.system(size: 10))
-                                .foregroundColor(Theme.subtext).lineLimit(1)
-                        }
+                    HStack(spacing: 10) {
+                        Image(systemName: "rectangle.topthird.inset.filled").font(.system(size: 13))
+                            .foregroundColor(Theme.onSurfaceVariant)
+                        Text(pinned.map { "面板 · \($0.label)" } ?? "面板").font(.fvLabel)
+                            .foregroundColor(Theme.onSurface).lineLimit(1)
                         Spacer()
                         historyMenu
-                        Button(collapsed ? "Show" : "Hide") {
+                        Button {
                             withAnimation(.easeOut(duration: 0.15)) { collapsed.toggle() }
+                        } label: {
+                            Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                                .rotationEffect(.degrees(collapsed ? -90 : 0))
+                                .foregroundColor(Theme.onSurfaceVariant)
+                                .frame(width: 28, height: 28).contentShape(Circle())
                         }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Theme.accent)
+                        .buttonStyle(.plain).help(collapsed ? "展开面板" : "收起面板")
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Theme.panel)
+                    .padding(.leading, 16).padding(.trailing, 6)
+                    .frame(height: Theme.controlHeight)
+                    .background(Theme.surfaceContainerLow)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .padding(.horizontal, 20).padding(.top, 4)
                     if !collapsed {
                         // Keyed on the version uuid, not on mtime: touching the file no longer
                         // reflows the panel for nothing.
                         WebPanelView(url: url, reloadToken: pinned?.uuid ?? state.panelVersion)
                             .frame(height: 240)
                     }
-                    Divider().overlay(Theme.stroke)
                 }
                 .transition(.opacity)
             }
@@ -53,16 +55,20 @@ struct DynamicPanel: View {
     /// Every version an agent ever wrote is kept, so the menu is a real history, not a cache.
     private var historyMenu: some View {
         Menu {
-            Button("Live (newest)") { pinned = nil }
+            Button("实时（最新版本）") { pinned = nil }
             if !history.isEmpty { Divider() }
             ForEach(history) { version in
                 Button(version.label) { pinned = version }
             }
         } label: {
-            Text("History").font(.system(size: 11, weight: .medium)).foregroundColor(Theme.accent)
+            Image(systemName: "clock").font(.system(size: 13))
+                .foregroundColor(pinned == nil ? Theme.onSurfaceVariant : Theme.primary)
+                .frame(width: 28, height: 28)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .help("面板的历史版本")
         .onAppear { history = PanelVersions.shared.recentSummaries() }
         .onChange(of: state.panelVersion) { _ in history = PanelVersions.shared.recentSummaries() }
     }

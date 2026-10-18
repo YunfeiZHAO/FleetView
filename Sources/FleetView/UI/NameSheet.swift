@@ -11,29 +11,29 @@ struct NameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(request.title).font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text)
+            Text(request.title).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
 
-            TextField("terminal name", text: $name)
-                .textFieldStyle(.plain).font(.system(size: 14))
-                .padding(9)
-                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.stroke, lineWidth: 1))
-                .foregroundColor(Theme.text)
+            TextField("名称", text: $name)
+                .textFieldStyle(.plain).font(.fvBody)
+                .padding(.horizontal, 14).frame(height: 40)
+                .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
+                .foregroundColor(Theme.onSurface)
                 .focused($focused)
                 .onSubmit(confirm)
 
             HStack {
                 Spacer()
-                Button("Cancel") { state.nameSheet = nil; dismiss() }
+                Button("取消") { state.nameSheet = nil; dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button(request.confirmLabel, action: confirm)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 360)
-        .background(Theme.bg)
+        .padding(24)
+        .frame(width: 380)
+        .background(Theme.surfaceContainerHigh)
         .onAppear {
             name = request.initialName
             DispatchQueue.main.async { focused = true }

@@ -258,7 +258,7 @@ struct SearchPanel: View {
                 .help(isPrompt ? "你的提问" : "agent 的回复")
             VStack(alignment: .leading, spacing: 4) {
                 Text(highlighted(snippet(hit.body), base: on ? Theme.onSecondaryContainer : Theme.onSurface))
-                    .font(.system(size: 13)).lineLimit(2)
+                    .font(.fvBody).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
                     AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 10)
@@ -349,7 +349,7 @@ struct SearchPanel: View {
         let isPrompt = msg.role == .user
         let text = Text(markdownText(msg.body, query: model.query,
                                      base: isPrompt ? Theme.onPrimaryContainer : Theme.onSurface))
-            .font(.system(size: 13))
+            .font(.fvBody)
             .lineSpacing(3)
             .textSelection(.enabled)
             .lineLimit(isHit ? nil : 12)

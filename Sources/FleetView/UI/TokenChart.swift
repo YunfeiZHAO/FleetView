@@ -24,18 +24,14 @@ struct ProjectTokenChart: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             if let l = lastUpdated ?? lastDate {
-                HStack(spacing: 4) {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 8))
-                    Text("updated \(Self.updatedFmt.string(from: l))").font(.system(size: 9, weight: .medium))
-                }
-                .foregroundColor(Theme.subtext.opacity(0.85))
+                Text("更新于 \(Self.updatedFmt.string(from: l))").font(.fvLabelSmall).monospacedDigit()
+                    .foregroundColor(Theme.onSurfaceVariant)
             }
             chart
         }
-        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 4)
-        .background(Theme.card.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.stroke, lineWidth: 1))
+        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 6)
+        .background(Theme.surfaceContainerLow)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
     }
 
     private var chart: some View {
@@ -50,8 +46,8 @@ struct ProjectTokenChart: View {
             AxisMarks(values: .automatic(desiredCount: 5)) { _ in
                 AxisGridLine().foregroundStyle(Theme.stroke)
                 AxisValueLabel(format: .dateTime.hour().minute())
-                    .foregroundStyle(Theme.subtext)
-                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.onSurfaceVariant)
+                    .font(.fvLabelSmall)
             }
         }
         .chartYAxis {
@@ -59,7 +55,7 @@ struct ProjectTokenChart: View {
                 AxisGridLine().foregroundStyle(Theme.stroke)
                 AxisValueLabel {
                     if let v = value.as(Int.self) {
-                        Text(TokenUsage.short(v)).foregroundStyle(Theme.subtext).font(.system(size: 9))
+                        Text(TokenUsage.short(v)).foregroundStyle(Theme.onSurfaceVariant).font(.fvLabelSmall)
                     }
                 }
             }

@@ -65,10 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clear.target = self
         appMenu.addItem(clear)
         appMenu.addItem(.separator())
-        let uninstall = NSMenuItem(title: "Uninstall Status Hooks (Claude + Codex)", action: #selector(uninstallHooks), keyEquivalent: "")
+        let uninstall = NSMenuItem(title: "卸载状态钩子（Claude + Codex）", action: #selector(uninstallHooks), keyEquivalent: "")
         uninstall.target = self
         appMenu.addItem(uninstall)
-        let reveal = NSMenuItem(title: "Reveal Support Folder (~/.fleetview)", action: #selector(revealSupport), keyEquivalent: "")
+        let reveal = NSMenuItem(title: "在 Finder 中显示数据目录（~/.fleetview）", action: #selector(revealSupport), keyEquivalent: "")
         reveal.target = self
         appMenu.addItem(reveal)
         appMenu.addItem(.separator())
@@ -116,8 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HookInstaller.uninstall()
         CodexHookInstaller.uninstall()
         let a = NSAlert()
-        a.messageText = "Status hooks removed"
-        a.informativeText = "FleetView's hooks were removed from ~/.claude/settings.json, ~/.codex/config.toml and sp-claude's ~/.sub-pool/claude-home/settings.json. Live status will stop updating until you relaunch FleetView."
+        a.messageText = "状态钩子已卸载"
+        a.informativeText = "已从 ~/.claude/settings.json、~/.codex/config.toml 和 sp-claude 的 ~/.sub-pool/claude-home/settings.json 里移除 FleetView 的钩子。重新启动 FleetView 之前，状态不会再实时更新。"
         a.runModal()
     }
 

@@ -78,8 +78,8 @@ struct PeerTaskList: View {
                         HStack(spacing: 5) {
                             Image(systemName: "folder.fill").font(.system(size: 8))
                                 .foregroundColor(Theme.subtext.opacity(0.55))
-                            Text(g.name.uppercased())
-                                .font(.system(size: 9, weight: .semibold))
+                            Text(g.name)
+                                .font(.fvLabelSmall)
                                 .foregroundColor(Theme.subtext.opacity(0.6)).lineLimit(1)
                         }
                         .padding(.horizontal, 12).padding(.bottom, 3)
@@ -97,10 +97,10 @@ struct PeerTaskList: View {
             Circle().fill(Theme.statusColor(TermStatus(rawValue: t.status) ?? .closed))
                 .frame(width: 7, height: 7)
             Text(t.name.isEmpty ? String(t.id.prefix(8)) : t.name)
-                .font(.system(size: 12.5)).foregroundColor(Theme.text).lineLimit(1)
+                .font(.fvBody).foregroundColor(Theme.onSurface).lineLimit(1)
             Spacer(minLength: 4)
             Text(TermStatus(rawValue: t.status)?.label ?? t.status)
-                .font(.system(size: 10))
+                .font(.fvLabelSmall)
                 .foregroundColor(Theme.statusColor(TermStatus(rawValue: t.status) ?? .closed))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)

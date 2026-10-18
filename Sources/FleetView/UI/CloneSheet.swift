@@ -17,15 +17,15 @@ struct CloneSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill").foregroundColor(Theme.accent)
-                Text("Clone GitHub Repository").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text)
+                Text("克隆 GitHub 仓库").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
             }
 
-            field(label: "Repository") {
-                TextField("owner/repo  or  https://github.com/owner/repo", text: $repo)
+            field(label: "仓库") {
+                TextField("owner/repo 或 https://github.com/owner/repo", text: $repo)
                     .textFieldStyle(.plain).onSubmit(startClone)
             }
 
-            field(label: "Into folder") {
+            field(label: "放到这个文件夹里") {
                 HStack(spacing: 8) {
                     TextField("", text: $parentDir).textFieldStyle(.plain)
                     Button { pickParent() } label: { Image(systemName: "folder") }
@@ -35,39 +35,41 @@ struct CloneSheet: View {
 
             if !repo.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text("→ \(destPreview)")
-                    .font(.system(size: 11)).foregroundColor(Theme.subtext.opacity(0.75))
+                    .font(.fvMono).foregroundColor(Theme.onSurfaceVariant)
                     .lineLimit(1).truncationMode(.middle)
             }
 
             if let error {
-                Text(error).font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Theme.statusColor(.exited)).lineLimit(4).textSelection(.enabled)
+                Text(error).font(.fvMono)
+                    .foregroundColor(Theme.error).lineLimit(4).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack {
-                Label("克隆在后台进行，进度显示在顶栏，可以随时取消。", systemImage: "clock.arrow.circlepath")
-                    .font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.85))
+                Label("克隆在后台进行，进度显示在顶栏，可以随时取消。", systemImage: "info.circle")
+                    .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button("Cancel") { dismiss() }
-                Button(action: startClone) { Text("Clone").fontWeight(.medium) }
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(action: startClone) { Text("克隆").fontWeight(.medium) }
+                    .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(repo.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 470)
-        .background(Theme.bg)
+        .padding(24)
+        .frame(width: 480)
+        .background(Theme.surfaceContainerHigh)
     }
 
     @ViewBuilder private func field<Content: View>(label: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 11, weight: .medium)).foregroundColor(Theme.subtext)
+            Text(label).font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
             content()
-                .padding(8)
-                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.stroke, lineWidth: 1))
+                .font(.fvBody)
+                .padding(.horizontal, 12).frame(height: 40)
+                .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
                 .foregroundColor(Theme.text)
         }
     }
@@ -95,7 +97,7 @@ struct CloneSheet: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: parentDir)
-        panel.prompt = "Choose"
+        panel.prompt = "选择"
         if panel.runModal() == .OK, let url = panel.url { parentDir = url.path }
     }
 }
