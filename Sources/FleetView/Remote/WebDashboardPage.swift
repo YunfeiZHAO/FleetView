@@ -30,6 +30,7 @@ enum WebDashboardPage {
     --primaryContainer:#4d3d75; --onPrimaryContainer:#e9ddff;
     --secondaryContainer:#4a4458; --onSecondaryContainer:#e8def8;
     --tertiary:#efb8c8; --outline:#948f99; --outlineVariant:#49454e;
+    --tertiaryContainer:#633b48; --onTertiaryContainer:#ffd9e3;
     --surfaceLowest:#0f0d13; --surfaceHighest:#36343a;
     --warnContainer:#683d00; --onWarnContainer:#ffdcbc;
     --errorContainer:#93000a; --onErrorContainer:#ffdad6;
@@ -62,6 +63,7 @@ enum WebDashboardPage {
     --primaryContainer:#e9ddff; --onPrimaryContainer:#4d3d75;
     --secondaryContainer:#e8def8; --onSecondaryContainer:#4a4458;
     --tertiary:#7e5260; --outline:#7a757f; --outlineVariant:#cac4cf;
+    --tertiaryContainer:#ffd9e3; --onTertiaryContainer:#633b48;
     --surfaceLowest:#ffffff; --surfaceHighest:#e6e0e9;
     --warnContainer:#ffdcbc; --onWarnContainer:#2c1700;
     --errorContainer:#ffdad6; --onErrorContainer:#93000a;
@@ -93,6 +95,12 @@ enum WebDashboardPage {
      header could stick inside — so the header scrolled away with the board after the first screen
      and was "sticky" only in the stylesheet. */
   html{height:100%}
+  /* Mobile browsers inflate text they judge too small for a wide block, and iOS does it again on
+     rotation; the board is laid out for its own sizes. A browser's own text zoom (an in-app Android
+     browser's, which scales fonts and px line-heights but no px height) can still apply on top, so
+     every fixed-line-count box below takes its height from its lines rather than from a px figure —
+     the card prompt's 32px was what cut its second line in half. */
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   body{margin:0;min-height:100%}
   html{margin:0}
   /* Stops the rubber-band at the root, so a flick that the overlay did not consume cannot drag the
@@ -120,8 +128,9 @@ enum WebDashboardPage {
   svg.ic.s16{width:16px;height:16px}
   svg.ic.s14{width:14px;height:14px}
   svg.ic.s12{width:12px;height:12px}
-  /* Status is a still shape in a role colour, never a word and never moving (see glyph()). The word
-     is the shape's title, for hover and for a screen reader. */
+  /* Status is a still shape in a role colour, never a word (see glyph()). It moves once, at the
+     moment it changes (see playChanges), and not otherwise. The word is the shape's title, for hover
+     and for a screen reader. */
   svg.g{width:16px;height:16px;flex:none;display:block;overflow:visible}
   svg.g.s12{width:12px;height:12px}
   .g.working{color:var(--accent)}
@@ -214,6 +223,10 @@ enum WebDashboardPage {
   .from{display:flex;align-items:center;gap:6px;min-width:0;margin:0 0 6px 2px;color:var(--sub)}
   .from span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rc{min-width:0}
+  /* Copies of 进行中 cards on their way out (see flipBoard), placed in document coordinates. Under the
+     board, not over it: the cards closing the gap slide across them instead of being covered. */
+  #ghosts{position:absolute;left:0;top:0;width:0;height:0;z-index:-1;pointer-events:none}
+  #ghosts > *{position:absolute;margin:0}
   /* A Material filled card: three rows — status and name, the last prompt, who and how much. */
   .card{background:var(--card);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;
     transition:transform .12s,background .12s;cursor:pointer;position:relative;min-width:0;
@@ -224,32 +237,68 @@ enum WebDashboardPage {
   .card, .card *{touch-action:pan-y}
   @media (hover:hover){ .card:hover{background:var(--cardHover)} }
   .card.locked{cursor:default}
-  .card .hd{display:flex;align-items:center;gap:10px;height:20px;min-width:0}
-  .card .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* Rows are min-heights: at 100% they are exactly these figures, and enlarged text grows the row
+     rather than spilling over the next one. Every card has the same rows, so they grow together. */
+  .card .hd{display:flex;align-items:center;gap:10px;min-height:20px;min-width:0}
+  /* Unitless line-heights wherever text is clipped to its lines (here, the prompt, the clamps below):
+     the line then scales with the font under any text zoom, so the clip stays between lines. Each
+     is its px figure divided by the font size, a hair over so 100% still lays out on the same pixel. */
+  .card .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.42858}
   .card .when{flex:none;color:var(--sub)}
   /* tabular-nums so a ticking clock doesn't shuffle the card's right edge every second */
   .card .clock{color:var(--accent)}
   .card .mk{flex:none;color:var(--tertiary)}
   .card .mk svg{fill:currentColor}
   .card .hid{flex:none;color:var(--sub)}
-  /* Two lines, always: a one-line prompt must not make a shorter card than its neighbours. */
-  .card .pr{display:flex;gap:6px;height:32px;min-width:0;color:var(--sub)}
+  /* Two lines, always: a one-line prompt must not make a shorter card than its neighbours. The two
+     lines are real ones — an invisible two-line strut beside the text — rather than a height:
+     32px was two lines only until a browser scaled the text and not the box, and .tx, stretched to
+     that box, cut its second line through the middle. An em height would follow the text only as far
+     as a zoom scales what em resolves against, which is not a given; the strut is set in the same
+     font and line-height as the text, so the row is two of its lines whatever the zoom did. */
+  .card .pr{display:flex;gap:6px;min-width:0;color:var(--sub);line-height:1.33334}
+  .card .pr::after{content:"\200B\A\200B";white-space:pre;flex:none;width:0;margin-left:-6px;visibility:hidden}
   .card .pr .sig{flex:none;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace}
   .card .pr .tx{min-width:0;overflow:hidden;word-break:break-word;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .card .ft{display:flex;align-items:center;gap:8px;height:28px;min-width:0;color:var(--sub)}
+  .card .ft{display:flex;align-items:center;gap:8px;min-height:28px;min-width:0;color:var(--sub)}
   /* The terminal's id in the footer's corner, four characters of it — enough to tell two cards apart
      and to match one against `project-manager`. Always shown, since a phone has no hover to reveal
      it; the vertical padding is a finger's worth of target that the row's height hides. */
   .card .uid{flex:none;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-size:11px;
     line-height:16px;font-weight:500;color:var(--sub);cursor:pointer;padding:6px 0;margin:-6px 0;white-space:nowrap}
-  /* 进行中 — the only coloured cards on the board: running on primary-container, needs-you on
-     warn-container. Secondary text is the same ink at 78% rather than a second hue. */
-  .card.tint.run{background:var(--primaryContainer);color:var(--onPrimaryContainer)}
-  .card.tint.need{background:var(--warnContainer);color:var(--onWarnContainer)}
-  .card.tint .g,.card.tint .ag,.card.tint .when,.card.tint .clock,.card.tint .mk,.card.tint .uid{color:inherit}
-  .card.tint.run .pr,.card.tint.run .ft,.card.tint.run .hid{color:color-mix(in srgb,var(--onPrimaryContainer) 78%,transparent)}
-  .card.tint.need .pr,.card.tint.need .ft,.card.tint.need .hid{color:color-mix(in srgb,var(--onWarnContainer) 78%,transparent)}
+  /* The fill is the state, on every copy of a card: the one lifted into 进行中 and the one in its
+     project look the same, so either answers the same glance. Running and finished each get a loud
+     first ten seconds — `fresh`, which paintFresh sets and the markup never carries: a run that has
+     just started is the strong primary, one that has just come back to the prompt the tertiary
+     container with a check for its shape. Then running settles to the primary container and finished
+     to the plain card. Terminals start and stop on their own (hooks, auto-recover, scheduled pings),
+     and a one-off flash is missed by anyone not looking at that moment; ten seconds is long enough to
+     catch with a glance and short enough not to become a state of its own to read (AppState.freshFor).
+     Secondary text is the same ink at 78% rather than a second hue — except on the strong primary,
+     where 78% of it stops reading as text. */
+  .card.run{--fill:var(--primaryContainer);--fg:var(--onPrimaryContainer);--fg2:color-mix(in srgb,var(--onPrimaryContainer) 78%,transparent)}
+  .card.run.fresh{--fill:var(--accent);--fg:var(--onAccent);--fg2:var(--onAccent)}
+  .card.need{--fill:var(--warnContainer);--fg:var(--onWarnContainer);--fg2:color-mix(in srgb,var(--onWarnContainer) 78%,transparent)}
+  .card.idle.fresh{--fill:var(--tertiaryContainer);--fg:var(--onTertiaryContainer);--fg2:color-mix(in srgb,var(--onTertiaryContainer) 78%,transparent)}
+  /* :not(.dragging), or a coloured card picked up would leave a filled block where the dashed space
+     should be — this rule outranks .card.dragging otherwise. */
+  .card.tint:not(.dragging),.card.idle.fresh:not(.dragging){background:var(--fill);color:var(--fg)}
+  .card.tint .g,.card.tint .ag,.card.tint .when,.card.tint .clock,.card.tint .mk,.card.tint .uid,
+  .card.idle.fresh .g,.card.idle.fresh .ag,.card.idle.fresh .when,.card.idle.fresh .mk,.card.idle.fresh .uid{color:inherit}
+  .card.tint .pr,.card.tint .ft,.card.tint .hid,.card.idle.fresh .pr,.card.idle.fresh .ft,.card.idle.fresh .hid{color:var(--fg2)}
+  /* An idle card draws both of its shapes, the check it wears while fresh and the dot it settles to,
+     and the class picks one — so the ten-second line is a class flip, not a rebuild (see cardGlyph). */
+  .card .g .gd,.card.idle.fresh .g .gi{opacity:0}
+  .card.idle.fresh .g .gd{opacity:1}
+  /* Crossing the ten-second line flips `fresh` in place, and this is what eases it instead of letting
+     it jump. Only for that moment — paintFresh takes it off again — because left on, the hover of
+     every card that ever finished would take a second to answer. */
+  .card.ease{transition:transform .12s,background-color 1.2s ease,color 1.2s ease}
+  .card.ease *{transition:color 1.2s ease,opacity .6s ease}
+  /* The ring a card throws once when its status changes (see playChanges). An element of its own,
+     added for the moment: the card's box-shadow already belongs to the drag lift and the ended card. */
+  .card .halo{position:absolute;inset:0;border-radius:inherit;pointer-events:none}
   /* Ended (exited / closed): Material's outlined card, its contents at the disabled 38%. Same size as
      every other card — the step down is colour and opacity, never dimensions. */
   .card.ghost{background:transparent;box-shadow:inset 0 0 0 1px var(--outlineVariant)}
@@ -262,7 +311,7 @@ enum WebDashboardPage {
   .card.dragging > *{visibility:hidden}
   /* A group of terminals on one task: a frame around cards, not a coloured block. */
   .cluster{border-radius:16px;padding:12px;box-shadow:inset 0 0 0 1px var(--outlineVariant);margin-bottom:12px}
-  .cluster .chead{display:flex;align-items:center;gap:8px;height:28px;margin-bottom:12px;color:var(--sub);min-width:0}
+  .cluster .chead{display:flex;align-items:center;gap:8px;min-height:28px;margin-bottom:12px;color:var(--sub);min-width:0}
   .cluster .cname{color:var(--text);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* A full-width rule above every project is what tells the sections apart from 进行中 above them. */
   .proj{border-top:1px solid var(--outlineVariant);padding-top:16px}
@@ -421,7 +470,7 @@ enum WebDashboardPage {
   /* It floats over live text, so it needs to read as a separate layer: the same primary-container
      bubble as the prompt it quotes, lifted by a shadow rather than set apart by a second colour. */
   #stickyq .sq{position:relative;padding:12px 16px;border-radius:16px;
-    font-size:14px;line-height:20px;font-weight:400;color:var(--quoteFg);
+    font-size:14px;line-height:1.42858;font-weight:400;color:var(--quoteFg);
     background:var(--quoteBg);
     box-shadow:0 6px 20px rgba(0,0,0,.35);
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -665,7 +714,7 @@ enum WebDashboardPage {
     color:var(--text);border:0;border-radius:12px;padding:10px 14px;
     cursor:pointer;font:inherit}
   .nrow:active{background:var(--cardHover)}
-  .nrow .ntext{flex:1;min-width:0;font-size:12px;line-height:18px;
+  .nrow .ntext{flex:1;min-width:0;font-size:12px;line-height:1.5;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .nrow .nuse{flex:none;color:var(--sub)}
@@ -806,7 +855,7 @@ enum WebDashboardPage {
   #tray .f .fn{display:block;font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #tray .f .fm{display:block;font-size:11px;line-height:16px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #tray .f .fd{font-variant-numeric:tabular-nums}
-  #tray .f .fnote{font-size:11px;line-height:16px;color:var(--sub);overflow:hidden;overflow-wrap:anywhere;
+  #tray .f .fnote{font-size:11px;line-height:1.45455;color:var(--sub);overflow:hidden;overflow-wrap:anywhere;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #tray .tnone{color:var(--sub);font-size:12px;padding:10px 4px}
   /* project file browser — the project's own directory, walkable from the phone. An agent says "see
@@ -901,6 +950,7 @@ enum WebDashboardPage {
   <div id="projlist"></div>
 </div>
 <main id="root"><div class="empty" data-i18n="common.loading"></div></main>
+<div id="ghosts" aria-hidden="true"></div>
 
 <div id="chip"></div>
 <div id="dock"></div>
@@ -1004,7 +1054,7 @@ const I18N={
     'common.loading':'加载中…','common.back':'返回','common.retry':'重试',
     'common.collapse':'收起','common.expand':'展开','common.newTerm':'新终端','common.tokens':'{n} tokens',
     'status.working':'运行中','status.idle':'空闲','status.needsYou':'等你处理','status.shell':'Shell',
-    'status.exited':'已退出','status.closed':'已关闭',
+    'status.exited':'已退出','status.closed':'已关闭','status.done':'刚完成',
     'time.now':'刚刚','time.justNow':'刚刚','time.minAgo':'{n} 分钟前','time.hourAgo':'{n} 小时前','time.dayAgo':'{n} 天前',
     'time.today':'今天 {time}','time.yesterday':'昨天 {time}','time.date':'{m}月{d}日 {time}','time.dateYear':'{y}年{m}月{d}日 {time}',
     'head.markFilter':'只显示加了书签的终端','head.projTitle':'从 ~/PycharmProjects 打开项目','head.projAria':'打开项目',
@@ -1079,7 +1129,7 @@ const I18N={
     'common.loading':'Loading…','common.back':'Back','common.retry':'Retry',
     'common.collapse':'Collapse','common.expand':'Expand','common.newTerm':'New terminal','common.tokens':'{n} tokens',
     'status.working':'Running','status.idle':'Idle','status.needsYou':'Needs you','status.shell':'Shell',
-    'status.exited':'Exited','status.closed':'Closed',
+    'status.exited':'Exited','status.closed':'Closed','status.done':'Just finished',
     'time.now':'now','time.justNow':'just now',
     'time.minAgo':{one:'{n} minute ago',other:'{n} minutes ago'},
     'time.hourAgo':{one:'{n} hour ago',other:'{n} hours ago'},
@@ -1262,7 +1312,7 @@ const STATUS_TEXT={working:tr('status.working'),idle:tr('status.idle'),needsYou:
    more it wants you: a soft burst for running (Material's shape, not a spinner), a diamond with the
    "!" cut out of it (even-odd, so it stays a hole on any ground) for needs-you, a small disc for idle,
    a prompt in a box for a shell, an empty ring for closed and a crossed one for exited. Nothing here
-   moves; the word is the title. */
+   moves except the one pop when a card's status changes; the word is the title. */
 const BURST=(()=>{
   let d='';
   for(let i=0;i<96;i++){
@@ -1282,6 +1332,16 @@ const GLYPH={
 function glyph(status,cls){
   const s=GLYPH[status]?status:'closed', label=STATUS_TEXT[s];
   return '<svg class="g '+s+(cls?' '+cls:'')+'" viewBox="0 0 16 16" role="img" aria-label="'+label+'"><title>'+label+'</title>'+GLYPH[s]+'</svg>';
+}
+/* On a card, idle carries a second shape: a check cut out of a disc, worn for the first ten seconds
+   after a run comes back to the prompt. Both are drawn and the card's `fresh` class picks one, so
+   settling is a class change the stylesheet can ease, not a rebuild. paintFresh keeps the word in
+   step with whichever is showing. */
+const DONE_TEXT=tr('status.done');
+function cardGlyph(status){
+  if(status!=='idle') return glyph(status);
+  return glyph('idle').replace('<circle ','<circle class="gi" ').replace('</svg>',
+    '<path class="gd" fill="currentColor" fill-rule="evenodd" d="M8 1.2a6.8 6.8 0 1 1 0 13.6A6.8 6.8 0 0 1 8 1.2zM4.9 8.1l2.1 2.1 4.1-4.3-.95-.9L7 8.3 5.85 7.15z"/></svg>');
 }
 /* Who is behind a card — identity, so it is a mark in the footer and never a colour on the card:
    Claude's eight rays in its own orange, Codex's hexagon in the ink colour. */
@@ -3235,11 +3295,12 @@ function toast(msg,ms){
 /* One card, the Mac's three rows: the status shape, the name and the clock (or how long ago); the
    last prompt, always two lines tall so every card in a grid is the same height; the agent's mark
    and its tokens. No status word and no agent chip — the shape and the mark say both, and the word
-   is the shape's title. `now` is the copy in 进行中, which takes its state's container colour. */
-function card(t,now){
+   is the shape's title. The fill is the state, wherever the card is drawn; whether it is in its first
+   ten seconds is left out of the markup on purpose (see paintFresh). */
+function card(t){
   const ended=t.status==='exited'||t.status==='closed';
-  const tint=now&&(t.status==='working'||t.status==='needsYou');
-  const cls='card'+(tint?(t.status==='working'?' tint run':' tint need'):'')+(ended?' ghost':'')+(t.canOpen?'':' locked');
+  const cls='card'+(t.status==='working'?' tint run':t.status==='needsYou'?' tint need':t.status==='idle'?' idle':'')
+    +(ended?' ghost':'')+(t.canOpen?'':' locked');
   const time=t.running>=0
     ? `<span class="when clock lm" data-run="${t.id}"></span>`
     : (t.idle>=0?`<span class="when lm" title="${t.lastRun>=0?tr('card.lastRun',{time:clockText(t.lastRun*1000)}):tr('card.lastActivity')}">${rel(t.idle)}</span>`:'');
@@ -3248,7 +3309,7 @@ function card(t,now){
   const tok=t.tokens>0?`<span class="ls" title="${tr('common.tokens',{n:t.tokens})}">${short(t.tokens)}</span>`:'';
   const uid=t.id.toLowerCase();
   return `<div class="${cls}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
-    <div class="hd">${glyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
+    <div class="hd">${cardGlyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
     <div class="pr bs"><span class="sig">${t.status==='shell'?'$':'›'}</span><span class="tx">${t.prompt?esc(t.prompt):'—'}</span></div>
     <div class="ft"><span class="uid" role="button" data-short="${uid.slice(0,4)}…" onclick="event.stopPropagation();uidTap(this,'${t.id}')"
       title="${tr('card.idTitle',{id:uid.slice(0,8)})}">${uid.slice(0,4)}…</span>${agentMark(t.agent)}${tok}</div>
@@ -3289,18 +3350,29 @@ function clockText(ms){
   const p=n=>String(n).padStart(2,'0');
   return h>0?h+':'+p(m)+':'+p(sec):m+':'+p(sec);
 }
+/* The same for the end of a run: `finished` is seconds since the last run came back to the prompt,
+   and it is what decides how long a card wears the "just finished" look. */
+const endStart={};
+function anchorAt(map,id,sec,now){
+  const st=now-sec*1000;
+  // Re-anchor only on a real disagreement: each poll's value is a fraction of a second staler than
+  // the last, and following that exactly makes the seconds digit stutter. An earlier reading is the
+  // exception — the Mac truncates to whole seconds, so the earliest anchor is the closest to the
+  // truth, and moving only that way cannot oscillate. It is what lets the ten-second line land on
+  // time rather than up to a second late.
+  if(!map[id]||Math.abs(map[id]-st)>2000) map[id]=st;
+  else if(st<map[id]) map[id]=st;
+}
+/* Before the board is built, not after: the order of 进行中 is read from these anchors. */
 function syncRuns(terms){
-  const live={};
+  const now=Date.now(), run={}, end={};
   for(const t of terms){
-    if(t.running<0) continue;
-    live[t.id]=1;
-    const st=Date.now()-t.running*1000;
-    // Re-anchor only on a real disagreement: each poll's value is a fraction of a second staler
-    // than the last, and following that exactly makes the seconds digit stutter.
-    if(!runStart[t.id]||Math.abs(runStart[t.id]-st)>2000) runStart[t.id]=st;
+    if(t.running>=0){ run[t.id]=1; anchorAt(runStart,t.id,t.running,now); }
+    // An older Mac sends no `finished`; nothing is ever fresh-finished then, which is the old board.
+    if(t.status==='idle'&&t.finished>=0){ end[t.id]=1; anchorAt(endStart,t.id,t.finished,now); }
   }
-  for(const id in runStart){ if(!live[id]) delete runStart[id]; }
-  paintRuns();
+  for(const id in runStart){ if(!run[id]) delete runStart[id]; }
+  for(const id in endStart){ if(!end[id]) delete endStart[id]; }
 }
 /* `[data-run]` only, and the card's own class: `.run` also names a pending tool card in the
    conversation, and a blind sweep would write a clock into that. The figure is bare, "2:12", as on
@@ -3313,8 +3385,137 @@ function paintRuns(){
   }
 }
 setInterval(paintRuns,1000);
+/* ---------- the first ten seconds, and the motion of a change ----------
+   A card's look is its status plus, for running and finished, whether that began under ten seconds
+   ago. The status is in the markup; the ten seconds are not. In the markup they would change it on a
+   poll where nothing happened and rebuild the board for it, and a rebuilt card cannot ease from one
+   colour to the next — there is no old colour left to ease from. So the line is crossed in place, by
+   a class, on one timer aimed at the next card due to cross, and no timer at all when nothing is
+   fresh. Ages are the Mac's seconds plus this device's time since they arrived (runStart, endStart),
+   so a card turns between polls, on time, and the phone's clock is never read against the Mac's. */
+const FRESH_MS=10000;
+function lookOf(id,status,now){
+  if(status==='working') return runStart[id]&&now-runStart[id]<FRESH_MS?'runFresh':'run';
+  if(status==='needsYou') return 'need';
+  if(status==='idle') return endStart[id]&&now-endStart[id]<FRESH_MS?'done':'idle';
+  return status==='exited'||status==='closed'?'ended':'plain';
+}
+let freshT=0, easeT=0;
+/* `rebuilt`: the cards were made this frame, so there is no old colour to ease from — they simply
+   start in the right one. */
+function paintFresh(rebuilt){
+  clearTimeout(freshT);
+  const now=Date.now();
+  let next=Infinity, eased=false;
+  for(const el of document.querySelectorAll('#root .card.run,#root .card.idle')){
+    const idle=el.classList.contains('idle'), st=(idle?endStart:runStart)[el.dataset.id];
+    const left=st?FRESH_MS-(now-st):0, on=left>0;
+    if(on) next=Math.min(next,left);
+    if(el.classList.contains('fresh')===on) continue;
+    if(!rebuilt){ el.classList.add('ease'); eased=true; }
+    el.classList.toggle('fresh',on);
+    // The shape changes between the check and the dot, so its word has to follow it.
+    if(idle){
+      const g=el.querySelector('.hd > .g'), w=on?DONE_TEXT:STATUS_TEXT.idle, ti=g&&g.querySelector('title');
+      if(g) g.setAttribute('aria-label',w);
+      if(ti) ti.textContent=w;
+    }
+  }
+  if(eased){
+    clearTimeout(easeT);
+    easeT=setTimeout(()=>{ for(const el of document.querySelectorAll('#root .card.ease')) el.classList.remove('ease'); },1300);
+  }
+  // A few ms past the line, so the card is on the far side of it when this runs. The clock is
+  // repainted with it, so the colour turns as the card reads 0:10 rather than up to a second apart.
+  if(next<Infinity) freshT=setTimeout(()=>{ paintRuns(); paintFresh(false); },next+20);
+}
+/* What moves when 进行中 changes, done the FLIP way: measure the keyed boxes, rebuild, measure again,
+   and start each box where it was. Keys are `data-flip`: zh for the zone's heading, n:<id> for a
+   card in it, p:<pid> and dorm for the sections below. Only the zone's own boxes enter and leave; a
+   section only ever slides — which is all "the board does not jump when the zone comes or goes"
+   takes, and a whole project scaling in would be a lot of motion for a row that merely moved. */
+const REDUCE=matchMedia('(prefers-reduced-motion: reduce)');
+const SPRING='cubic-bezier(.2,.9,.3,1.12)', STANDARD='cubic-bezier(.2,0,0,1)', EXIT='cubic-bezier(.3,0,1,1)';
+const inZone=k=>k==='zh'||k.startsWith('n:');
+function boardRects(root){
+  const m=new Map();
+  for(const el of root.querySelectorAll('[data-flip]')){
+    const r=el.getBoundingClientRect();
+    m.set(el.dataset.flip,{x:r.left,y:r.top,w:r.width,el:el});
+  }
+  return m;
+}
+function flipBoard(before,root){
+  const after=boardRects(root), still=REDUCE.matches;
+  let leaving=false;
+  for(const k of before.keys()) if(inZone(k)&&!after.has(k)) leaving=true;
+  for(const [k,a] of after){
+    const b=before.get(k);
+    if(b){
+      const dx=b.x-a.x, dy=b.y-a.y;
+      // Held back while anything is leaving, so the gap is visibly emptied before it closes.
+      // Reduced motion: no translation at all — a box that moved is simply where it now is.
+      if(!still&&(Math.abs(dx)>.5||Math.abs(dy)>.5))
+        a.el.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],
+          {duration:400,easing:STANDARD,delay:leaving?160:0,fill:'backwards'});
+    }else if(inZone(k)){
+      a.el.animate(still?[{opacity:0},{opacity:1}]:[{opacity:0,transform:'scale(.92)'},{opacity:1,transform:'none'}],
+        {duration:400,easing:still?'ease':SPRING,delay:k==='zh'?200:80,fill:'backwards'});
+    }
+  }
+  if(still) return;                         // leaving cards just vanish
+  // Read after the rebuild: the boxes above were measured against the viewport, so the copies go
+  // where they were on screen, whatever the scroll did while the board was replaced.
+  const layer=document.getElementById('ghosts'), sx=window.scrollX, sy=window.scrollY;
+  for(const [k,b] of before){
+    if(!inZone(k)||after.has(k)) continue;
+    const g=b.el.cloneNode(true);
+    // A picture of a card, not a card: unlockBoard takes the last .card[data-id] it finds, and
+    // paintRuns writes into every clock.
+    for(const e of [g,...g.querySelectorAll('[data-id],[data-run],[data-flip]')]){
+      e.removeAttribute('data-id'); e.removeAttribute('data-run'); e.removeAttribute('data-flip');
+    }
+    g.style.left=(b.x+sx)+'px'; g.style.top=(b.y+sy)+'px'; g.style.width=b.w+'px';
+    layer.appendChild(g);
+    g.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.92)'}],
+      {duration:200,easing:EXIT,fill:'forwards'}).onfinish=()=>g.remove();
+  }
+}
+/* A status change, once, on every copy of the card: a ring in the new status's colour, the shape
+   popping in, and the fill crossfading from the old look. The crossfade only where that copy was
+   already on screen — one arriving in 进行中 has its entrance instead. Colours are read off the
+   stylesheet at the moment, so they are the current appearance's. */
+const LOOK_FILL={runFresh:'--accent',run:'--primaryContainer',need:'--warnContainer',done:'--tertiaryContainer',idle:'--card',plain:'--card'};
+const LOOK_RING={runFresh:'--accent',run:'--accent',need:'--amber',done:'--tertiary'};
+function rgba(hex,a){
+  const m=/^#([0-9a-f]{6})$/i.exec(hex);
+  if(!m) return hex;
+  const n=parseInt(m[1],16);
+  return 'rgba('+(n>>16)+','+(n>>8&255)+','+(n&255)+','+a+')';
+}
+function playChanges(changed,had){
+  const css=getComputedStyle(document.documentElement), v=n=>css.getPropertyValue(n).trim();
+  const fill=l=>LOOK_FILL[l]?v(LOOK_FILL[l]):'rgba(0,0,0,0)', still=REDUCE.matches;
+  for(const c of changed){
+    const ring=v(LOOK_RING[c.to]||'--outline'), from=fill(c.from), to=fill(c.to);
+    for(const el of document.querySelectorAll('#root .card[data-id="'+c.id+'"]')){
+      if(had.has((el.closest('.rc')?'n:':'p:')+c.id))
+        el.animate([{backgroundColor:from},{backgroundColor:to}],{duration:450,easing:'ease'});
+      const h=document.createElement('i');
+      h.className='halo'; el.appendChild(h);
+      // Reduced motion: the ring fades where it stands instead of spreading.
+      h.animate(still?[{boxShadow:'0 0 0 3px '+rgba(ring,.7)},{boxShadow:'0 0 0 3px '+rgba(ring,0)}]
+                     :[{boxShadow:'0 0 0 0 '+rgba(ring,.7)},{boxShadow:'0 0 0 14px '+rgba(ring,0)}],
+        {duration:900,easing:'cubic-bezier(.2,.6,.4,1)'}).onfinish=()=>h.remove();
+      const g=el.querySelector('.hd > .g');
+      if(g) g.animate(still?[{opacity:0},{opacity:1}]
+          :[{opacity:0,transform:'scale(.3)'},{opacity:1,transform:'scale(1.15)',offset:.6},{opacity:1,transform:'scale(1)'}],
+        {duration:380,easing:'ease-out',delay:60,fill:'backwards'});
+    }
+  }
+}
 /* The board, top to bottom, in the Mac's order of priority:
-   1. 进行中 — what needs you, then what is running, lifted out of their projects and tinted;
+   1. 进行中 — what needs you, then what is running, newest run first, lifted out of their projects;
    2. every project touched in the last two hours — or with something live in it, or with nothing in
       it yet — each under a full-width rule;
    3. 两小时内没动过 — the rest, each folded to its header, opened in place with its chevron.
@@ -3341,7 +3542,8 @@ function projSection(s,p,all,terms,fold){
   const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
   const chev=fold?`<button class="icb chev${fold==='open'?' open':''}" onclick="wake('${p.id}')" `+
     `title="${tr(fold==='open'?'common.collapse':'common.expand')}" aria-label="${tr(fold==='open'?'common.collapse':'common.expand')}">${ic('chevron-right','s16')}</button>`:'';
-  let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"><div class="ph">`+chev+
+  // Only a top-level section slides on its own; one inside the dormant zone moves with that zone.
+  let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"${fold?'':` data-flip="p:${p.id}"`}><div class="ph">`+chev+
     `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
     // Same rule as the cluster header: the project's real size, and what is on screen of it.
     `<span class="meta lm"><span title="${tr('count.terminals',{n:all.length})}">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
@@ -3370,7 +3572,12 @@ function projSection(s,p,all,terms,fold){
   if(solo.length) h+=`<div class="grid">${solo.map(t=>card(t)).join('')}</div>`;
   return h+'</section>';
 }
-function render(s){
+/* Each terminal's status as last drawn, and 进行中's ids in order — what a poll is compared with to
+   decide whether anything is to move. null until the first board, which arrives without motion. */
+let prevStatus=null, lastLive=null;
+/* `poll`: this is a fresh /state. Only then does anything animate — the same board drawn again for
+   a chevron or the mark filter is a different view, not a change in the fleet. */
+function render(s,poll){
   const cnt=document.getElementById('counts');
   const cntText=tr('count.projects',{n:s.projects.length})+' · '+tr('count.terminals',{n:s.terminals.length});
   if(cnt.textContent!==cntText) cnt.textContent=cntText;
@@ -3386,20 +3593,33 @@ function render(s){
   mb.style.display=(marked||onlyMarked)?'':'none';
   mb.classList.toggle('on',onlyMarked);
   document.getElementById('markcount').textContent=marked?marked:'';
+  // What each card that changed status looked like until now — read before the anchors move under it.
+  const now=Date.now(), changed=[];
+  if(prevStatus) for(const t of s.terminals){
+    const was=prevStatus[t.id];
+    if(was&&was!==t.status) changed.push({id:t.id,status:t.status,from:lookOf(t.id,was,now)});
+  }
+  syncRuns(s.terminals);
+  for(const c of changed) c.to=lookOf(c.id,c.status,now);
   let html='';
   if(!s.remoteOK)html+=`<div class="banner">${tr('board.banner',{cmd:'<b>'+esc(s.remoteHint)+'</b>'})}</div>`;
   /* What wants you and what is moving, before what exists. The board below is grouped by project
      because that is how work is organised; this answers the other question, which otherwise means
      scanning every section for a shape. Same cards — a second place to see a terminal, not a second
      kind — each tagged with the project it came from, since this zone cannot say it by grouping.
-     Absent rather than empty when nothing qualifies. */
+     Absent rather than empty when nothing qualifies. A run that ends simply leaves: its card says
+     "just finished" in its project, and a group for it here would be a second place to look.
+     Newest run first, since what has just started is what you are most likely after. Sorted on the
+     local anchor rather than the seconds as sent: two runs begun in the same second tie on one poll
+     and not the next, and the pair would swap back and forth. */
   const vis=onlyMarked?s.terminals.filter(t=>t.done):s.terminals;
-  const live=[...vis.filter(t=>t.status==='needsYou'),...vis.filter(t=>t.status==='working')];
+  const live=[...vis.filter(t=>t.status==='needsYou'),
+              ...vis.filter(t=>t.status==='working').sort((a,b)=>(runStart[b.id]||0)-(runStart[a.id]||0))];
   if(live.length){
     const pname=id=>{const p=s.projects.find(x=>x.id===id);return p?p.name:'—';};
-    html+=`<section class="now"><div class="zh"><span class="ts">${tr('zone.now')}</span><span class="ts n">${live.length}</span></div>`
+    html+=`<section class="now"><div class="zh" data-flip="zh"><span class="ts">${tr('zone.now')}</span><span class="ts n">${live.length}</span></div>`
         + `<div class="grid">${live.map(t=>
-            `<div class="rc"><div class="from ls">${ic('folder','s12')}<span>${esc(pname(t.projectId))}</span></div>${card(t,true)}</div>`
+            `<div class="rc" data-flip="n:${t.id}"><div class="from ls">${ic('folder','s12')}<span>${esc(pname(t.projectId))}</span></div>${card(t)}</div>`
           ).join('')}</div></section>`;
   }
   const dorm=[];
@@ -3413,7 +3633,7 @@ function render(s){
     html+=projSection(s,p,all,terms);
   }
   if(dorm.length){
-    html+=`<section class="dorm"><div class="zh"><span class="ts">${tr('zone.dormant')}</span><span class="ts n">${dorm.length}</span></div>`;
+    html+=`<section class="dorm" data-flip="dorm"><div class="zh"><span class="ts">${tr('zone.dormant')}</span><span class="ts n">${dorm.length}</span></div>`;
     for(const [p,all,terms] of dorm)
       html+=projSection(s,p,all,terms,woken.has(p.id)?'open':'closed');
     html+='</section>';
@@ -3426,9 +3646,25 @@ function render(s){
       +'<span class="bs">'+tr('empty.noMarkedSub')+'</span>'
       +'<button class="tonal" onclick="toggleOnlyMarked()">'+tr('mark.showAll')+'</button></div>'
     : '<div class="empty"><span class="et ts">'+tr('empty.noProjects')+'</span><span class="bs">'+tr('empty.noProjectsSub')+'</span></div>');
-  const root=document.getElementById('root');
-  if(out!==lastBoard){ lastBoard=out; root.innerHTML=out; }
-  syncRuns(s.terminals);   // after any rebuild, so fresh clocks are filled in the same frame
+  /* Motion only when the fleet moved: a status changed, or 进行中 gained, lost or reordered a card.
+     Most rebuilds are a token count ticking over, and those measure nothing and animate nothing. */
+  const liveKey=live.map(t=>t.id).join(' ');
+  const motion=!!poll&&lastLive!==null&&(liveKey!==lastLive||changed.length>0);
+  lastLive=liveKey;
+  prevStatus={};
+  for(const t of s.terminals) prevStatus[t.id]=t.status;
+  const root=document.getElementById('root'), rebuilt=out!==lastBoard;
+  let before=null, had=null;
+  if(rebuilt){
+    if(motion){
+      before=boardRects(root);
+      had=new Set([...root.querySelectorAll('.card[data-id]')].map(el=>(el.closest('.rc')?'n:':'p:')+el.dataset.id));
+    }
+    lastBoard=out; root.innerHTML=out;
+  }
+  paintRuns();             // after any rebuild, so fresh clocks are filled in the same frame
+  paintFresh(rebuilt);     // and the first-ten-seconds look, before anything measures the new cards
+  if(before){ flipBoard(before,root); if(changed.length) playChanges(changed,had); }
 }
 let lastBoard='';
 /* Marked-only view. Device-local (localStorage, never sent to the Mac): which cards you want to
@@ -3487,7 +3723,7 @@ async function tick(){
     applyScheme(state.dark);
     net.stateAt=Date.now();
     if(termOpen()){watchTermAlive(state);return;}
-    render(state);
+    render(state,true);
     openPendingTerm(state);
     reportLocation(state);   // once per browser; no-op until the page is served over HTTPS
   }catch(e){}                // the signal indicator says offline; ping() is what decides that
