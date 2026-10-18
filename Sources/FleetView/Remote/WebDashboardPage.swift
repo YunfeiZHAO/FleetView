@@ -238,11 +238,11 @@ enum WebDashboardPage {
   .card .pr .tx{min-width:0;overflow:hidden;word-break:break-word;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .card .ft{display:flex;align-items:center;gap:8px;height:28px;min-width:0;color:var(--sub)}
-  /* Copies the terminal's ip/uuid. The Mac shows its card buttons on hover; a phone has no hover,
-     so there it stays, without the ground. */
-  .card .uid{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;
-    border-radius:999px;background:var(--surfaceHighest);color:var(--sub);cursor:pointer}
-  @media (hover:hover){ .card .uid{opacity:0;transition:opacity .12s} .card:hover .uid{opacity:1} }
+  /* The terminal's id in the footer's corner, four characters of it — enough to tell two cards apart
+     and to match one against `project-manager`. Always shown, since a phone has no hover to reveal
+     it; the vertical padding is a finger's worth of target that the row's height hides. */
+  .card .uid{flex:none;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-size:11px;
+    line-height:16px;font-weight:500;color:var(--sub);cursor:pointer;padding:6px 0;margin:-6px 0;white-space:nowrap}
   /* 进行中 — the only coloured cards on the board: running on primary-container, needs-you on
      warn-container. Secondary text is the same ink at 78% rather than a second hue. */
   .card.tint.run{background:var(--primaryContainer);color:var(--onPrimaryContainer)}
@@ -250,8 +250,6 @@ enum WebDashboardPage {
   .card.tint .g,.card.tint .ag,.card.tint .when,.card.tint .clock,.card.tint .mk,.card.tint .uid{color:inherit}
   .card.tint.run .pr,.card.tint.run .ft,.card.tint.run .hid{color:color-mix(in srgb,var(--onPrimaryContainer) 78%,transparent)}
   .card.tint.need .pr,.card.tint.need .ft,.card.tint.need .hid{color:color-mix(in srgb,var(--onWarnContainer) 78%,transparent)}
-  .card.tint .uid{background:color-mix(in srgb,currentColor 12%,transparent)}
-  @media (hover:none){ .card .uid,.card.tint .uid{background:transparent} }
   /* Ended (exited / closed): Material's outlined card, its contents at the disabled 38%. Same size as
      every other card — the step down is colour and opacity, never dimensions. */
   .card.ghost{background:transparent;box-shadow:inset 0 0 0 1px var(--outlineVariant)}
@@ -883,26 +881,26 @@ enum WebDashboardPage {
 </style>
 </head>
 <body>
-<div id="panel"><button class="pcollapse" onclick="togglePanel()"><i data-ic="chevron-up" class="s16"></i><span>收起</span></button>
+<div id="panel"><button class="pcollapse" onclick="togglePanel()"><i data-ic="chevron-up" class="s16"></i><span data-i18n="common.collapse"></span></button>
   <iframe id="panelframe" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" src="about:blank"></iframe></div>
 <header>
   <span class="brand"><span class="logo"><i data-ic="layout-grid"></i></span><span class="bname tm">FleetView</span></span>
   <span class="muted lm" id="counts"></span>
   <span class="spacer"></span>
   <span id="pills"></span>
-  <button id="markbtn" class="tb" onclick="toggleOnlyMarked()" title="只显示加了书签的终端"><i data-ic="bookmark"></i><span id="markcount"></span></button>
+  <button id="markbtn" class="tb" onclick="toggleOnlyMarked()" data-i18n-title="head.markFilter"><i data-ic="bookmark"></i><span id="markcount"></span></button>
   <button id="schemebtn" class="tb" onclick="cycleScheme()"></button>
-  <button id="projbtn" class="tb" onclick="toggleProjects()" title="从 ~/PycharmProjects 打开项目" aria-label="打开项目"><i data-ic="folder-open"></i></button>
-  <button id="traybtn" class="tb" onclick="toggleTray()" title="agent 发给你的文件" aria-label="收到的文件"><i data-ic="inbox"></i><span id="traybadge"></span></button>
-  <button class="netsig" id="netsig" onclick="netToast()" aria-label="连接"></button>
+  <button id="projbtn" class="tb" onclick="toggleProjects()" data-i18n-title="head.projTitle" data-i18n-aria="head.projAria"><i data-ic="folder-open"></i></button>
+  <button id="traybtn" class="tb" onclick="toggleTray()" data-i18n-title="head.trayTitle" data-i18n-aria="head.trayAria"><i data-ic="inbox"></i><span id="traybadge"></span></button>
+  <button class="netsig" id="netsig" onclick="netToast()" data-i18n-aria="net.aria"></button>
 </header>
 <div id="tray"><div id="traylist"></div></div>
 <div id="projs">
   <label class="nsearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
-    <input id="pquery" type="search" enterkeyhint="go" autocomplete="off" placeholder="搜索 ~/PycharmProjects" oninput="renderProjects()"></label>
+    <input id="pquery" type="search" enterkeyhint="go" autocomplete="off" data-i18n-placeholder="proj.search" oninput="renderProjects()"></label>
   <div id="projlist"></div>
 </div>
-<main id="root"><div class="empty">加载中…</div></main>
+<main id="root"><div class="empty" data-i18n="common.loading"></div></main>
 
 <div id="chip"></div>
 <div id="dock"></div>
@@ -912,27 +910,27 @@ enum WebDashboardPage {
        read and come back when you scroll up (see headBar). The status strip is its subtitle. -->
   <div id="thead">
     <div id="termbar">
-      <button class="ib" onclick="closeTerm()" aria-label="返回" title="返回"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="ib" onclick="closeTerm()" data-i18n-aria="common.back" data-i18n-title="common.back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
       <div class="ttl"><span class="tname" id="termname"></span><div id="sinfo"></div></div>
-      <button class="netsig tsig" id="tnetsig" onclick="netToast()" aria-label="连接"></button>
+      <button class="netsig tsig" id="tnetsig" onclick="netToast()" data-i18n-aria="net.aria"></button>
       <div id="tabs">
-        <button id="tabChat" class="on" onclick="setView('chat')">对话</button>
-        <button id="tabTerm" onclick="setView('term')">终端</button>
+        <button id="tabChat" class="on" onclick="setView('chat')" data-i18n="tab.chat"></button>
+        <button id="tabTerm" onclick="setView('term')" data-i18n="tab.term"></button>
       </div>
-      <button class="ib" onclick="popTerm()" title="在新标签页打开终端" aria-label="在新标签页打开终端"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+      <button class="ib" onclick="popTerm()" data-i18n-title="term.popOut" data-i18n-aria="term.popOut"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
     </div>
   </div>
-  <div id="chat" class="on"><div id="chatnote">加载中…</div></div>
+  <div id="chat" class="on"><div id="chatnote" data-i18n="common.loading"></div></div>
   <div id="stickyq"><div class="sq"></div></div>
-  <button id="jump" onclick="jumpLatest()" title="跳到最新" aria-label="跳到最新"><i data-ic="arrow-down"></i></button>
+  <button id="jump" onclick="jumpLatest()" data-i18n-title="chat.jump" data-i18n-aria="chat.jump"><i data-ic="arrow-down"></i></button>
   <iframe id="termframe" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
   <div id="termerr"></div>
   <div id="perm"></div>
   <div id="inputbar">
     <div id="grip"><span class="gbar"></span><span class="gtools">
-      <button class="fsz" onclick="taFont(-1)" title="缩小字号">A−</button>
-      <button class="fsz" onclick="taFont(1)" title="放大字号">A+</button>
-      <button id="expand" onclick="toggleBig()" title="收起编辑器"></button>
+      <button class="fsz" onclick="taFont(-1)" data-i18n-title="composer.smaller">A−</button>
+      <button class="fsz" onclick="taFont(1)" data-i18n-title="composer.larger">A+</button>
+      <button id="expand" onclick="toggleBig()" data-i18n-title="composer.collapseEditor"></button>
     </span></div>
     <div id="keys">
       <button class="skey" onclick="scrollTerm('up')">⇞</button>
@@ -943,16 +941,16 @@ enum WebDashboardPage {
       <button onclick="key('Down')">↓</button>
       <button onclick="key('Left')">←</button>
       <button onclick="key('Right')">→</button>
-      <button onclick="typeRaw('/')" title="打开 agent 的斜杠命令菜单">/</button>
+      <button onclick="typeRaw('/')" data-i18n-title="keys.slash">/</button>
       <button onclick="key('Tab')">Tab</button>
       <button onclick="key('C-c')">^C</button>
       <button onclick="key('BSpace')">⌫</button>
     </div>
     <div id="sendrow">
-      <button id="notesbtn" class="rb" data-pane="notes" title="快捷命令（你的笔记）" aria-label="快捷命令"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button>
-      <textarea id="inputtext" rows="1" placeholder="输入消息 — 回车发送，Shift+回车换行"></textarea>
-      <button id="morebtn" class="rb" data-pane="more" title="附件、编辑器、按键" aria-label="更多"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
-      <button id="sendbtn">发送</button>
+      <button id="notesbtn" class="rb" data-pane="notes" data-i18n-title="notes.btnTitle" data-i18n-aria="notes.btnAria"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button>
+      <textarea id="inputtext" rows="1"></textarea>
+      <button id="morebtn" class="rb" data-pane="more" data-i18n-title="more.btnTitle" data-i18n-aria="more.btnAria"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
+      <button id="sendbtn" data-i18n="composer.send"></button>
     </div>
   </div>
   <!-- Under the composer, where the keyboard would be — the WeChat arrangement. -->
@@ -960,19 +958,19 @@ enum WebDashboardPage {
     <div class="dpane" data-pane="notes">
       <div class="nhead">
         <label class="nsearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
-          <input id="pfind" type="search" enterkeyhint="search" autocomplete="off" placeholder="搜索快捷命令" oninput="renderPresets()"></label>
-        <button class="nact" onclick="addNote()" title="添加快捷命令" aria-label="添加快捷命令"><i data-ic="plus"></i></button>
-        <button class="nact" id="nedit" onclick="toggleEditPresets()">编辑</button>
+          <input id="pfind" type="search" enterkeyhint="search" autocomplete="off" data-i18n-placeholder="notes.search" oninput="renderPresets()"></label>
+        <button class="nact" onclick="addNote()" data-i18n-title="notes.add" data-i18n-aria="notes.add"><i data-ic="plus"></i></button>
+        <button class="nact" id="nedit" onclick="toggleEditPresets()" data-i18n="notes.edit"></button>
       </div>
       <div id="presets"></div>
     </div>
     <div class="dpane" data-pane="more">
       <input id="imgfile" type="file" multiple hidden>
       <div class="tiles">
-        <button class="tile" id="imgbtn" title="上传到 Mac，路径会填进输入框"><span class="ti"><svg viewBox="0 0 24 24"><path d="M20 11.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></span><span class="tl">附件</span></button>
-        <button class="tile" onclick="closeDrawer();toggleBig()"><span class="ti"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></span><span class="tl" id="bigLabel">编辑器</span></button>
-        <button class="tile" onclick="closeDrawer();typeRaw('/')" title="打开 agent 的斜杠命令菜单"><span class="ti ttxt">/</span><span class="tl">命令</span></button>
-        <button class="tile" onclick="closeDrawer();key('Escape')" title="打断 agent"><span class="ti ttxt">esc</span><span class="tl">中断</span></button>
+        <button class="tile" id="imgbtn" data-i18n-title="more.attachTitle"><span class="ti"><svg viewBox="0 0 24 24"><path d="M20 11.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></span><span class="tl" data-i18n="more.attach"></span></button>
+        <button class="tile" onclick="closeDrawer();toggleBig()"><span class="ti"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></span><span class="tl" id="bigLabel" data-i18n="more.editor"></span></button>
+        <button class="tile" onclick="closeDrawer();typeRaw('/')" data-i18n-title="keys.slash"><span class="ti ttxt">/</span><span class="tl" data-i18n="more.commands"></span></button>
+        <button class="tile" onclick="closeDrawer();key('Escape')" data-i18n-title="more.interruptTitle"><span class="ti ttxt">esc</span><span class="tl" data-i18n="more.interrupt"></span></button>
       </div>
     </div>
   </div>
@@ -980,17 +978,219 @@ enum WebDashboardPage {
 
 <div id="fb">
   <div id="fbbar">
-    <button onclick="fbClose()" title="返回" aria-label="返回"><i data-ic="chevron-left"></i></button>
+    <button onclick="fbClose()" data-i18n-title="common.back" data-i18n-aria="common.back"><i data-ic="chevron-left"></i></button>
     <span class="fbname" id="fbname"></span>
-    <button id="fbreload" onclick="fbRefresh()" title="从磁盘重新读取" aria-label="从磁盘重新读取"><i data-ic="rotate-cw"></i></button>
-    <button id="fbtab" onclick="fbNewTab()" title="在新标签页打开" aria-label="在新标签页打开"><i data-ic="external-link"></i></button>
-    <button id="fbup" onclick="fbUp()" title="上一级" aria-label="上一级"><i data-ic="corner-left-up"></i></button>
+    <button id="fbreload" onclick="fbRefresh()" data-i18n-title="fb.reload" data-i18n-aria="fb.reload"><i data-ic="rotate-cw"></i></button>
+    <button id="fbtab" onclick="fbNewTab()" data-i18n-title="fb.newTab" data-i18n-aria="fb.newTab"><i data-ic="external-link"></i></button>
+    <button id="fbup" onclick="fbUp()" data-i18n-title="fb.up" data-i18n-aria="fb.up"><i data-ic="corner-left-up"></i></button>
   </div>
-  <div id="fbpath"><span id="fbcrumbs"></span><button class="fbcopy" onclick="fbCopyHere()"><i data-ic="copy" class="s14"></i>路径</button></div>
+  <div id="fbpath"><span id="fbcrumbs"></span><button class="fbcopy" onclick="fbCopyHere()"><i data-ic="copy" class="s14"></i><span data-i18n="fb.copyPathBtn"></span></button></div>
   <div id="fbbody"></div>
 </div>
 
 <script>
+/* ---------- words ----------
+   Every word the page shows lives here, once per language, key for key — the markup and the code
+   below only ever name a key. Two tables side by side rather than strings scattered through 2,000
+   lines is what lets a missing translation be found by a machine (see the check underneath) instead
+   of by someone reading the English page and spotting Chinese.
+   A value may hold {placeholders}. An English value that depends on a count is {one,other}, picked
+   by vars.n; Chinese does not inflect, so its values are always plain strings. Values are inserted
+   into markup as they are, so they must stay free of " < > & — anything user-supplied goes in
+   through a placeholder, escaped by the caller. Proper nouns (FleetView, Claude, Codex, Shell, tmux,
+   Tailscale) and key names (Esc, Tab, ⏎) are the same in both. */
+const I18N={
+  zh:{
+    'common.loading':'加载中…','common.back':'返回','common.retry':'重试',
+    'common.collapse':'收起','common.expand':'展开','common.newTerm':'新终端','common.tokens':'{n} tokens',
+    'status.working':'运行中','status.idle':'空闲','status.needsYou':'等你处理','status.shell':'Shell',
+    'status.exited':'已退出','status.closed':'已关闭',
+    'time.now':'刚刚','time.justNow':'刚刚','time.minAgo':'{n} 分钟前','time.hourAgo':'{n} 小时前','time.dayAgo':'{n} 天前',
+    'time.today':'今天 {time}','time.yesterday':'昨天 {time}','time.date':'{m}月{d}日 {time}','time.dateYear':'{y}年{m}月{d}日 {time}',
+    'head.markFilter':'只显示加了书签的终端','head.projTitle':'从 ~/PycharmProjects 打开项目','head.projAria':'打开项目',
+    'head.trayTitle':'agent 发给你的文件','head.trayAria':'收到的文件',
+    'count.projects':'{n} 个项目','count.terminals':'{n} 个终端','badge.needs':'{n} 个等你处理','badge.running':'{n} 个运行中',
+    'scheme.btnAuto':'外观：跟随 Mac','scheme.btnDark':'外观：深色（点按切换）','scheme.btnLight':'外观：浅色（点按切换）',
+    'scheme.toastAuto':'外观跟随 Mac','scheme.toastDark':'外观：深色','scheme.toastLight':'外观：浅色',
+    'zone.now':'进行中','zone.dormant':'两小时内没动过',
+    'board.banner':'网页终端不可用 — 运行 {cmd} 后重新启动 FleetView。状态仍会照常显示。',
+    'empty.noMarked':'没有加了书签的终端','empty.noMarkedSub':'看板现在只显示加了书签的终端。','mark.showAll':'显示全部终端',
+    'empty.noProjects':'还没有项目','empty.noProjectsSub':'在 Mac 上添加一个。',
+    'toast.onlyMarked':'只显示加了书签的终端','toast.showAll':'显示全部终端',
+    'proj.lastActivity':'最后活动','proj.browse':'浏览项目文件','proj.newTerm':'新建终端',
+    'card.lastRun':'上一轮用了 {time}','card.lastActivity':'最后一次活动','card.marked':'已加书签',
+    'card.hidden':'窗口已隐藏，agent 在后台继续运行',
+    'card.idTitle':'单击复制终端 ID（{id}），双击复制对话文件路径','card.idCopied':'已复制','card.idPath':'路径',
+    'toast.noTranscript':'这个终端没有对话记录',
+    'dock.mark':'加书签','dock.unmark':'取消书签','dock.duplicate':'复制','dock.rename':'重命名',
+    'dock.hide':'隐藏窗口','dock.show':'显示窗口','dock.leave':'移出组','dock.remove':'移除',
+    'drag.drop':'松开：{action}','prompt.rename':'重命名终端',
+    'toast.openOnMac':'先在 Mac 上打开这个终端','toast.gone':'这个终端已经不在看板上了',
+    'toast.notOpen':'这个终端现在没有在 Mac 上打开',
+    'proj.search':'搜索 ~/PycharmProjects','proj.noMatch':'没有匹配的文件夹','proj.none':'~/PycharmProjects 里没有文件夹',
+    'proj.onBoard':'已在看板','proj.go':'前往','proj.open':'打开',
+    'toast.cantOpen':'打不开 {name}','toast.opened':'已打开 {name}',
+    'tray.empty':'还没有收到文件',
+    'tab.chat':'对话','tab.output':'输出','tab.term':'终端','term.popOut':'在新标签页打开终端','chat.jump':'跳到最新',
+    'term.closed':'这个终端已经关闭',
+    'term.closedHint':'它的会话已经不在了，所以 ttyd 的“按 ⏎ 重连”接不上任何东西。回到看板点这张卡片可以重新打开，并接着原来的对话。',
+    'term.noMac':'连不上 Mac','term.noMacHint':'看板本身有回应，所以这通常只是网络暂时不稳。',
+    'term.portDead':'终端端口没有回应',
+    'term.portDeadHint':'对话走的是 FleetView 的 :{chat}；终端是另一个服务，在 :{port}。如果一直这样，说明这个端口在这里和 Mac 之间被挡住了。',
+    'chat.retrying':'重试中…','chat.loadFailed':'读取会话失败：{err}','shell.empty':'屏幕上还没有内容。',
+    'pm.bypass':'跳过权限','pm.acceptEdits':'自动接受编辑','pm.plan':'计划模式',
+    'info.sharedTitle':'这段对话属于 {n} 个终端共用的同一个会话 — 想单独看这个终端，切到「终端」',
+    'info.shared':'⇉ {n} 个终端共用','info.session':'会话 {id}',
+    'info.branchesTitle':'这个会话因为回退或改写有 {n} 个分叉点 — 这里只显示当前分支','info.context':'上下文 {pct}% · {tok}',
+    'perm.default':'等你决定',
+    'chat.thinking':'思考','chat.input':'输入','chat.output':'输出','chat.failed':'失败','chat.copy':'复制',
+    'chat.subagent':'子代理','chat.answerInTerm':'切到「终端」里回答','chat.empty':'还没有对话 — 发一条消息开始。',
+    'diff.unchanged':'⋯ {n} 行未改动','diff.edit':'第 {n} 处修改',
+    'toast.copied':'已复制','toast.copyFailed':'复制失败','toast.copyFailedLong':'复制失败 — 长按路径手动选择',
+    'composer.send':'发送','composer.stop':'停止',
+    'composer.placeholder':'输入消息 — 回车发送，Shift+回车换行','composer.placeholderShort':'输入消息',
+    'composer.smaller':'缩小字号','composer.larger':'放大字号','composer.expandEditor':'展开编辑器','composer.collapseEditor':'收起编辑器',
+    'keys.slash':'打开 agent 的斜杠命令菜单',
+    'notes.btnTitle':'快捷命令（你的笔记）','notes.btnAria':'快捷命令','notes.search':'搜索快捷命令','notes.add':'添加快捷命令',
+    'notes.edit':'编辑','notes.done':'完成','notes.delete':'删除','notes.noMatch':'没有匹配“{q}”的命令',
+    'notes.none':'还没有快捷命令 — 点 + 添加，或在 Mac 的笔记里添加','notes.addPrompt':'添加快捷命令（保存到 Mac 的笔记）',
+    'more.btnTitle':'附件、编辑器、按键','more.btnAria':'更多','more.attachTitle':'上传到 Mac，路径会填进输入框',
+    'more.attach':'附件','more.editor':'编辑器','more.commands':'命令','more.interruptTitle':'打断 agent','more.interrupt':'中断',
+    'toast.stuck':'没发出去：文字还停在 agent 的输入框里，点 ⏎ 再发一次',
+    'upload.file':'文件','upload.netError':'网络错误','upload.cancelled':'已取消','toast.uploadFailed':'上传失败：{err}',
+    'fb.reload':'从磁盘重新读取','fb.newTab':'在新标签页打开','fb.up':'上一级','fb.copyPathBtn':'路径','fb.copyPath':'复制路径',
+    'fb.listFailed':'无法列出这个文件夹','fb.truncated':'只显示这个文件夹的前 {n} 项','fb.emptyDir':'这个文件夹是空的',
+    'fb.download':'下载','fb.readFailed':'读不了这个文件',
+    'fb.confirmReload':'放弃没保存的修改，重新读取磁盘上的版本？',
+    'fb.confirmLeave':'有没保存的修改，确定离开？离开后修改会丢失。',
+    'fb.confirmOverwrite':'这个文件在你编辑期间被改过了（可能是 agent 写的）。\n\n确定：用你的版本覆盖它\n取消：先不保存（点 ↻ 可以看磁盘上的新版本，但你的修改会丢）',
+    'fb.whyLarge':'文件太大（超过 512 KB），这里只读','fb.whyEncoding':'不是 UTF-8 文本，这里只读',
+    'fb.whyReadonly':'这个文件没有写权限','fb.whyDefault':'这里只读',
+    'md.preview':'预览','md.edit':'编辑','md.undo':'撤销','md.undoTitle':'撤销 (⌘Z)','md.redo':'重做','md.redoTitle':'重做 (⇧⌘Z)',
+    'md.save':'保存','md.saveTitle':'保存 (⌘S)','md.emptyFile':'（空文件）','md.unsaved':'未保存','md.saved':'已保存',
+    'toast.saveNoMac':'保存失败：连不上 Mac','toast.saveFailed':'保存失败：{err}',
+    'net.aria':'连接','net.local':'本机','net.lan':'局域网','net.tsDirect':'Tailscale 直连','net.tsRelay':'Tailscale 中转',
+    'net.tsRelayVia':'Tailscale 中转（{relay}）','net.public':'外网','net.offline':'离线',
+    'net.toastOff':'连不上 Mac，正在重试','net.toastOffLast':'连不上 Mac，正在重试（上次：{route}）',
+    'net.latency':'延迟 {ms} ms','net.latencyRange':'延迟 {ms} ms（最近 {n} 次 {lo}–{hi} ms）',
+    'net.node':'本设备：{node}','net.refreshed':'看板 {s} 秒前刷新'
+  },
+  en:{
+    'common.loading':'Loading…','common.back':'Back','common.retry':'Retry',
+    'common.collapse':'Collapse','common.expand':'Expand','common.newTerm':'New terminal','common.tokens':'{n} tokens',
+    'status.working':'Running','status.idle':'Idle','status.needsYou':'Needs you','status.shell':'Shell',
+    'status.exited':'Exited','status.closed':'Closed',
+    'time.now':'now','time.justNow':'just now',
+    'time.minAgo':{one:'{n} minute ago',other:'{n} minutes ago'},
+    'time.hourAgo':{one:'{n} hour ago',other:'{n} hours ago'},
+    'time.dayAgo':{one:'{n} day ago',other:'{n} days ago'},
+    'time.today':'Today {time}','time.yesterday':'Yesterday {time}','time.date':'{mon} {d} {time}','time.dateYear':'{mon} {d}, {y} {time}',
+    'head.markFilter':'Show only marked terminals','head.projTitle':'Open a project from ~/PycharmProjects','head.projAria':'Open project',
+    'head.trayTitle':'Files agents sent you','head.trayAria':'Received files',
+    'count.projects':{one:'{n} project',other:'{n} projects'},
+    'count.terminals':{one:'{n} terminal',other:'{n} terminals'},
+    'badge.needs':{one:'{n} needs you',other:'{n} need you'},'badge.running':'{n} running',
+    'scheme.btnAuto':'Appearance: follow the Mac','scheme.btnDark':'Appearance: dark (tap to switch)','scheme.btnLight':'Appearance: light (tap to switch)',
+    'scheme.toastAuto':'Appearance follows the Mac','scheme.toastDark':'Appearance: dark','scheme.toastLight':'Appearance: light',
+    'zone.now':'In progress','zone.dormant':'Quiet for 2 hours',
+    'board.banner':'Web terminals are unavailable — run {cmd}, then restart FleetView. Status still shows as usual.',
+    'empty.noMarked':'No marked terminals','empty.noMarkedSub':'The board is showing only marked terminals.','mark.showAll':'Show all terminals',
+    'empty.noProjects':'No projects yet','empty.noProjectsSub':'Add one on the Mac.',
+    'toast.onlyMarked':'Showing only marked terminals','toast.showAll':'Showing all terminals',
+    'proj.lastActivity':'Last activity','proj.browse':'Browse project files','proj.newTerm':'New terminal',
+    'card.lastRun':'Last turn took {time}','card.lastActivity':'Last activity','card.marked':'Marked',
+    'card.hidden':'Window hidden — the agent keeps running in the background',
+    'card.idTitle':'Click to copy the terminal ID ({id}); double-click to copy the conversation file path',
+    'card.idCopied':'Copied','card.idPath':'Path',
+    'toast.noTranscript':'This terminal has no conversation log',
+    // "Mark" rather than "Bookmark" throughout: it is what the Mac called this flag in English, and
+    // "Bookmark" is a pixel too wide for six zones across a phone.
+    'dock.mark':'Mark','dock.unmark':'Unmark','dock.duplicate':'Duplicate','dock.rename':'Rename',
+    'dock.hide':'Hide','dock.show':'Show','dock.leave':'Ungroup','dock.remove':'Remove',
+    'drag.drop':'Drop: {action}','prompt.rename':'Rename terminal',
+    'toast.openOnMac':'Open this terminal on the Mac first','toast.gone':'This terminal is no longer on the board',
+    'toast.notOpen':'This terminal isn’t open on the Mac right now',
+    'proj.search':'Search ~/PycharmProjects','proj.noMatch':'No matching folders','proj.none':'No folders in ~/PycharmProjects',
+    'proj.onBoard':'On board','proj.go':'Go to','proj.open':'Open',
+    'toast.cantOpen':'Couldn’t open {name}','toast.opened':'Opened {name}',
+    'tray.empty':'No files received yet',
+    'tab.chat':'Chat','tab.output':'Output','tab.term':'Terminal','term.popOut':'Open the terminal in a new tab','chat.jump':'Jump to latest',
+    'term.closed':'This terminal has been closed',
+    'term.closedHint':'Its session is gone, so ttyd’s “Press ⏎ to Reconnect” has nothing to attach to. Go back to the board and tap this card to reopen it and carry on with the conversation.',
+    'term.noMac':'Can’t reach the Mac','term.noMacHint':'The board itself is answering, so this is usually just a brief network hiccup.',
+    'term.portDead':'The terminal’s port isn’t answering',
+    'term.portDeadHint':'Chat goes through FleetView on :{chat}; the terminal is a separate service on :{port}. If this keeps happening, that port is blocked somewhere between here and the Mac.',
+    'chat.retrying':'Retrying…','chat.loadFailed':'Couldn’t load the conversation: {err}','shell.empty':'Nothing on screen yet.',
+    'pm.bypass':'Skip permissions','pm.acceptEdits':'Auto-accept edits','pm.plan':'Plan mode',
+    'info.sharedTitle':'This conversation is one session shared by {n} terminals — switch to Terminal to see this one on its own',
+    'info.shared':'⇉ shared by {n}','info.session':'Session {id}',
+    'info.branchesTitle':{one:'This session has 1 branch point from a rewind or edit — only the current branch is shown here',
+                          other:'This session has {n} branch points from rewinds or edits — only the current branch is shown here'},
+    'info.context':'Context {pct}% · {tok}',
+    'perm.default':'Waiting for your decision',
+    'chat.thinking':'Thinking','chat.input':'Input','chat.output':'Output','chat.failed':'Failed','chat.copy':'Copy',
+    'chat.subagent':'Subagent','chat.answerInTerm':'Answer it in the Terminal tab','chat.empty':'No conversation yet — send a message to start.',
+    'diff.unchanged':{one:'⋯ 1 unchanged line',other:'⋯ {n} unchanged lines'},'diff.edit':'Edit {n}',
+    'toast.copied':'Copied','toast.copyFailed':'Copy failed','toast.copyFailedLong':'Copy failed — long-press the path to select it',
+    'composer.send':'Send','composer.stop':'Stop',
+    'composer.placeholder':'Message — Enter to send, Shift+Enter for a new line','composer.placeholderShort':'Message',
+    'composer.smaller':'Smaller text','composer.larger':'Larger text','composer.expandEditor':'Expand editor','composer.collapseEditor':'Collapse editor',
+    'keys.slash':'Open the agent’s slash-command menu',
+    'notes.btnTitle':'Quick commands (your notes)','notes.btnAria':'Quick commands','notes.search':'Search quick commands','notes.add':'Add quick command',
+    'notes.edit':'Edit','notes.done':'Done','notes.delete':'Delete','notes.noMatch':'No commands match “{q}”',
+    'notes.none':'No quick commands yet — tap + to add one, or add it to Notes on the Mac','notes.addPrompt':'Add a quick command (saved to Notes on the Mac)',
+    'more.btnTitle':'Attachments, editor, keys','more.btnAria':'More','more.attachTitle':'Upload to the Mac; the path goes into the message box',
+    'more.attach':'Attach','more.editor':'Editor','more.commands':'Commands','more.interruptTitle':'Interrupt the agent','more.interrupt':'Interrupt',
+    'toast.stuck':'Not sent: the text is still in the agent’s input box — tap ⏎ to send it again',
+    'upload.file':'file','upload.netError':'Network error','upload.cancelled':'Cancelled','toast.uploadFailed':'Upload failed: {err}',
+    'fb.reload':'Reload from disk','fb.newTab':'Open in a new tab','fb.up':'Up one level','fb.copyPathBtn':'Path','fb.copyPath':'Copy path',
+    'fb.listFailed':'Couldn’t list this folder','fb.truncated':'Showing only the first {n} items in this folder','fb.emptyDir':'This folder is empty',
+    'fb.download':'Download','fb.readFailed':'Couldn’t read this file',
+    'fb.confirmReload':'Discard your unsaved changes and reload the version on disk?',
+    'fb.confirmLeave':'You have unsaved changes. Leave anyway? They will be lost.',
+    'fb.confirmOverwrite':'This file changed while you were editing it (an agent may have written it).\n\nOK: overwrite it with your version\nCancel: don’t save yet (↻ shows the new version on disk, but your changes will be lost)',
+    'fb.whyLarge':'Too large (over 512 KB) — read-only here','fb.whyEncoding':'Not UTF-8 text — read-only here',
+    'fb.whyReadonly':'No write permission for this file','fb.whyDefault':'Read-only here',
+    'md.preview':'Preview','md.edit':'Edit','md.undo':'Undo','md.undoTitle':'Undo (⌘Z)','md.redo':'Redo','md.redoTitle':'Redo (⇧⌘Z)',
+    'md.save':'Save','md.saveTitle':'Save (⌘S)','md.emptyFile':'(Empty file)','md.unsaved':'Unsaved','md.saved':'Saved',
+    'toast.saveNoMac':'Save failed: can’t reach the Mac','toast.saveFailed':'Save failed: {err}',
+    'net.aria':'Connection','net.local':'This Mac','net.lan':'LAN','net.tsDirect':'Tailscale direct','net.tsRelay':'Tailscale relay',
+    'net.tsRelayVia':'Tailscale relay ({relay})','net.public':'Internet','net.offline':'Offline',
+    'net.toastOff':'Can’t reach the Mac — retrying','net.toastOffLast':'Can’t reach the Mac — retrying (last: {route})',
+    'net.latency':'Latency {ms} ms','net.latencyRange':'Latency {ms} ms (last {n}: {lo}–{hi} ms)',
+    'net.node':'This device: {node}','net.refreshed':'Board refreshed {s}s ago'
+  }
+};
+/* The device's language, read once: a page that switched halfway through a session would show both.
+   Only the first preference counts — it is the one the system UI is in. */
+const LANG=String((navigator.languages&&navigator.languages[0])||navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en';
+const LOCALE=LANG==='zh'?'zh-CN':'en-US';
+document.documentElement.lang=LOCALE;
+/* Falls back to English and then to the key itself, so a gap shows up as a readable word or an
+   obvious id — never as an empty button. */
+function tr(key,vars){
+  let v=I18N[LANG][key];
+  if(v===undefined) v=I18N.en[key];
+  if(v===undefined) return key;
+  if(typeof v==='object') v=(vars&&vars.n===1)?v.one:v.other;
+  return vars?v.replace(/\{(\w+)\}/g,(m,k)=>k in vars?String(vars[k]):m):v;
+}
+(function(){
+  for(const [a,b] of [['zh','en'],['en','zh']]){
+    const miss=Object.keys(I18N[a]).filter(k=>!(k in I18N[b]));
+    if(miss.length) console.error('i18n: missing from '+b+': '+miss.join(', '));
+  }
+})();
+/* The static markup carries keys, not words: data-i18n for the text, and -title / -placeholder /
+   -aria for the attributes. Only ever on leaf elements, since filling the text replaces children. */
+function applyI18n(root){
+  for(const el of root.querySelectorAll('[data-i18n]')) el.textContent=tr(el.dataset.i18n);
+  for(const el of root.querySelectorAll('[data-i18n-title]')) el.title=tr(el.dataset.i18nTitle);
+  for(const el of root.querySelectorAll('[data-i18n-placeholder]')) el.placeholder=tr(el.dataset.i18nPlaceholder);
+  for(const el of root.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label',tr(el.dataset.i18nAria));
+}
+applyI18n(document);
+
 let curUrl='',curId='',state=null,dragging=false,curView='chat',chatTimer=null,termLoaded=false,curInfo={},sentAt=0,stickBottom=false,flyNext=false;
 
 /* ---------- icons and status shapes ----------
@@ -1056,8 +1256,8 @@ function ic(name,cls){
 function paintIcons(root){
   for(const el of (root||document).querySelectorAll('i[data-ic]')) el.outerHTML=ic(el.dataset.ic,el.className);
 }
-const STATUS_TEXT={working:'运行中',idle:'空闲',needsYou:'等你处理',shell:'Shell',
-  exited:'已退出',closed:'已关闭'};
+const STATUS_TEXT={working:tr('status.working'),idle:tr('status.idle'),needsYou:tr('status.needsYou'),
+  shell:tr('status.shell'),exited:tr('status.exited'),closed:tr('status.closed')};
 /* The six states as still shapes — the Mac's StatusGlyph, point for point. The fuller the mark, the
    more it wants you: a soft burst for running (Material's shape, not a spinner), a diamond with the
    "!" cut out of it (even-odd, so it stays a hole on any ground) for needs-you, a small disc for idle,
@@ -1097,11 +1297,13 @@ function agentMark(a){
 paintIcons(document);
 
 function short(n){if(n<1000)return ''+n;if(n<1000000)return (n/1000).toFixed(n<10000?1:0)+'k';return (n/1000000).toFixed(1)+'M';}
-function ago(sec){if(sec<0)return '';if(sec<60)return '刚刚';
-  const m=Math.floor(sec/60);if(m<60)return m+' 分钟前';const h=Math.floor(m/60);if(h<24)return h+' 小时前';return Math.floor(h/24)+' 天前';}
-/* How long ago, as compactly as it can be said — RelativeTime.compact on the Mac: "刚刚", "25m", "5h",
-   "4d". What a card shows when nothing is running; the unit letter is enough once seen. */
-function rel(sec){if(sec<60)return '刚刚';const m=Math.floor(sec/60);if(m<60)return m+'m';
+function ago(sec){if(sec<0)return '';if(sec<60)return tr('time.justNow');
+  const m=Math.floor(sec/60);if(m<60)return tr('time.minAgo',{n:m});const h=Math.floor(m/60);if(h<24)return tr('time.hourAgo',{n:h});
+  return tr('time.dayAgo',{n:Math.floor(h/24)});}
+/* How long ago, as compactly as it can be said — RelativeTime.compact on the Mac: "刚刚" / "now", "25m",
+   "5h", "4d". What a card shows when nothing is running; the unit letter is enough once seen, in
+   either language. */
+function rel(sec){if(sec<60)return tr('time.now');const m=Math.floor(sec/60);if(m<60)return m+'m';
   const h=Math.floor(m/60);if(h<24)return h+'h';return Math.floor(h/24)+'d';}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function termOpen(){return document.getElementById('term').classList.contains('show');}
@@ -1355,7 +1557,7 @@ async function termReachable(url,tries=5){
 function termError(msg,hint){
   const el=document.getElementById('termerr');
   el.innerHTML='<div class="te"><b>'+esc(msg)+'</b>'+(hint?'<span>'+esc(hint)+'</span>':'')
-              +'<button onclick="retryTerm()">重试</button></div>';
+              +'<button onclick="retryTerm()">'+tr('common.retry')+'</button></div>';
   el.classList.add('on');
 }
 function retryTerm(){
@@ -1387,8 +1589,7 @@ function watchTermAlive(s){
   if(!termLoaded||termGone)return;           // already said so; don't rewrite it every 1.5s
   termGone=true; termLoaded=false; curUrl='';
   document.getElementById('termframe').src='about:blank';
-  termError('这个终端已经关闭',
-            '它的会话已经不在了，所以 ttyd 的“按 ⏎ 重连”接不上任何东西。回到看板点这张卡片可以重新打开，并接着原来的对话。');
+  termError(tr('term.closed'),tr('term.closedHint'));
 }
 async function ensureTerm(){
   if(termLoaded||!curId)return;
@@ -1397,9 +1598,9 @@ async function ensureTerm(){
   document.getElementById('termerr').classList.remove('on');
   let j;
   try{ j=await(await fetch('/open?id='+encodeURIComponent(curId))).json(); }
-  catch(e){ termLoaded=false; termError('连不上 Mac','看板本身有回应，所以这通常只是网络暂时不稳。'); return; }
+  catch(e){ termLoaded=false; termError(tr('term.noMac'),tr('term.noMacHint')); return; }
   if(want!==curId) return;                 // you moved on while it was starting
-  if(!j.port){termLoaded=false;toast('这个终端现在没有在 Mac 上打开');return;}
+  if(!j.port){termLoaded=false;toast(tr('toast.notOpen'));return;}
   curUrl=location.protocol+'//'+location.hostname+':'+j.port+'/';
   /* Each terminal is served by its OWN ttyd on its own port, so the Chat tab working says nothing
      about whether this one is reachable — different port, and possibly a different address family
@@ -1407,9 +1608,7 @@ async function ensureTerm(){
   if(!await termReachable(curUrl)){
     if(want!==curId) return;
     termLoaded=false;
-    termError('终端端口没有回应',
-              '对话走的是 FleetView 的 :'+location.port+'；终端是另一个服务，在 :'
-              +j.port+'。如果一直这样，说明这个端口在这里和 Mac 之间被挡住了。');
+    termError(tr('term.portDead'),tr('term.portDeadHint',{chat:location.port,port:j.port}));
     return;
   }
   if(want!==curId) return;
@@ -1433,7 +1632,7 @@ function showChatError(msg){
   // and replacing them with an error would lose the one useful thing there.
   if(!el.querySelector('.skel'))return;
   el.dataset.sig='';
-  el.innerHTML='<div id="chatnote">'+esc(msg)+'<br><span style="opacity:.6">重试中…</span></div>';
+  el.innerHTML='<div id="chatnote">'+esc(msg)+'<br><span style="opacity:.6">'+tr('chat.retrying')+'</span></div>';
 }
 async function loadChat(){
   if(!curId)return;
@@ -1460,7 +1659,7 @@ async function loadChat(){
     if(want!==curId)return;
     // One miss is a blip and not worth a message; two in a row (≈6s) is a state you should be told
     // about. Polling continues either way, so this clears itself the moment a request succeeds.
-    if(++chatFails>=2) showChatError('读取会话失败：'+(e.message||e));
+    if(++chatFails>=2) showChatError(tr('chat.loadFailed',{err:e.message||e}));
   }
 }
 /* iOS/iPadOS scrolls the whole document to reveal a focused field and doesn't undo it when the
@@ -1589,14 +1788,14 @@ async function renderShell(){
   const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<120;
   el.dataset.sig=sig;
   el.innerHTML=txt?'<pre class="shellout">'+esc(txt)+'</pre>'
-                  :'<div id="chatnote">屏幕上还没有内容。</div>';
+                  :'<div id="chatnote">'+tr('shell.empty')+'</div>';
   if(nearBottom)el.scrollTop=el.scrollHeight;
   updateStickyPrompt();
 }
 /* model / permission-mode / context-window strip */
 function renderInfo(i){
   const el=document.getElementById('sinfo');
-  document.getElementById('tabChat').textContent=(i&&i.shell)?'输出':'对话';   // shell has no chat
+  document.getElementById('tabChat').textContent=tr((i&&i.shell)?'tab.output':'tab.chat');   // shell has no chat
   if(!i||(!i.model&&!i.contextTokens&&!i.status)){el.innerHTML='';return;}
   let h='';
   // Chat had no sign of whether the agent was actually working — the transcript just stopped growing.
@@ -1608,23 +1807,22 @@ function renderInfo(i){
   if(i.permissionMode&&i.permissionMode!=='default'){
     const risky=/bypass|yolo|accept/i.test(i.permissionMode);
     // A subtitle has room for a word, not an identifier: "bypassPermissions" alone was a third of it.
-    const PM={bypassPermissions:'跳过权限',acceptEdits:'自动接受编辑',plan:'计划模式'};
+    const PM={bypassPermissions:tr('pm.bypass'),acceptEdits:tr('pm.acceptEdits'),plan:tr('pm.plan')};
     const pm=PM[i.permissionMode]||i.permissionMode.replace(/Permissions$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
     h+='<span class="chip'+(risky?' danger':'')+'" title="'+esc(i.permissionMode)+'">'+esc(pm)+'</span>';
   }
   // Several terminals can be attached to one agent session — then the chat is identical for all of
   // them by definition. Say so, rather than letting it look like the wrong conversation.
-  if(i.shared>1) h+='<span class="chip warn" title="这段对话属于 '+
-    i.shared+' 个终端共用的同一个会话 — 想单独看这个终端，切到「终端」">⇉ '+i.shared+' 个终端共用</span>';
-  if(i.session) h+='<span class="chip" title="会话 '+esc(i.session)+'">'+esc(i.session.slice(0,8))+'</span>';
+  if(i.shared>1) h+='<span class="chip warn" title="'+tr('info.sharedTitle',{n:i.shared})+'">'+
+    tr('info.shared',{n:i.shared})+'</span>';
+  if(i.session) h+='<span class="chip" title="'+tr('info.session',{id:esc(i.session)})+'">'+esc(i.session.slice(0,8))+'</span>';
   // The session is a tree; only the live branch is shown. Say when earlier attempts exist.
-  if(i.branches>0) h+='<span class="chip" title="这个会话因为回退或改写有 '+i.branches+
-    ' 个分叉点 — 这里只显示当前分支">⑂ '+i.branches+'</span>';
+  if(i.branches>0) h+='<span class="chip" title="'+tr('info.branchesTitle',{n:i.branches})+'">⑂ '+i.branches+'</span>';
   if(i.contextWindow>0&&i.contextTokens>0){
     const pct=Math.min(100,Math.round(i.contextTokens*100/i.contextWindow));
     const lvl=pct>=95?'danger':(pct>=90?'warn':'');
     h+='<span class="ctx '+lvl+'"><span class="bar"><i style="width:'+pct+'%"></i></span>'+
-       '上下文 '+pct+'% · '+short(i.contextTokens)+'</span>';
+       tr('info.context',{pct:pct,tok:short(i.contextTokens)})+'</span>';
   }
   el.innerHTML=h;
 }
@@ -1632,7 +1830,7 @@ function renderInfo(i){
 function renderPerm(i){
   const el=document.getElementById('perm');
   if(!i||!i.options||!i.options.length){ el.classList.remove('on'); el.innerHTML=''; return; }
-  el.innerHTML='<div class="q">'+esc(i.question||'等你决定')+'</div>'+
+  el.innerHTML='<div class="q">'+esc(i.question||tr('perm.default'))+'</div>'+
     (i.pendingTool?'<div class="what">'+esc(i.pendingTool)+(i.pendingText?' · '+esc(i.pendingText):'')+'</div>':'')+
     '<div class="opts">'+i.options.map(o=>'<button data-n="'+esc(o.n)+'">'+esc(o.n)+'. '+esc(o.label)+'</button>').join('')+'</div>';
   el.classList.add('on');
@@ -1648,7 +1846,7 @@ document.getElementById('perm').addEventListener('click',e=>{
 function syncSendBtn(){
   const btn=document.getElementById('sendbtn'), ta=document.getElementById('inputtext');
   const stop=!ta.value.trim() && curInfo && curInfo.status==='working';
-  btn.textContent=stop?'停止':'发送';
+  btn.textContent=tr(stop?'composer.stop':'composer.send');
   btn.style.background=stop?'var(--errorContainer)':'var(--accent)';
   btn.style.color=stop?'var(--onErrorContainer)':'var(--onAccent)';
   btn.dataset.stop=stop?'1':'';
@@ -1690,11 +1888,11 @@ if(window.ResizeObserver){
 }
 /* clipboard needs a secure context; plain-HTTP over Tailscale isn't one, so fall back */
 function copyText(t){
-  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t); toast('已复制'); return; } }catch(e){}
+  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t); toast(tr('toast.copied')); return; } }catch(e){}
   const ta=document.createElement('textarea');
   ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
   document.body.appendChild(ta); ta.select();
-  try{ document.execCommand('copy'); toast('已复制'); }catch(e){ toast('复制失败'); }
+  try{ document.execCommand('copy'); toast(tr('toast.copied')); }catch(e){ toast(tr('toast.copyFailed')); }
   document.body.removeChild(ta);
 }
 function hhmm(ts){
@@ -1801,11 +1999,11 @@ function diffRows(rows){
   rows.forEach((r,i)=>{
     if(r[0]==='+') add++; else if(r[0]==='-') del++;
     if(!keep[i]){ gap++; return; }
-    if(gap){ html+='<div class="dgap">⋯ '+gap+' 行未改动</div>'; gap=0; }
+    if(gap){ html+='<div class="dgap">'+tr('diff.unchanged',{n:gap})+'</div>'; gap=0; }
     const cls=r[0]==='+'?'add':(r[0]==='-'?'del':'ctx');
     html+='<div class="dl '+cls+'">'+esc(r[0]+' '+r[1])+'</div>';
   });
-  if(gap) html+='<div class="dgap">⋯ '+gap+' 行未改动</div>';
+  if(gap) html+='<div class="dgap">'+tr('diff.unchanged',{n:gap})+'</div>';
   return {html:html,add:add,del:del};
 }
 function diffHTML(edits){
@@ -1815,7 +2013,7 @@ function diffHTML(edits){
     let rows=lcsDiff(a,b);
     if(!rows) rows=a.map(l=>['-',l]).concat(b.map(l=>['+',l]));
     const r=diffRows(rows); add+=r.add; del+=r.del;
-    body+=(edits.length>1?'<div class="dhead">第 '+(idx+1)+' 处修改</div>':'')+r.html;
+    body+=(edits.length>1?'<div class="dhead">'+tr('diff.edit',{n:idx+1})+'</div>':'')+r.html;
   });
   return {html:'<div class="diff">'+body+'</div>',add:add,del:del};
 }
@@ -1867,7 +2065,7 @@ function toolView(m){
     ).join('')+'</div>';
   }
   if(m.tool==='Task'&&d.prompt)
-    return '<b>子代理</b><div>'+esc(d.description||'')+'</div><div class="mtext md">'+md(d.prompt)+'</div>';
+    return '<b>'+tr('chat.subagent')+'</b><div>'+esc(d.description||'')+'</div><div class="mtext md">'+md(d.prompt)+'</div>';
   return null;
 }
 /* Stable-ish identity for a message, so an expanded card stays expanded across refreshes. */
@@ -1879,7 +2077,7 @@ function msgKey(m){
 function msgHTML(m){
   if(m.kind==='thinking')
     return '<div class="msg think" data-k="'+msgKey(m)+'">'+
-      '<div class="mhead">'+ic('lightbulb','s16')+'<span class="sum">思考</span></div><div class="mtext">'+esc(m.text)+'</div></div>';
+      '<div class="mhead">'+ic('lightbulb','s16')+'<span class="sum">'+tr('chat.thinking')+'</span></div><div class="mtext">'+esc(m.text)+'</div></div>';
   if(m.kind==='tool'){
     // Tools whose payload IS the content get a purpose-built view; edits get a diff;
     // everything else falls back to input/output.
@@ -1889,18 +2087,18 @@ function msgHTML(m){
       else if(m.patch) d=patchHTML(m.patch);
     }
     const det=special ? special : (d ? d.html
-      : (m.detail?'<b>输入</b><div>'+esc(m.detail)+'</div>':'')+
-        (m.output?'<b>输出</b><div>'+esc(m.output)+'</div>':''));
+      : (m.detail?'<b>'+tr('chat.input')+'</b><div>'+esc(m.detail)+'</div>':'')+
+        (m.output?'<b>'+tr('chat.output')+'</b><div>'+esc(m.output)+'</div>':''));
     return '<div class="msg tool'+(m.ok===false?' bad':'')+(m.pending?' run':'')+'" data-k="'+msgKey(m)+'">'+
       '<div class="mhead">'+(m.pending?'<span class="spin"></span>':ic(TOOLICON[m.cat]||'dot','s16'))+
       '<b>'+esc(m.tool||'')+'</b><span class="sum">'+esc(m.text)+'</span>'+(d?statHTML(d):'')+
       (m.pending?'<span class="when">'+since(m.ts)+'</span>':'')+
-      (m.ok===false?'<span style="color:var(--red)" title="失败">'+ic('x','s16')+'</span>':'')+'</div>'+
+      (m.ok===false?'<span style="color:var(--red)" title="'+tr('chat.failed')+'">'+ic('x','s16')+'</span>':'')+'</div>'+
       (det?'<div class="mbody">'+det+'</div>':'')+'</div>';
   }
   return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'">'+
-    '<span class="cp" data-copy="1">复制</span>'+
-    (m.sub?'<div class="tag">子代理</div>':'')+
+    '<span class="cp" data-copy="1">'+tr('chat.copy')+'</span>'+
+    (m.sub?'<div class="tag">'+tr('chat.subagent')+'</div>':'')+
     (m.ts?'<span class="when">'+hhmm(m.ts)+'</span>':'')+
     '<div class="mtext md">'+md(m.text)+'</div></div>';
 }
@@ -1909,17 +2107,17 @@ function msgHTML(m){
 function runBarHTML(){
   const i=curInfo||{};
   if(i.status==='working')
-    return '<div class="runbar"><span class="spin"></span><b>运行中</b>'+
+    return '<div class="runbar"><span class="spin"></span><b>'+tr('status.working')+'</b>'+
            (i.pendingTool?'<span class="what">'+esc(i.pendingTool)+
              (i.pendingText?' · '+esc(i.pendingText):'')+'</span>':'')+'</div>';
   if(i.status==='needsYou' && !(i.options&&i.options.length))
-    return '<div class="runbar wait">'+glyph('needsYou')+'<b>等你处理</b>'+
-           '<span class="what">切到「终端」里回答</span></div>';
+    return '<div class="runbar wait">'+glyph('needsYou')+'<b>'+tr('status.needsYou')+'</b>'+
+           '<span class="what">'+tr('chat.answerInTerm')+'</span></div>';
   return '';
 }
 function renderChat(msgs,note){
   const el=document.getElementById('chat');
-  if(!msgs.length){el.innerHTML='<div id="chatnote">'+esc(note||'还没有对话 — 发一条消息开始。')+'</div>';return;}
+  if(!msgs.length){el.innerHTML='<div id="chatnote">'+esc(note||tr('chat.empty'))+'</div>';return;}
   const last=msgs[msgs.length-1]||{};
   const st=curInfo||{};
   const sig=msgs.length+':'+(last.text||'').length+':'+(last.output||'').length+
@@ -1964,13 +2162,13 @@ function renderPresets(){
   const q=(document.getElementById('pfind').value||'').trim().toLowerCase();
   const notes=q?all.filter(n=>(n.text||'').toLowerCase().includes(q)):all;
   let html=notes.map(n=>presetEdit
-    ?`<div class="nrow"><span class="ntext">${esc(n.text)}</span><button class="ndel" onclick="delNote('${n.id}')">删除</button></div>`
+    ?`<div class="nrow"><span class="ntext">${esc(n.text)}</span><button class="ndel" onclick="delNote('${n.id}')">${tr('notes.delete')}</button></div>`
     :`<button class="nrow" onclick="usePreset('${n.id}')" title="${esc(n.text).replace(/"/g,'&quot;')}"><span class="ntext">${esc(n.text)}</span><span class="nuse">${ic('corner-down-left','s16')}</span></button>`).join('');
   if(!notes.length) html='<div class="nempty">'+
-    (q?'没有匹配“'+esc(q)+'”的命令':'还没有快捷命令 — 点 + 添加，或在 Mac 的笔记里添加')+'</div>';
+    (q?tr('notes.noMatch',{q:esc(q)}):tr('notes.none'))+'</div>';
   document.getElementById('presets').innerHTML=html;
   const ed=document.getElementById('nedit');
-  ed.textContent=presetEdit?'完成':'编辑'; ed.classList.toggle('on',presetEdit);
+  ed.textContent=tr(presetEdit?'notes.done':'notes.edit'); ed.classList.toggle('on',presetEdit);
 }
 /* Append, never replace. A quick command is a fragment you stack onto what you are already writing
    — "run the tests" then "and fix what fails" — and replacing threw away a half-typed prompt with
@@ -1985,7 +2183,7 @@ function usePreset(id){
   autoGrow(ta); ta.focus();
   syncSendBtn();
 }
-async function addNote(){const c=prompt('添加快捷命令（保存到 Mac 的笔记）');
+async function addNote(){const c=prompt(tr('notes.addPrompt'));
   if(c&&c.trim()){await fetch('/note?add='+encodeURIComponent(c.trim()));await refreshState();renderPresets();}}
 async function delNote(id){await fetch('/note?del='+encodeURIComponent(id));await refreshState();renderPresets();}
 function toggleEditPresets(){presetEdit=!presetEdit;renderPresets();}
@@ -2143,8 +2341,8 @@ function applyBar(){
     bar.style.height=Math.min(barMax(),Math.max(BAR_MIN,barH))+'px';
   }
   const ex=document.getElementById('expand');
-  ex.innerHTML=ic(barH?'minimize-2':'maximize-2'); ex.title=barH?'收起编辑器':'展开编辑器';
-  document.getElementById('bigLabel').textContent=barH?'收起':'编辑器';
+  ex.innerHTML=ic(barH?'minimize-2':'maximize-2'); ex.title=tr(barH?'composer.collapseEditor':'composer.expandEditor');
+  document.getElementById('bigLabel').textContent=tr(barH?'common.collapse':'more.editor');
   autoGrow(document.getElementById('inputtext'));
   placeJump();                      // the bar just changed height; the ↓ rides on top of it
 }
@@ -2188,9 +2386,7 @@ function autoGrow(ta){
    560px line the expanded composer uses, so "this is a phone" is decided in one place. */
 const NARROW=matchMedia('(max-width:560px)');
 function fitPlaceholder(){
-  document.getElementById('inputtext').placeholder=NARROW.matches
-    ? '输入消息'
-    : '输入消息 — 回车发送，Shift+回车换行';
+  document.getElementById('inputtext').placeholder=tr(NARROW.matches?'composer.placeholderShort':'composer.placeholder');
 }
 NARROW.addEventListener('change',fitPlaceholder);
 fitPlaceholder();
@@ -2254,7 +2450,7 @@ async function sendText(){
   try{
     const r=await (await req).json();
     if(r&&r.submit==='stuck'){ sentAt=0; renderInfo(curInfo);
-      toast('没发出去：文字还停在 agent 的输入框里，点 ⏎ 再发一次',5000); }
+      toast(tr('toast.stuck'),5000); }
   }catch(e){ ta.value=t; autoGrow(ta); sentAt=0; renderInfo(curInfo);
              if(sentGhost){ sentGhost.node.remove(); sentGhost=null; } }
 }
@@ -2285,21 +2481,22 @@ async function loadFiles(){
   btn.classList.toggle('has',trayFiles.length>0);
   if(document.getElementById('tray').classList.contains('on')) renderTray();
 }
-/* When a file was sent, in this device's time: 今天 14:15, 昨天 21:03, 9月26日 22:15, and the year
-   only once it is not this one. `ts` is UTC as fleetview-send writes it. */
+/* When a file was sent, in this device's time: 今天 14:15 / Today 14:15, 昨天 21:03, 9月26日 22:15 /
+   Sep 26 22:15, and the year only once it is not this one. `ts` is UTC as fleetview-send writes it. */
 function fileWhen(ts){
   const d=new Date(ts||'');
   if(isNaN(d)) return '';
   const p=n=>String(n).padStart(2,'0'), now=new Date(), hm=p(d.getHours())+':'+p(d.getMinutes());
   const day=x=>x.getFullYear()+'-'+x.getMonth()+'-'+x.getDate();
   const yest=new Date(now); yest.setDate(now.getDate()-1);
-  if(day(d)===day(now)) return '今天 '+hm;
-  if(day(d)===day(yest)) return '昨天 '+hm;
-  return (d.getFullYear()===now.getFullYear()?'':d.getFullYear()+'年')+(d.getMonth()+1)+'月'+d.getDate()+'日 '+hm;
+  if(day(d)===day(now)) return tr('time.today',{time:hm});
+  if(day(d)===day(yest)) return tr('time.yesterday',{time:hm});
+  const v={y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate(),mon:d.toLocaleString(LOCALE,{month:'short'}),time:hm};
+  return tr(d.getFullYear()===now.getFullYear()?'time.date':'time.dateYear',v);
 }
 function renderTray(){
   const el=document.getElementById('traylist');
-  if(!trayFiles.length){ el.innerHTML='<div class="tnone">还没有收到文件</div>'; return; }
+  if(!trayFiles.length){ el.innerHTML='<div class="tnone">'+tr('tray.empty')+'</div>'; return; }
   /* `from` is a terminal id — the server deliberately leaves naming to us, since the dashboard
      already knows every terminal from /state. */
   const names={};
@@ -2335,7 +2532,7 @@ async function toggleProjects(){
   el.classList.add('on'); document.getElementById('projbtn').classList.add('on');
   const q=document.getElementById('pquery'); q.value='';
   q.focus();                                   // inside the tap, so a phone raises its keyboard
-  document.getElementById('projlist').innerHTML='<div class="tnone">加载中…</div>';
+  document.getElementById('projlist').innerHTML='<div class="tnone">'+tr('common.loading')+'</div>';
   try{ wsFolders=(await(await fetch('/workspace',{cache:'no-store'})).json()).folders||[]; }
   catch(e){ wsFolders=[]; }
   renderProjects();
@@ -2349,15 +2546,14 @@ function renderProjects(){
   const q=(document.getElementById('pquery').value||'').trim().toLowerCase();
   const list=q?wsFolders.filter(f=>f.name.toLowerCase().includes(q)):wsFolders;
   const el=document.getElementById('projlist');
-  if(!list.length){ el.innerHTML='<div class="tnone">'+(q?'没有匹配的文件夹':'~/PycharmProjects 里没有文件夹')+'</div>'; return; }
+  if(!list.length){ el.innerHTML='<div class="tnone">'+tr(q?'proj.noMatch':'proj.none')+'</div>'; return; }
   el.innerHTML=list.map((f,i)=>{
     const when=f.modified?ago(Math.round(Date.now()/1000-f.modified)):'';
     const meta=[f.git?'git':'', when].filter(Boolean).join(' · ');
-    return '<div class="prow"><span class="pn"><b>'+esc(f.name)+(f.projectId?'<span class="onb">已在看板</span>':'')+
+    return '<div class="prow"><span class="pn"><b>'+esc(f.name)+(f.projectId?'<span class="onb">'+tr('proj.onBoard')+'</span>':'')+
       '</b><span>'+esc(meta)+'</span></span>'+
-      (f.projectId?'<button onclick="openProject('+i+',false)">前往</button>'
-                  :'<button onclick="openProject('+i+',false)">打开</button>')+
-      '<button class="go" onclick="openProject('+i+',true)">新终端</button></div>';
+      '<button onclick="openProject('+i+',false)">'+tr(f.projectId?'proj.go':'proj.open')+'</button>'+
+      '<button class="go" onclick="openProject('+i+',true)">'+tr('common.newTerm')+'</button></div>';
   }).join('');
 }
 /* Open it (a no-op if it is already on the board), then take the board there — and with the second
@@ -2369,7 +2565,7 @@ async function openProject(i,withTerm){
   try{
     if(!pid){
       const r=await fetch('/project/open?path='+encodeURIComponent(f.path));
-      if(!r.ok){ toast('打不开 '+f.name); return; }
+      if(!r.ok){ toast(tr('toast.cantOpen',{name:f.name})); return; }
       pid=(await r.json()).id;
     }
     closeProjects();
@@ -2383,8 +2579,8 @@ async function openProject(i,withTerm){
     const sec=document.querySelector('.proj[data-pid="'+pid+'"]');
     if(sec) sec.scrollIntoView({block:'start',behavior:'smooth'});
     showBoardHead();
-    toast(f.projectId?f.name:'已打开 '+f.name);
-  }catch(e){ toast('打不开 '+f.name); }
+    toast(f.projectId?f.name:tr('toast.opened',{name:f.name}));
+  }catch(e){ toast(tr('toast.cantOpen',{name:f.name})); }
 }
 
 /* Files: an agent reads a file by opening it, so getting one out of a phone and into a prompt means
@@ -2425,7 +2621,7 @@ function uploadOne(f,label){
   return new Promise((resolve,reject)=>{
     const box=uprogBox();
     const txt=document.getElementById('uprogtext'), bar=document.getElementById('uprogbar');
-    const name=f.name||'文件';
+    const name=f.name||tr('upload.file');
     bar.style.width='0';
     txt.textContent=label+name;
     box.style.opacity='1';
@@ -2458,8 +2654,8 @@ function uploadOne(f,label){
       if(j&&j.path){ bar.style.width='100%'; resolve(j.path); }
       else reject(new Error((j&&j.error)||('HTTP '+x.status)));
     };
-    x.onerror=()=>reject(new Error('网络错误'));
-    x.onabort=()=>reject(new Error('已取消'));
+    x.onerror=()=>reject(new Error(tr('upload.netError')));
+    x.onabort=()=>reject(new Error(tr('upload.cancelled')));
     x.send(f);
   });
 }
@@ -2483,7 +2679,7 @@ async function attachFiles(files){
     }catch(e){
       lab.textContent='✕';
       setTimeout(()=>{lab.textContent=was;},1400);
-      toast('上传失败：'+e.message);
+      toast(tr('toast.uploadFailed',{err:e.message}));
     }
   }
   uprogHide();
@@ -2599,11 +2795,15 @@ const fbBase=p=>p.replace(/\/+$/,'').split('/').pop()||p;
 
 /* Copying a path is the point of half the visits: it goes into a prompt on the Mac, or into the
    composer here. navigator.clipboard only exists in a secure context and the dashboard is plain
-   http on the LAN, so the old selection trick is not a fallback — it is the normal path. */
-async function copyText(s){
+   http on the LAN, so the old selection trick is not a fallback — it is the normal path.
+   `quiet` is for a caller that says "copied" where the tap was (the card's id chip): it only hears
+   about a failure, and that in words that do not tell you to long-press a path. */
+async function copyText(s,quiet){
   try{
-    if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(s); toast('已复制'); return; }
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(s); if(!quiet) toast(tr('toast.copied')); return true; }
   }catch(e){}
+  const failed=tr(quiet?'toast.copyFailed':'toast.copyFailedLong');
   try{
     const ta=document.createElement('textarea');
     ta.value=s;
@@ -2614,8 +2814,9 @@ async function copyText(s){
     ta.focus(); ta.setSelectionRange(0,s.length);
     const ok=document.execCommand('copy');
     document.body.removeChild(ta);
-    toast(ok?'已复制':'复制失败 — 长按路径手动选择');
-  }catch(e){ toast('复制失败 — 长按路径手动选择'); }
+    if(!ok) toast(failed); else if(!quiet) toast(tr('toast.copied'));
+    return ok;
+  }catch(e){ toast(failed); return false; }
 }
 function fbOpen(path){
   document.getElementById('fb').classList.add('show');
@@ -2664,25 +2865,25 @@ function fbHead(){
 }
 async function fbList(dir){
   const body=document.getElementById('fbbody');
-  body.innerHTML='<div class="fbnote">加载中…</div>';
+  body.innerHTML='<div class="fbnote">'+tr('common.loading')+'</div>';
   let j;
   try{
     const r=await fetch('/browse?path='+encodeURIComponent(dir),{cache:'no-store'});
     j=await r.json();
     if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||'无法列出这个文件夹')+'</div>'; return false; }
+  }catch(e){ body.innerHTML='<div class="fbnote">'+esc(e.message||tr('fb.listFailed'))+'</div>'; return false; }
   fbFile=''; fbDir=j.path; fbRoot=j.root; fbDoc=null;
   fbHead();
   let html='';
-  if(j.truncated) html+='<div class="fbnote">只显示这个文件夹的前 '+j.entries.length+' 项</div>';
+  if(j.truncated) html+='<div class="fbnote">'+tr('fb.truncated',{n:j.entries.length})+'</div>';
   for(const e of j.entries){
     html+='<div class="fbrow" data-p="'+att(fbJoin(j.path,e.name))+'" data-d="'+(e.dir?1:0)+'">'
         + '<span class="fbi">'+(e.dir?ic('folder'):fileIcon(extOf(e.name)))+'</span>'
         + '<span class="fbn">'+esc(e.name)+'</span>'
         + '<span class="fbs">'+(e.dir?'':kb(e.size||0))+'</span>'
-        + '<button class="fbc" title="复制路径" aria-label="复制路径">'+ic('copy','s16')+'</button></div>';
+        + '<button class="fbc" title="'+tr('fb.copyPath')+'" aria-label="'+tr('fb.copyPath')+'">'+ic('copy','s16')+'</button></div>';
   }
-  if(!j.entries.length) html+='<div class="fbnote">这个文件夹是空的</div>';
+  if(!j.entries.length) html+='<div class="fbnote">'+tr('fb.emptyDir')+'</div>';
   body.innerHTML=html;
   body.scrollTop=0;
   return true;
@@ -2694,7 +2895,7 @@ async function fbShow(path){
   if(MDEXT.includes(e)) return fbLoadMd(path,'view');
   if(IMGEXT.includes(e)){ body.innerHTML='<img class="fbimg" src="'+att(url)+'">'; body.scrollTop=0; return; }
   if(e==='pdf'){ body.innerHTML='<iframe class="fbpdf" src="'+att(url)+'"></iframe>'; return; }
-  body.innerHTML='<div class="fbnote">加载中…</div>';
+  body.innerHTML='<div class="fbnote">'+tr('common.loading')+'</div>';
   try{
     const r=await fetch(url,{cache:'no-store'});
     const type=r.headers.get('content-type')||'';
@@ -2702,14 +2903,14 @@ async function fbShow(path){
       // 415 is the server saying "this is binary" — the answer to that is a download, not an error.
       const msg=esc(await r.text());
       body.innerHTML='<div class="fbnote">'+msg+(r.status===415
-        ?'<br><a href="'+att(url)+'&dl=1">下载</a>':'')+'</div>';
+        ?'<br><a href="'+att(url)+'&dl=1">'+tr('fb.download')+'</a>':'')+'</div>';
       return;
     }
     if(type.startsWith('image/')){ body.innerHTML='<img class="fbimg" src="'+att(url)+'">'; return; }
     const t=await r.text();
     body.innerHTML='<pre class="fbtext"></pre>';
     body.querySelector('pre').textContent=t;      // textContent, so a file of HTML stays a file
-  }catch(err){ body.innerHTML='<div class="fbnote">读不了这个文件</div>'; }
+  }catch(err){ body.innerHTML='<div class="fbnote">'+tr('fb.readFailed')+'</div>'; }
   body.scrollTop=0;
 }
 document.getElementById('fbbody').addEventListener('click',e=>{
@@ -2724,7 +2925,7 @@ document.getElementById('fbcrumbs').addEventListener('click',e=>{
 /* ↻ is "what is on disk now": the folder listed again, or the file read again — an agent may have
    just written it. Over unsaved edits it asks first, since reading the disk replaces them. */
 function fbRefresh(){
-  if(fbDoc){ if(fbDirty()&&!confirm('放弃没保存的修改，重新读取磁盘上的版本？')) return;
+  if(fbDoc){ if(fbDirty()&&!confirm(tr('fb.confirmReload'))) return;
     const top=document.getElementById('fbbody').scrollTop;
     fbLoadMd(fbDoc.path,fbDoc.mode,top); return; }
   if(fbFile){ fbShow(fbFile); return; }
@@ -2759,40 +2960,39 @@ function fbSyncHash(){
    an agent writing the same plan — the server refuses, and the choice to overwrite is yours. */
 const MDEXT=['md','markdown'];
 let fbDoc=null, fbSnapT=0;
-const FB_WHY={large:'文件太大（超过 512 KB），这里只读',encoding:'不是 UTF-8 文本，这里只读',
-              readonly:'这个文件没有写权限'};
+const FB_WHY={large:tr('fb.whyLarge'),encoding:tr('fb.whyEncoding'),readonly:tr('fb.whyReadonly')};
 async function fbLoadMd(path,mode,scrollTo){
   const body=document.getElementById('fbbody');
-  if(!fbDoc) body.innerHTML='<div class="fbnote">加载中…</div>';
+  if(!fbDoc) body.innerHTML='<div class="fbnote">'+tr('common.loading')+'</div>';
   let r,text;
   try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store'}); text=await r.text(); }
-  catch(e){ body.innerHTML='<div class="fbnote">读不了这个文件</div>'; return; }
+  catch(e){ body.innerHTML='<div class="fbnote">'+tr('fb.readFailed')+'</div>'; return; }
   if(fbFile!==path) return;                      // walked away while it loaded
   if(!r.ok){ body.innerHTML='<div class="fbnote">'+esc(text)+'</div>'; return; }
   const ed=r.headers.get('X-FV-Editable')||'';
   // The textarea hands back \n whatever the file used; a CRLF file is written back as CRLF.
   const lf=text.replace(/\r\n/g,'\n');
   fbDoc={path,disk:lf,crlf:lf!==text,version:r.headers.get('X-FV-Version')||'',
-         editable:ed==='1',why:ed==='1'?'':(FB_WHY[ed]||'这里只读'),mode:'view',hist:[lf],hi:0};
+         editable:ed==='1',why:ed==='1'?'':(FB_WHY[ed]||tr('fb.whyDefault')),mode:'view',hist:[lf],hi:0};
   fbRenderMd(fbDoc.editable&&mode==='edit'?'edit':'view');
   if(scrollTo) body.scrollTop=scrollTo;
 }
 const fbTA=()=>document.querySelector('#fbbody textarea.fbedit');
 function fbCur(){ const ta=fbDoc&&fbDoc.mode==='edit'&&fbTA(); return ta?ta.value:fbDoc.hist[fbDoc.hi]; }
 function fbDirty(){ return !!fbDoc&&fbCur()!==fbDoc.disk; }
-function fbLeaveOk(){ return !fbDirty()||confirm('有没保存的修改，确定离开？离开后修改会丢失。'); }
+function fbLeaveOk(){ return !fbDirty()||confirm(tr('fb.confirmLeave')); }
 function fbRenderMd(mode){
   fbDoc.mode=mode;
   const body=document.getElementById('fbbody'), d=fbDoc;
   body.innerHTML='<div class="fbtools">'
-    +'<button data-a="view"'+(mode==='view'?' class="on"':'')+'>预览</button>'
-    +'<button data-a="edit"'+(mode==='edit'?' class="on"':'')+(d.editable?'':' disabled')+'>'+ic('pencil')+'编辑</button>'
-    +'<button data-a="undo" title="撤销 (⌘Z)">'+ic('undo-2')+'撤销</button>'
-    +'<button data-a="redo" title="重做 (⇧⌘Z)">'+ic('redo-2')+'重做</button>'
+    +'<button data-a="view"'+(mode==='view'?' class="on"':'')+'>'+tr('md.preview')+'</button>'
+    +'<button data-a="edit"'+(mode==='edit'?' class="on"':'')+(d.editable?'':' disabled')+'>'+ic('pencil')+tr('md.edit')+'</button>'
+    +'<button data-a="undo" title="'+tr('md.undoTitle')+'">'+ic('undo-2')+tr('md.undo')+'</button>'
+    +'<button data-a="redo" title="'+tr('md.redoTitle')+'">'+ic('redo-2')+tr('md.redo')+'</button>'
     +'<span class="fbstate"></span>'
-    +'<button data-a="save" class="save" title="保存 (⌘S)">保存</button></div>'
+    +'<button data-a="save" class="save" title="'+tr('md.saveTitle')+'">'+tr('md.save')+'</button></div>'
     +(mode==='edit'?'<textarea class="fbedit" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>'
-                   :'<div class="md fbmd">'+(md(d.hist[d.hi])||'<div class="fbnote">（空文件）</div>')+'</div>');
+                   :'<div class="md fbmd">'+(md(d.hist[d.hi])||'<div class="fbnote">'+tr('md.emptyFile')+'</div>')+'</div>');
   const ta=fbTA();
   if(ta){ ta.value=d.hist[d.hi]; ta.addEventListener('input',()=>{ clearTimeout(fbSnapT); fbSnapT=setTimeout(fbSnap,500); fbSync(); }); }
   fbSync();
@@ -2829,7 +3029,7 @@ function fbSync(){
   bar.querySelector('[data-a=redo]').disabled=pending||d.hi>=d.hist.length-1;
   bar.querySelector('[data-a=save]').disabled=!d.editable||!dirty;
   const st=bar.querySelector('.fbstate');
-  st.textContent=!d.editable?d.why:dirty?'未保存':'已保存';
+  st.textContent=!d.editable?d.why:tr(dirty?'md.unsaved':'md.saved');
   st.classList.toggle('dirty',dirty);
 }
 async function fbSave(force){
@@ -2843,15 +3043,15 @@ async function fbSave(force){
                   {method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},
                    body:d.crlf?text.replace(/\n/g,'\r\n'):text});
     j=await r.json().catch(()=>({}));
-  }catch(e){ toast('保存失败：连不上 Mac'); return; }
+  }catch(e){ toast(tr('toast.saveNoMac')); return; }
   if(fbDoc!==d) return;
   if(r.status===409){
-    if(confirm('这个文件在你编辑期间被改过了（可能是 agent 写的）。\n\n确定：用你的版本覆盖它\n取消：先不保存（点 ↻ 可以看磁盘上的新版本，但你的修改会丢）'))
+    if(confirm(tr('fb.confirmOverwrite')))
       return fbSave(true);
     return;
   }
-  if(!r.ok){ toast('保存失败：'+(j.error||('HTTP '+r.status))); return; }
-  d.version=j.version||''; d.disk=text; fbSync(); toast('已保存');
+  if(!r.ok){ toast(tr('toast.saveFailed',{err:j.error||('HTTP '+r.status)})); return; }
+  d.version=j.version||''; d.disk=text; fbSync(); toast(tr('md.saved'));
 }
 document.getElementById('fbbody').addEventListener('click',e=>{
   const b=e.target.closest('.fbtools button'); if(!b||b.disabled||!fbDoc) return;
@@ -2900,14 +3100,14 @@ function endDrag(){
 }
 function zonesFor(cluster,done,win){
   // The same words the Mac's dock and card menu use, so one action has one name on both.
-  const z=[{k:'done',t:done?'取消书签':'加书签',i:done?'bookmark-x':'bookmark'},
-           {k:'duplicate',t:'复制',i:'copy-plus'},{k:'rename',t:'重命名',i:'pencil'}];
+  const z=[{k:'done',t:tr(done?'dock.unmark':'dock.mark'),i:done?'bookmark-x':'bookmark'},
+           {k:'duplicate',t:tr('dock.duplicate'),i:'copy-plus'},{k:'rename',t:tr('dock.rename'),i:'pencil'}];
   /* The Mac's window for this terminal, not anything on this page: hiding keeps the agent running
      with nothing drawing it on the desktop; showing puts the window back there. */
-  if(win==='open')z.push({k:'hide',t:'隐藏窗口',i:'eye-off'});
-  if(win==='hidden')z.push({k:'show',t:'显示窗口',i:'eye'});
-  if(cluster)z.push({k:'leaveCluster',t:'移出组',i:'log-out'});
-  z.push({k:'remove',t:'移除',i:'trash',danger:true});
+  if(win==='open')z.push({k:'hide',t:tr('dock.hide'),i:'eye-off'});
+  if(win==='hidden')z.push({k:'show',t:tr('dock.show'),i:'eye'});
+  if(cluster)z.push({k:'leaveCluster',t:tr('dock.leave'),i:'log-out'});
+  z.push({k:'remove',t:tr('dock.remove'),i:'trash',danger:true});
   return z;
 }
 function buildDock(cluster,done,win){
@@ -2921,7 +3121,7 @@ function zoneAt(x,y){
   }return null;
 }
 function onDown(e){
-  // The id chip is neither a drag handle nor a way in: a tap on it copies the address and nothing
+  // The id chip is neither a drag handle nor a way in: a tap on it copies the id and nothing
   // else. It has to be refused here rather than in its own click handler — the card is driven from
   // pointerdown, so by the time a click fires the tap has already been taken as "open this
   // terminal", and stopPropagation on the click is too late to call it back.
@@ -2972,7 +3172,7 @@ function onMove(e){
   drag.hotAct=hot?hot.dataset.zone:null;   // remember target NOW; the dock is hidden before onUp reads it
   if(hot)hot.classList.add('hot');
   // The label by the finger says what letting go will do, not just what is being carried.
-  const say=hot?'松开：'+hot.dataset.label:drag.name;
+  const say=hot?tr('drag.drop',{action:hot.dataset.label}):drag.name;
   if(chip.textContent!==say) chip.textContent=say;
 }
 function onUp(e){
@@ -2993,11 +3193,11 @@ function onUp(e){
   // happen, not a slow tap. Opening the terminal there surprised people who had only paused.
   if(heldStill) return;
   if(!wasActive){ // a tap, not a drag
-    if(drag.canopen)openTerm(drag.id,drag.name);else toast('先在 Mac 上打开这个终端');
+    if(drag.canopen)openTerm(drag.id,drag.name);else toast(tr('toast.openOnMac'));
     return;
   }
   if(!act)return;
-  if(act==='rename'){const n=prompt('重命名终端',drag.name);if(n)doAction(drag.id,'rename',n);}
+  if(act==='rename'){const n=prompt(tr('prompt.rename'),drag.name);if(n)doAction(drag.id,'rename',n);}
   else doAction(drag.id,act);
 }
 document.getElementById('root').addEventListener('pointerdown',onDown);
@@ -3040,27 +3240,41 @@ function card(t,now){
   const cls='card'+(tint?(t.status==='working'?' tint run':' tint need'):'')+(ended?' ghost':'')+(t.canOpen?'':' locked');
   const time=t.running>=0
     ? `<span class="when clock lm" data-run="${t.id}"></span>`
-    : (t.idle>=0?`<span class="when lm" title="${t.lastRun>=0?'上一轮用了 '+clockText(t.lastRun*1000):'最后一次活动'}">${rel(t.idle)}</span>`:'');
-  const extra=(t.done?`<span class="mk" title="已加书签">${ic('bookmark','s14')}</span>`:'')+
-    (t.window==='hidden'?`<span class="hid" title="窗口已隐藏，agent 在后台继续运行">${ic('eye-off','s14')}</span>`:'');
-  const tok=t.tokens>0?`<span class="ls" title="${t.tokens} tokens">${short(t.tokens)}</span>`:'';
+    : (t.idle>=0?`<span class="when lm" title="${t.lastRun>=0?tr('card.lastRun',{time:clockText(t.lastRun*1000)}):tr('card.lastActivity')}">${rel(t.idle)}</span>`:'');
+  const extra=(t.done?`<span class="mk" title="${tr('card.marked')}">${ic('bookmark','s14')}</span>`:'')+
+    (t.window==='hidden'?`<span class="hid" title="${tr('card.hidden')}">${ic('eye-off','s14')}</span>`:'');
+  const tok=t.tokens>0?`<span class="ls" title="${tr('common.tokens',{n:t.tokens})}">${short(t.tokens)}</span>`:'';
+  const uid=t.id.toLowerCase();
   return `<div class="${cls}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
     <div class="hd">${glyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
     <div class="pr bs"><span class="sig">${t.status==='shell'?'$':'›'}</span><span class="tx">${t.prompt?esc(t.prompt):'—'}</span></div>
-    <div class="ft">${agentMark(t.agent)}${tok}<button class="uid" onclick="event.stopPropagation();copyTermAddress('${t.id}')"
-      title="复制这个终端的地址（ip/uuid）" aria-label="复制终端地址">${ic('copy','s14')}</button></div>
+    <div class="ft"><span class="uid" role="button" data-short="${uid.slice(0,4)}…" onclick="event.stopPropagation();uidTap(this,'${t.id}')"
+      title="${tr('card.idTitle',{id:uid.slice(0,8)})}">${uid.slice(0,4)}…</span>${agentMark(t.agent)}${tok}</div>
   </div>`;
 }
-/* The id in the form another machine can act on: `ip/uuid`, which splits straight into
-   `project-manager -u http://<ip>:8080 <uuid>`.
-
-   The page fills in its own host, so whoever is reading this board — this Mac, a phone, or another
-   FleetView embedding it — copies an address that resolves from where they are standing; nothing
-   has to be told who is looking. The port is spelled out only when it is not 8080: two instances
-   on one machine take 8080 and 8081, and a bare ip would send the agent to the wrong one. */
-function copyTermAddress(id){
-  const host=location.hostname, port=location.port;
-  copyText((port&&port!=='8080'?host+':'+port:host)+'/'+id);
+/* The id chip, as on the Mac card: a click copies the terminal's id (what `project-manager` takes),
+   a second click straight after copies its conversation file's path instead.
+   The double is counted here rather than left to `dblclick`, which iOS Safari never sends. And the
+   first click copies at once rather than waiting to see whether a second follows: over plain http
+   the copy only works inside the tap that asked for it, and a timer would carry it out of that tap.
+   So a double-click copies the id and then overwrites it with the path, which ends in the same
+   clipboard. What happened is said on the chip itself for a second, where the eye already is. */
+let uidLast={id:'',at:0};
+async function uidTap(el,id){
+  const now=performance.now(), second=uidLast.id===id&&now-uidLast.at<400;
+  uidLast=second?{id:'',at:0}:{id:id,at:now};
+  if(!second){ if(await copyText(id.toLowerCase(),true)) uidFlash(el,tr('card.idCopied')); return; }
+  const term=((state&&state.terminals)||[]).find(x=>x.id===id);
+  if(!term||!term.transcript){ uidFlash(el,''); toast(tr('toast.noTranscript')); return; }
+  if(await copyText(term.transcript,true)) uidFlash(el,tr('card.idPath'));
+}
+/* '' puts the id straight back. The board rebuilds only when its markup changes, so the chip being
+   rewritten under it does not trigger a rebuild — and if one happens anyway, the new chip is simply
+   the id again. */
+function uidFlash(el,text){
+  clearTimeout(el._flash);
+  el.textContent=text||el.dataset.short;
+  if(text) el._flash=setTimeout(()=>{ el.textContent=el.dataset.short; },1000);
 }
 /* How long the current run has been going. The number is deliberately NOT in the markup above: the
    board is only rebuilt when its HTML differs, and a clock baked into it would differ every second
@@ -3124,21 +3338,21 @@ function wake(pid){ if(woken.has(pid)) woken.delete(pid); else woken.add(pid); i
 function projSection(s,p,all,terms,fold){
   const tot=all.reduce((a,t)=>a+t.tokens,0), last=lastIdle(all);
   const chev=fold?`<button class="icb chev${fold==='open'?' open':''}" onclick="wake('${p.id}')" `+
-    `title="${fold==='open'?'收起':'展开'}" aria-label="${fold==='open'?'收起':'展开'}">${ic('chevron-right','s16')}</button>`:'';
+    `title="${tr(fold==='open'?'common.collapse':'common.expand')}" aria-label="${tr(fold==='open'?'common.collapse':'common.expand')}">${ic('chevron-right','s16')}</button>`:'';
   let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"><div class="ph">`+chev+
     `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
     // Same rule as the cluster header: the project's real size, and what is on screen of it.
-    `<span class="meta lm"><span title="${all.length} 个终端">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
-    (tot>0?`<span title="${tot} tokens">${ic('sigma','s14')}${short(tot)}</span>`:'')+
-    (last>=0?`<span title="最后活动">${rel(last)}</span>`:'')+`</span>`+
+    `<span class="meta lm"><span title="${tr('count.terminals',{n:all.length})}">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
+    (tot>0?`<span title="${tr('common.tokens',{n:tot})}">${ic('sigma','s14')}${short(tot)}</span>`:'')+
+    (last>=0?`<span title="${tr('proj.lastActivity')}">${rel(last)}</span>`:'')+`</span>`+
     `<span class="acts">`+
     // The path rides in a data attribute rather than in the handler's text: it is arbitrary user
     // data, and a project directory with a quote in it would otherwise end the attribute.
-    `<button class="icb" data-path="${att(p.path)}" onclick="fbOpen(this.dataset.path)" title="浏览项目文件" aria-label="浏览项目文件">${ic('folder')}</button>`+
-    `<button class="icb" onclick="newTerm('${p.id}')" title="新建终端" aria-label="新建终端">${ic('plus')}</button>`+
+    `<button class="icb" data-path="${att(p.path)}" onclick="fbOpen(this.dataset.path)" title="${tr('proj.browse')}" aria-label="${tr('proj.browse')}">${ic('folder')}</button>`+
+    `<button class="icb" onclick="newTerm('${p.id}')" title="${tr('proj.newTerm')}" aria-label="${tr('proj.newTerm')}">${ic('plus')}</button>`+
     `</span></div>`;
   if(fold==='closed') return h+'</section>';
-  if(!all.length) h+=`<button class="emptyrow" onclick="newTerm('${p.id}')">${ic('plus','s16')}新终端</button>`;
+  if(!all.length) h+=`<button class="emptyrow" onclick="newTerm('${p.id}')">${ic('plus','s16')}${tr('common.newTerm')}</button>`;
   const cids=[...new Set(terms.filter(t=>t.clusterId).map(t=>t.clusterId))];
   for(const cid of cids){
     const c=s.clusters.find(x=>x.id===cid), mem=terms.filter(t=>t.clusterId===cid);
@@ -3147,7 +3361,7 @@ function projSection(s,p,all,terms,fold){
     const memAll=all.filter(t=>t.clusterId===cid);
     const size=mem.length===memAll.length?`${memAll.length}`:`${mem.length} / ${memAll.length}`;
     h+=`<div class="cluster"><div class="chead">${ic('square-stack','s14')}<span class="cname ts">${esc(c?c.name:'')}</span>`+
-       `<span class="ts" title="${memAll.length} 个终端">${size}</span></div>`+
+       `<span class="ts" title="${tr('count.terminals',{n:memAll.length})}">${size}</span></div>`+
        `<div class="grid">${mem.map(t=>card(t)).join('')}</div></div>`;
   }
   const solo=terms.filter(t=>!t.clusterId);
@@ -3156,11 +3370,11 @@ function projSection(s,p,all,terms,fold){
 }
 function render(s){
   const cnt=document.getElementById('counts');
-  const cntText=`${s.projects.length} 个项目 · ${s.terminals.length} 个终端`;
+  const cntText=tr('count.projects',{n:s.projects.length})+' · '+tr('count.terminals',{n:s.terminals.length});
   if(cnt.textContent!==cntText) cnt.textContent=cntText;
   let pills='';
-  if(s.needs>0)pills+=`<span class="badge need" title="${s.needs} 个等你处理">${glyph('needsYou')}${s.needs}</span>`;
-  if(s.working>0)pills+=`<span class="badge run" title="${s.working} 个运行中">${glyph('working')}${s.working}</span>`;
+  if(s.needs>0)pills+=`<span class="badge need" title="${tr('badge.needs',{n:s.needs})}">${glyph('needsYou')}${s.needs}</span>`;
+  if(s.working>0)pills+=`<span class="badge run" title="${tr('badge.running',{n:s.working})}">${glyph('working')}${s.working}</span>`;
   const pillEl=document.getElementById('pills');
   if(pillEl.innerHTML!==pills) pillEl.innerHTML=pills;
   // The mark filter is this device's, not the fleet's: it is kept in localStorage rather than sent
@@ -3171,7 +3385,7 @@ function render(s){
   mb.classList.toggle('on',onlyMarked);
   document.getElementById('markcount').textContent=marked?marked:'';
   let html='';
-  if(!s.remoteOK)html+=`<div class="banner">网页终端不可用 — 运行 <b>${esc(s.remoteHint)}</b> 后重新启动 FleetView。状态仍会照常显示。</div>`;
+  if(!s.remoteOK)html+=`<div class="banner">${tr('board.banner',{cmd:'<b>'+esc(s.remoteHint)+'</b>'})}</div>`;
   /* What wants you and what is moving, before what exists. The board below is grouped by project
      because that is how work is organised; this answers the other question, which otherwise means
      scanning every section for a shape. Same cards — a second place to see a terminal, not a second
@@ -3181,7 +3395,7 @@ function render(s){
   const live=[...vis.filter(t=>t.status==='needsYou'),...vis.filter(t=>t.status==='working')];
   if(live.length){
     const pname=id=>{const p=s.projects.find(x=>x.id===id);return p?p.name:'—';};
-    html+=`<section class="now"><div class="zh"><span class="ts">进行中</span><span class="ts n">${live.length}</span></div>`
+    html+=`<section class="now"><div class="zh"><span class="ts">${tr('zone.now')}</span><span class="ts n">${live.length}</span></div>`
         + `<div class="grid">${live.map(t=>
             `<div class="rc"><div class="from ls">${ic('folder','s12')}<span>${esc(pname(t.projectId))}</span></div>${card(t,true)}</div>`
           ).join('')}</div></section>`;
@@ -3197,7 +3411,7 @@ function render(s){
     html+=projSection(s,p,all,terms);
   }
   if(dorm.length){
-    html+=`<section class="dorm"><div class="zh"><span class="ts">两小时内没动过</span><span class="ts n">${dorm.length}</span></div>`;
+    html+=`<section class="dorm"><div class="zh"><span class="ts">${tr('zone.dormant')}</span><span class="ts n">${dorm.length}</span></div>`;
     for(const [p,all,terms] of dorm)
       html+=projSection(s,p,all,terms,woken.has(p.id)?'open':'closed');
     html+='</section>';
@@ -3206,10 +3420,10 @@ function render(s){
   // flick and shows up as a stall at the end of a scroll. Almost every tick is identical, so the
   // rebuild only happens when the markup actually differs.
   const out=html||(onlyMarked
-    ? '<div class="empty">'+ic('bookmark')+'<span class="et ts">没有加了书签的终端</span>'
-      +'<span class="bs">看板现在只显示加了书签的终端。</span>'
-      +'<button class="tonal" onclick="toggleOnlyMarked()">显示全部终端</button></div>'
-    : '<div class="empty"><span class="et ts">还没有项目</span><span class="bs">在 Mac 上添加一个。</span></div>');
+    ? '<div class="empty">'+ic('bookmark')+'<span class="et ts">'+tr('empty.noMarked')+'</span>'
+      +'<span class="bs">'+tr('empty.noMarkedSub')+'</span>'
+      +'<button class="tonal" onclick="toggleOnlyMarked()">'+tr('mark.showAll')+'</button></div>'
+    : '<div class="empty"><span class="et ts">'+tr('empty.noProjects')+'</span><span class="bs">'+tr('empty.noProjectsSub')+'</span></div>');
   const root=document.getElementById('root');
   if(out!==lastBoard){ lastBoard=out; root.innerHTML=out; }
   syncRuns(s.terminals);   // after any rebuild, so fresh clocks are filled in the same frame
@@ -3223,7 +3437,7 @@ function toggleOnlyMarked(){
   onlyMarked=!onlyMarked;
   localStorage.setItem('fv_onlymark',onlyMarked?'1':'0');
   if(state) render(state);
-  toast(onlyMarked?'只显示加了书签的终端':'显示全部终端');
+  toast(tr(onlyMarked?'toast.onlyMarked':'toast.showAll'));
 }
 
 /* Appearance. Following the Mac is still the default — the dashboard is a mirror of that window and
@@ -3246,7 +3460,7 @@ function applyScheme(dark){
   if(b&&b.dataset.s!==scheme){            // runs on every poll; only touch the button on a change
     b.dataset.s=scheme;
     b.innerHTML=ic(scheme==='auto'?'monitor':(scheme==='dark'?'moon':'sun'));
-    b.title=scheme==='auto'?'外观：跟随 Mac':('外观：'+(scheme==='dark'?'深色':'浅色')+'（点按切换）');
+    b.title=tr(scheme==='auto'?'scheme.btnAuto':(scheme==='dark'?'scheme.btnDark':'scheme.btnLight'));
     b.setAttribute('aria-label',b.title);
   }
 }
@@ -3254,7 +3468,7 @@ function cycleScheme(){
   scheme=scheme==='auto'?'dark':(scheme==='dark'?'light':'auto');
   localStorage.setItem('fv_scheme',scheme);
   applyScheme();
-  toast(scheme==='auto'?'外观跟随 Mac':('外观：'+(scheme==='dark'?'深色':'浅色')));
+  toast(tr(scheme==='auto'?'scheme.toastAuto':(scheme==='dark'?'scheme.toastDark':'scheme.toastLight')));
 }
 /* Before the first /state lands, so a saved choice is on the page it paints rather than one poll
    later — and so the button carries the right glyph from the start. */
@@ -3289,8 +3503,8 @@ function openPendingTerm(s){
   if(!pendingT||!s) return;
   const id=pendingT; pendingT=null;
   const t=(s.terminals||[]).find(x=>x.id===id);
-  if(!t){ toast('这个终端已经不在看板上了'); termSyncHash(); return; }
-  if(t.canOpen) openTerm(t.id,t.name); else { toast('先在 Mac 上打开这个终端'); termSyncHash(); }
+  if(!t){ toast(tr('toast.gone')); termSyncHash(); return; }
+  if(t.canOpen) openTerm(t.id,t.name); else { toast(tr('toast.openOnMac')); termSyncHash(); }
 }
 /* The address bar follows the open conversation, so a reload or a shared link comes back to it.
    replaceState: opening a terminal is not a page of history. The file browser owns the hash while
@@ -3339,16 +3553,17 @@ function netMedian(){
 }
 function netRoute(){
   const v=net.via||{};
-  if(v.scope==='loopback') return '本机';
-  if(v.scope==='lan') return '局域网';
-  if(v.scope==='tailscale') return 'Tailscale '+(v.direct===true?'直连':v.direct===false?'中转'+(v.relay?'（'+v.relay+'）':''):'');
-  if(v.scope==='public') return '外网';
+  if(v.scope==='loopback') return tr('net.local');
+  if(v.scope==='lan') return tr('net.lan');
+  if(v.scope==='tailscale') return v.direct===true?tr('net.tsDirect')
+    :v.direct===false?(v.relay?tr('net.tsRelayVia',{relay:v.relay}):tr('net.tsRelay')):'Tailscale';
+  if(v.scope==='public') return tr('net.public');
   return '';
 }
 function renderNet(){
   const off=net.fails>=2, ms=netMedian();
   const lvl=off||ms==null?0:ms<80?4:ms<200?3:ms<500?2:1;
-  const text=off?'离线':ms==null?'…':Math.round(ms)+'ms';
+  const text=off?tr('net.offline'):ms==null?'…':Math.round(ms)+'ms';
   const html='<span class="bars l'+lvl+'"><i></i><i></i><i></i><i></i></span><span class="ms">'+text+'</span>';
   for(const id of ['netsig','tnetsig']){
     const el=document.getElementById(id); if(!el) continue;
@@ -3359,14 +3574,15 @@ function renderNet(){
 /* Tapping the bars says what they mean: a phone has no hover for the title. */
 function netToast(){
   const ms=netMedian(), route=netRoute();
-  if(net.fails>=2){ toast('连不上 Mac，正在重试'+(route?'（上次：'+route+'）':''),3500); return; }
-  const parts=[route||'连接'];
+  if(net.fails>=2){ toast(route?tr('net.toastOffLast',{route:route}):tr('net.toastOff'),3500); return; }
+  const parts=[route||tr('net.aria')];
   if(ms!=null){
     const lo=Math.round(Math.min(...net.rtts)), hi=Math.round(Math.max(...net.rtts));
-    parts.push('延迟 '+Math.round(ms)+' ms'+(net.rtts.length>1?'（最近 '+net.rtts.length+' 次 '+lo+'–'+hi+' ms）':''));
+    parts.push(net.rtts.length>1?tr('net.latencyRange',{ms:Math.round(ms),n:net.rtts.length,lo:lo,hi:hi})
+                                 :tr('net.latency',{ms:Math.round(ms)}));
   }
-  if(net.via&&net.via.node) parts.push('本设备：'+net.via.node);
-  if(net.stateAt) parts.push('看板 '+Math.max(0,Math.round((Date.now()-net.stateAt)/1000))+' 秒前刷新');
+  if(net.via&&net.via.node) parts.push(tr('net.node',{node:net.via.node}));
+  if(net.stateAt) parts.push(tr('net.refreshed',{s:Math.max(0,Math.round((Date.now()-net.stateAt)/1000))}));
   toast(parts.join(' · '),4500);
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) ping(); });
@@ -3377,7 +3593,7 @@ let panelMtime=-1;
 function togglePanel(){
   const el=document.getElementById('panel');el.classList.toggle('min');
   const min=el.classList.contains('min');
-  el.querySelector('.pcollapse').innerHTML=ic(min?'chevron-down':'chevron-up','s16')+'<span>'+(min?'展开':'收起')+'</span>';
+  el.querySelector('.pcollapse').innerHTML=ic(min?'chevron-down':'chevron-up','s16')+'<span>'+tr(min?'common.expand':'common.collapse')+'</span>';
 }
 async function pollPanel(){
   try{
