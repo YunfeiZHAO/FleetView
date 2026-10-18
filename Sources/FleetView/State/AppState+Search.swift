@@ -23,7 +23,10 @@ extension AppState {
         searchOpen = true
     }
 
-    func closeSearch() { searchOpen = false }
+    func closeSearch() {
+        searchOpen = false
+        searchModel.reset()
+    }
 
     func toggleSearch() { searchOpen ? closeSearch() : openSearch() }
 

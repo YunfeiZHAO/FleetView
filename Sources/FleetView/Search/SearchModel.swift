@@ -21,13 +21,22 @@ final class SearchModel: ObservableObject {
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .fleet:   return "Fleet"
+            case .fleet:   return "终端"
             case .session: return "当前会话"
             case .history: return "全部历史"
             case .archive: return "已移除"
             }
         }
+        var icon: String {
+            switch self {
+            case .fleet:   return "rectangle.on.rectangle"
+            case .session: return "bubble.left"
+            case .history: return "clock"
+            case .archive: return "archivebox"
+            }
+        }
         var next: Mode { Mode(rawValue: rawValue + 1) ?? .fleet }
+        var previous: Mode { Mode(rawValue: rawValue - 1) ?? .archive }
     }
 
     /// One thing on the board that matched. Terminals carry the live detail; a project or cluster
@@ -378,6 +387,21 @@ final class SearchModel: ObservableObject {
     }
 
     @Published var preview: Preview?
+
+    /// The row selected in the list ("f:<uuid>" or "h:<hit id>"); the right side shows it.
+    @Published var selectedKey: String?
+
+    /// Back to an empty field on the board's own terminals. Closing search used to keep the query,
+    /// the mode, the preview and a project-scoped "已移除" list, so the next ⌘K opened on whatever
+    /// you had last looked at instead of on a field ready for a new question.
+    func reset() {
+        preview = nil
+        selectedKey = nil
+        failure = nil
+        archiveProject = nil
+        query = ""
+        mode = .fleet
+    }
 
     /// Clicking a result reads it — it does NOT resume it. Measured on this corpus, only 3% of
     /// nodes are natively resumable, so opening every result you glance at would write a ~10 MB

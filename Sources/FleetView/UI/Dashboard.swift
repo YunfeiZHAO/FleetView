@@ -96,10 +96,7 @@ struct DashboardView: View {
                 // space closes the deepest layer first: the preview (2) before the panel (1).
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        if state.searchModel.preview != nil { state.searchModel.closePreview() }
-                        else { state.closeSearch() }
-                    }
+                    .onTapGesture { state.closeSearch() }
                     .allowsHitTesting(!dragging)
                 SearchPanel(model: state.searchModel).environmentObject(state)
                     .opacity(dragging ? 0.12 : 1)

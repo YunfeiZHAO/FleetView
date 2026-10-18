@@ -46,6 +46,14 @@ enum Snapshot {
             state.dialog = .closeAll
             shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                   to: "\(dir)/dialog-close-\(suffix).png")
+            state.dialog = nil
+            state.searchModel.app = state
+            state.searchOpen = true
+            state.searchModel.query = "FleetView"
+            shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                  to: "\(dir)/search-\(suffix).png")
+            state.searchOpen = false
+            state.searchModel.reset()
         }
         exit(0)
     }
