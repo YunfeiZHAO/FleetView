@@ -311,7 +311,6 @@ extension UIText {
         case .projArchived(let a): return "\(a) removed terminal\(a == 1 ? "" : "s"): open in search and drag back onto the board to restore"
         case .projHideChart: return "Hide the token chart"
         case .projShowChart: return "Show the token chart"
-        case .projShowInFinder: return "Show in Finder"
         case .projNewTerminal: return "New terminal"
         case .projRemove: return "Remove this project from FleetView (the folder and conversation history are untouched)"
         case .clusterRenameHint: return "Double-click to rename"

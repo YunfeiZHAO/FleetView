@@ -22,12 +22,38 @@ struct DashboardView: View {
     /// now be dropped on another card, so the board is a target again and has to stay readable.
     private var dashboardBlurred: Bool { state.draggingTerminalId == nil }
 
+    /// The window's width, for `columns`. Zero until the first layout reports it.
+    @State private var windowWidth: Double = 0
+
+    /// The narrowest the board column may be made by widening the sidebar: what the top bar needs
+    /// for its usual controls (measured at ~590 with the snapshot mode's board).
+    static let boardMinWidth: Double = 600
+    /// What a wide tree panel must still leave of the board: enough to drop a turn onto a card.
+    static let boardMinBesideTree: Double = 200
+
+    /// The sidebar and tree widths actually drawn, and how far each can be dragged.
+    ///
+    /// The stored widths are what the user asked for; these are what fits. Without this the row's
+    /// minimum outgrew the window whenever the sidebar was dragged wide or the tree opened in a
+    /// narrow window, and an HStack that overflows is centred — so the sidebar's left edge slid out
+    /// of the window and the tree's right edge with it. The sidebar is sized against the board
+    /// alone, never against the tree, so opening the tree does not move it; with the tree open the
+    /// board gives way instead (see the main column's frame), under the wash.
+    private var columns: (sidebar: Double, sidebarMax: Double, tree: Double, treeMax: Double) {
+        guard windowWidth > 0 else { return (state.sidebarWidth, 520, state.treePanelWidth, 720) }
+        let sidebarMax = min(520, max(180, windowWidth - Self.boardMinWidth - 1))
+        let sidebar = min(state.sidebarWidth, sidebarMax)
+        let treeMax = min(720, max(380, windowWidth - sidebar - 2 - Self.boardMinBesideTree))
+        return (sidebar, sidebarMax, min(state.treePanelWidth, treeMax), treeMax)
+    }
+
     var body: some View {
+        let columns = columns
         HStack(spacing: 0) {
             let receded = dashboardReceded
             HStack(spacing: 0) {
-                Sidebar().frame(width: state.sidebarWidth)
-                SidebarDivider()
+                Sidebar().frame(width: columns.sidebar)
+                SidebarDivider(width: columns.sidebar, maxWidth: columns.sidebarMax)
                 VStack(spacing: 0) {
                     DynamicPanel()      // agent-authored dynamic UI — tops the content column, beside the sidebar
                     TopBar()
@@ -44,15 +70,24 @@ struct DashboardView: View {
                             })
                     }
                 }
+                // Any width is acceptable here, so the row never overflows the window: when the
+                // board cannot have its minimum (the tree is open in a narrow window), it keeps
+                // its left edge and loses its right, behind the tree.
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+                .clipped()
             }
             .receded(receded, blurred: dashboardBlurred)
             if state.treePanelTerminalId != nil {
-                TreePanelDivider()
+                TreePanelDivider(width: columns.tree, maxWidth: columns.treeMax)
                 SessionTreePanel(model: state.treeModel)
-                    .frame(width: state.treePanelWidth)
+                    .frame(width: columns.tree)
                     .transition(.move(edge: .trailing))
             }
         }
+        .background(GeometryReader { g in
+            Color.clear.preference(key: WindowWidthKey.self, value: g.size.width)
+        })
+        .onPreferenceChange(WindowWidthKey.self) { windowWidth = $0 }
         .animation(.easeOut(duration: 0.22), value: state.treePanelTerminalId != nil)
         .background(Theme.bg)
         .frame(minWidth: 960, minHeight: 580)
@@ -473,6 +508,9 @@ struct Sidebar: View {
 /// Draggable divider that resizes the sidebar (so long task titles can be revealed).
 struct SidebarDivider: View {
     @EnvironmentObject var state: AppState
+    /// The width the sidebar is drawn at, and the most the window leaves room for.
+    let width: Double
+    let maxWidth: Double
     @State private var startWidth: Double?
     @State private var hovering = false
 
@@ -490,11 +528,16 @@ struct SidebarDivider: View {
                         if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 0)
+                        // In window coordinates. In its own, the divider's origin moved with every
+                        // step of the drag, so each translation was measured from a point that the
+                        // previous step had just moved — and the width shook back and forth.
+                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                             .onChanged { v in
-                                if startWidth == nil { startWidth = state.sidebarWidth }
-                                let base = startWidth ?? state.sidebarWidth
-                                state.sidebarWidth = min(520, max(180, base + v.translation.width))
+                                // From the drawn width, not the stored one: in a window too narrow
+                                // for the stored width, starting from it would jump the divider.
+                                if startWidth == nil { startWidth = width }
+                                let base = startWidth ?? width
+                                state.sidebarWidth = min(maxWidth, max(180, base + v.translation.width))
                             }
                             .onEnded { _ in startWidth = nil; state.save() }
                     )
@@ -1278,7 +1321,7 @@ struct ProjectSection: View {
                         withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
                     }
                 }
-                iconButton("folder", help: L(.projShowInFinder)) { state.openInFinder(project.id) }
+                // No Finder button: a double-click on the project's name already opens it there.
                 iconButton("plus", help: L(.projNewTerminal)) { state.requestNewTerminal(projectId: project.id) }
                 // Closes the project on this board only: its folder and its conversations stay.
                 iconButton("xmark", help: L(.projRemove)) {
@@ -1483,6 +1526,11 @@ struct EmptyState: View {
 // MARK: - Session-tree drag plumbing
 
 /// The fleet board's frame in the "fleet" space — the standalone drop target for tree nodes.
+struct WindowWidthKey: PreferenceKey {
+    static var defaultValue: Double = 0
+    static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
+}
+
 struct BoardFrameKey: PreferenceKey {
     static var defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {

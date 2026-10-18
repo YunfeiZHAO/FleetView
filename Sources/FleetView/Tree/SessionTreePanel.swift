@@ -754,6 +754,9 @@ enum TreeTime {
 /// Drag handle on the panel's left edge (mirror of SidebarDivider).
 struct TreePanelDivider: View {
     @EnvironmentObject var state: AppState
+    /// The width the panel is drawn at, and the most the window leaves room for.
+    let width: Double
+    let maxWidth: Double
     @State private var startWidth: Double?
     @State private var hovering = false
 
@@ -768,11 +771,13 @@ struct TreePanelDivider: View {
                         if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 0)
+                        // Window coordinates, as SidebarDivider and for the same reason: in its own
+                        // the divider moves under the measurement and the width shakes.
+                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                             .onChanged { v in
-                                if startWidth == nil { startWidth = state.treePanelWidth }
-                                let base = startWidth ?? state.treePanelWidth
-                                state.treePanelWidth = min(720, max(380, base - v.translation.width))
+                                if startWidth == nil { startWidth = width }
+                                let base = startWidth ?? width
+                                state.treePanelWidth = min(maxWidth, max(380, base - v.translation.width))
                             }
                             .onEnded { _ in startWidth = nil; state.save() }
                     )

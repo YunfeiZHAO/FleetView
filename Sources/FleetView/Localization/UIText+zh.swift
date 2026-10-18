@@ -311,7 +311,6 @@ extension UIText {
         case .projArchived(let a): return "\(a) 个已移除的终端：在搜索里打开，拖回看板即可恢复"
         case .projHideChart: return "隐藏 token 图表"
         case .projShowChart: return "显示 token 图表"
-        case .projShowInFinder: return "在 Finder 中显示"
         case .projNewTerminal: return "新终端"
         case .projRemove: return "从 FleetView 移除这个项目（文件夹和对话历史都不受影响）"
         case .clusterRenameHint: return "双击重命名"

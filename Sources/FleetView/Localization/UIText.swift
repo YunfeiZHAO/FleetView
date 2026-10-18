@@ -319,7 +319,6 @@ enum UIText {
     case projArchived(Int)
     case projHideChart
     case projShowChart
-    case projShowInFinder
     case projNewTerminal
     case projRemove
     case clusterRenameHint
