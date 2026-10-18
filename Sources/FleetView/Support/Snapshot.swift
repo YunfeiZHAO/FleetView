@@ -37,6 +37,9 @@ enum Snapshot {
             state.dialog = nil
             shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                   to: "\(dir)/board-\(suffix).png")
+            // The whole board, scrolled or not: what sits below the first screen matters too.
+            shoot(DashboardView().environmentObject(state), size: NSSize(width: size.width, height: 2000),
+                  appearance: appearance, to: "\(dir)/board-tall-\(suffix).png")
             state.dialog = .webLink(terminalId: state.terminals.first { $0.status == .working }?.id)
             shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                   to: "\(dir)/dialog-web-\(suffix).png")

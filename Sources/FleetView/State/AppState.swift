@@ -1566,6 +1566,27 @@ final class AppState: ObservableObject {
         return projects.filter { !visible(terminals(inProject: $0.id)).isEmpty }
     }
 
+    /// How long a project can go untouched before the board folds it into one line.
+    static let dormantAfter: TimeInterval = 2 * 3600
+
+    /// Nothing in this project has happened in two hours and nothing in it wants you.
+    ///
+    /// The board is read top-down by priority — what needs you, what is running, what you were just
+    /// doing — and a project last touched yesterday is not on that list. Folding it to one line
+    /// (and to one line in the sidebar) keeps the projects in use within the first screen. A project
+    /// with no terminals is never dormant: its empty row is the way to start one.
+    func isDormant(_ projectId: UUID, now: Date = Date()) -> Bool {
+        let ts = terminals(inProject: projectId)
+        guard !ts.isEmpty else { return false }
+        if ts.contains(where: { $0.status == .working || $0.status == .needsYou }) { return false }
+        guard let last = ts.compactMap(\.lastActivity).max() else { return true }
+        return now.timeIntervalSince(last) > Self.dormantAfter
+    }
+
+    /// Dormant projects opened from their one-line row for this session. Not persisted: it is a
+    /// look, not a setting, and the next launch should fold them again.
+    @Published var wokenProjects: Set<UUID> = []
+
     func clustersInProject(_ projectId: UUID) -> [Cluster] {
         let ids = Set(terminals.filter { $0.projectId == projectId && $0.clusterId != nil }
                                .compactMap { $0.clusterId })

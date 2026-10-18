@@ -402,22 +402,52 @@ struct Sidebar: View {
         .sheet(isPresented: $showingClone) { CloneSheet().environmentObject(state) }
     }
 
+    @State private var showDormant = false
+
     private var taskList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(state.taskGroups) { group in
-                    HStack(spacing: 8) {
-                        Image(systemName: "folder").font(.system(size: 12))
-                        Text(group.project.name).font(.fvLabelSmall).lineLimit(1)
+            TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                let groups = state.taskGroups
+                let active = groups.filter { !state.isDormant($0.project.id, now: ctx.date) }
+                let dormant = groups.filter { state.isDormant($0.project.id, now: ctx.date) }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(active) { group in groupView(group) }
+                    // The projects the board has folded, folded here too: one line naming them,
+                    // and the rows only when you ask.
+                    if !dormant.isEmpty {
+                        Button { withAnimation(.easeOut(duration: 0.18)) { showDormant.toggle() } } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                    .rotationEffect(.degrees(showDormant ? 90 : 0))
+                                Text(dormant.map(\.project.name).joined(separator: " · "))
+                                    .font(.fvLabelSmall).lineLimit(1).truncationMode(.tail)
+                            }
+                            .foregroundColor(Theme.onSurfaceVariant.opacity(0.8))
+                            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("两小时内没动过的项目")
+                        if showDormant {
+                            ForEach(dormant) { group in groupView(group) }
+                        }
                     }
-                    .foregroundColor(Theme.onSurfaceVariant)
-                    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
-                    ForEach(group.tasks) { task in TaskRow(task: task) }
                 }
+                .padding(.horizontal, 12).padding(.bottom, 8)
             }
-            .padding(.horizontal, 12).padding(.bottom, 8)
         }
         .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder private func groupView(_ group: TaskGroup) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder").font(.system(size: 12))
+            Text(group.project.name).font(.fvLabelSmall).lineLimit(1)
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
+        .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
+        ForEach(group.tasks) { task in TaskRow(task: task) }
     }
 
     /// A collapsible section header (chevron + title + count).
@@ -802,15 +832,24 @@ struct MainArea: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        RunningStrip()
-                        RecentStrip()
-                        ForEach(state.visibleProjects) { p in
-                            ProjectSection(project: p).id(p.id)
+                    // Re-sorted once a minute as well as on every change: a project goes quiet by
+                    // the clock, not by any event.
+                    TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                        let active = state.visibleProjects.filter { !state.isDormant($0.id, now: ctx.date) }
+                        let dormant = state.visibleProjects.filter { state.isDormant($0.id, now: ctx.date) }
+                        VStack(alignment: .leading, spacing: 24) {
+                            RunningStrip()
+                            RecentStrip()
+                            ForEach(active) { p in
+                                ProjectSection(project: p).id(p.id)
+                            }
+                            if !dormant.isEmpty {
+                                DormantZone(projects: dormant)
+                            }
                         }
+                        .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: state.scrollToId) { _, id in
                     if let id { withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) } }
@@ -966,9 +1005,87 @@ struct RecentStrip: View {
     }
 }
 
+/// The projects nobody has touched in two hours, one line each, below the rest of the board.
+///
+/// A line says what the project is and how its terminals stand — the same shapes the cards use,
+/// in a row — and when it was last used. Clicking it opens the full section in place for this
+/// session (`wokenProjects`).
+struct DormantZone: View {
+    @EnvironmentObject var state: AppState
+    let projects: [Project]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().overlay(Theme.outlineVariant).padding(.bottom, 4)
+            ZoneHeader(title: "两小时内没动过", count: projects.count)
+            ForEach(projects) { p in
+                if state.wokenProjects.contains(p.id) {
+                    ProjectSection(project: p, woken: true).id(p.id)
+                } else {
+                    DormantRow(project: p).id(p.id)
+                }
+            }
+        }
+    }
+}
+
+struct DormantRow: View {
+    @EnvironmentObject var state: AppState
+    let project: Project
+    @State private var hovering = false
+
+    private var terminals: [TerminalSession] { state.visible(state.terminals(inProject: project.id)) }
+    private var last: Date? { terminals.compactMap(\.lastActivity).max() }
+    private var tokens: Int { state.projectNewTokens(project.id) }
+
+    var body: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) { _ = state.wokenProjects.insert(project.id) }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Theme.onSurfaceVariant)
+                Text(project.name).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                    .lineLimit(1)
+                    .frame(minWidth: 140, alignment: .leading)
+                // Every terminal as its status shape — the project's state at a glance, without
+                // a single card. Capped so a big project does not run the row off the edge.
+                HStack(spacing: 3) {
+                    ForEach(terminals.prefix(24)) { t in StatusGlyph(status: t.status, size: 12) }
+                    if terminals.count > 24 {
+                        Text("+\(terminals.count - 24)").font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
+                    }
+                }
+                Spacer(minLength: 12)
+                if tokens > 0 {
+                    Text(TokenUsage.short(tokens)).font(.fvLabel).monospacedDigit()
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .help("\(tokens) tokens")
+                }
+                if let last {
+                    Text(RelativeTime.compact(last)).font(.fvLabel).monospacedDigit()
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .frame(minWidth: 28, alignment: .trailing)
+                        .help("最后活动")
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .background(hovering ? Theme.surfaceContainer : Theme.surfaceContainerLow)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("\(project.path)\n点开查看这个项目的终端")
+    }
+}
+
 struct ProjectSection: View {
     @EnvironmentObject var state: AppState
     let project: Project
+    /// Opened from the dormant zone: offers to fold it back into its one-line row.
+    var woken: Bool = false
 
     // A cluster with no marked member is dropped whole rather than left as an empty frame.
     private var clusters: [Cluster] {
@@ -1217,6 +1334,11 @@ struct ProjectSection: View {
                     iconButton("chart.bar.xaxis", on: showChart,
                                help: showChart ? "隐藏 token 图表" : "显示 token 图表") {
                         withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
+                    }
+                }
+                if woken {
+                    iconButton("arrow.down.right.and.arrow.up.left", help: "收回成一行") {
+                        withAnimation(.easeOut(duration: 0.18)) { _ = state.wokenProjects.remove(project.id) }
                     }
                 }
                 iconButton("folder", help: "在 Finder 中显示") { state.openInFinder(project.id) }
