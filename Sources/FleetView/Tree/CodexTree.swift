@@ -383,20 +383,8 @@ enum CodexTree {
         return false
     }
 
-    /// Same noise list as the search index: records Codex writes as if the user had typed them.
-    private static let noise = ["<local-command", "<command-name", "<command-message",
-                                "<command-args", "<system-reminder", "<user-memory",
-                                "Caveat: The messages below", "[Request interrupted",
-                                "<bash-input", "<bash-stdout", "<bash-stderr"]
-
-    private static func cleanPrompt(_ raw: String) -> String? {
-        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, !noise.contains(where: { t.hasPrefix($0) }) else { return nil }
-        if let r = t.range(of: "<system-reminder>"), r.lowerBound != t.startIndex {
-            t = String(t[t.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return t.isEmpty ? nil : t
-    }
+    /// Injected wrappers never typed by anyone — see `PromptText`.
+    private static func cleanPrompt(_ raw: String) -> String? { PromptText.clean(raw) }
 
     private static func trimmed(_ s: String) -> String? {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)

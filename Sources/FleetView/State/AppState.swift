@@ -91,6 +91,9 @@ final class AppState: ObservableObject {
     @Published var searchOpen = false
     let searchModel = SearchModel()
 
+    /// The centred dialog that is up, if any (see DialogHost).
+    @Published var dialog: AppDialog?
+
     /// Offers a newer release when there is one (see UpdateCheck).
     let updates = UpdateCheck()
 
@@ -290,7 +293,8 @@ final class AppState: ObservableObject {
             treeDrag?.location = location
         }
         let srcProject = terminals.first { $0.id == treePanelTerminalId }?.projectId
-        let card = cardFrames.first { entry in
+        // Only cards inside the visible board (see clusterTarget).
+        let card = !boardFrame.contains(location) ? nil : cardFrames.first { entry in
             entry.value.contains { $0.contains(location) }
                 && terminals.first(where: { $0.id == entry.key })?.projectId == srcProject
                 && entry.key != treePanelTerminalId   // dropping back onto the source card means "cluster with it" too — allow
@@ -313,7 +317,7 @@ final class AppState: ObservableObject {
             treeDrag = TreeDrag(nodeUuid: hit.node, nativeSid: nil, prompt: prompt,
                                 location: location, hit: hit)
         }
-        let card = cardFrames.first { entry in
+        let card = !boardFrame.contains(location) ? nil : cardFrames.first { entry in
             entry.value.contains { $0.contains(location) }
                 && project(terminals.first(where: { $0.id == entry.key })?.projectId)?.path == hit.project
         }?.key
@@ -728,6 +732,11 @@ final class AppState: ObservableObject {
         if let w = p.treePanelWidth { treePanelWidth = min(720, max(380, w)) }
         // Rebuild each terminal's token curve from its transcript (background; badge shows meanwhile).
         for t in terminals { if let tp = t.transcriptPath { refreshTokens(t.id, path: tp) } }
+        // Cards saved while the hook still let injected text through (a task notification's XML)
+        // get their real last question back from the transcript.
+        for t in terminals where !t.lastPrompt.isEmpty && PromptText.clean(t.lastPrompt) == nil {
+            if let tp = t.transcriptPath { loadLatestPrompt(termId: t.id, path: tp) }
+        }
     }
 
     /// Persist soon, not now.
@@ -1834,6 +1843,10 @@ final class AppState: ObservableObject {
     /// renders in full under both of their headers — the same cards, twice.
     private func clusterTarget(for id: UUID, at point: CGPoint) -> ClusterDrop? {
         guard let src = terminals.first(where: { $0.id == id }) else { return nil }
+        // Card frames are reported in window space and are not clipped by the board's scroll view,
+        // so a card scrolled up under the top bar still has a frame there. Only what you can see
+        // is something you can be aiming at.
+        guard boardFrame.contains(point) else { return nil }
 
         // Inside a cluster box: join that task — or, if it is the one this card is already in,
         // nothing at all. Returning here rather than falling through matters: every member card is
@@ -2074,10 +2087,8 @@ final class AppState: ObservableObject {
             finishRun(at: idx, endedBy: "new prompt")
             terminals[idx].runningSince = Date()
             terminals[idx].status = .working
-            if let p = ev.prompt {
-                let oneLine = p.replacingOccurrences(of: "\n", with: " ")
-                              .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !oneLine.isEmpty { terminals[idx].lastPrompt = oneLine }
+            if let p = ev.prompt.flatMap(PromptText.clean) {
+                terminals[idx].lastPrompt = p.replacingOccurrences(of: "\n", with: " ")
             }
         case "PreToolUse", "PostToolUse":
             // A tool is starting/finishing → the agent is actively working. Crucially this clears a
@@ -2243,12 +2254,6 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Remote (web) access
-
-    /// Start (or reuse) the web server for a terminal and return its LAN URL for the card's popover.
-    func remoteEndpoint(for id: UUID) -> RemoteServer.Endpoint? {
-        guard let t = terminals.first(where: { $0.id == id }) else { return nil }
-        return remote.endpoint(for: id, name: t.name)
-    }
 
     /// One address the web dashboard answers on.
     struct WebAddress: Identifiable, Equatable {

@@ -1,0 +1,182 @@
+import SwiftUI
+import AppKit
+
+/// A centred dialog over the window. One at a time; `AppState.dialog` says which.
+///
+/// These were popovers, and a popover leaves the board behind it at full strength, so a QR code
+/// floating over a grid of cards read as one more card. A dialog recedes everything behind it the
+/// same way search and the session tree do (see `DashboardView.dashboardReceded`), and closes the
+/// same way: Esc, or a click on the dimmed area.
+enum AppDialog: Identifiable, Equatable {
+    /// Open the dashboard on a phone. With a terminal, the link goes straight to that terminal's
+    /// conversation (`#t=<id>`), exactly where tapping its card on the dashboard would land.
+    case webLink(terminalId: UUID?)
+
+    var id: String {
+        switch self {
+        case .webLink(let t): return "webLink-\(t?.uuidString ?? "board")"
+        }
+    }
+}
+
+/// Hosts whatever `state.dialog` holds: the click catcher, the Esc binding, and the card.
+struct DialogHost: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        if let dialog = state.dialog {
+            ZStack {
+                // Catcher only — the dashboard's recede supplies the dimming.
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { state.dialog = nil }
+                Group {
+                    switch dialog {
+                    case .webLink(let terminalId):
+                        WebLinkDialog(terminalId: terminalId)
+                    }
+                }
+                .background(Theme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 28))
+                .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+            }
+            .background {
+                Button("") { state.dialog = nil }.keyboardShortcut(.cancelAction).hidden()
+            }
+            .transition(.opacity)
+        }
+    }
+}
+
+/// "在手机上打开": a QR code for the web dashboard, or for one terminal's conversation on it.
+///
+/// It used to hand out the terminal's raw ttyd page on a port of its own, which is not what tapping
+/// that terminal on the dashboard shows and needed ttyd installed. The dashboard link needs only the
+/// web server, and the chat is the view a phone is actually for.
+struct WebLinkDialog: View {
+    @EnvironmentObject var state: AppState
+    let terminalId: UUID?
+
+    @State private var pick: String?
+    @State private var qr: NSImage?
+    @State private var copied = false
+
+    private var terminal: TerminalSession? {
+        terminalId.flatMap { id in state.terminals.first { $0.id == id } }
+    }
+
+    /// The `#t=` suffix the web page reads to open a conversation directly.
+    private var suffix: String { terminalId.map { "#t=\($0.uuidString)" } ?? "" }
+
+    var body: some View {
+        let addresses = state.webDashboardAddresses
+        let picked = addresses.first { $0.url == pick } ?? addresses.first
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "iphone").font(.system(size: 16)).foregroundColor(Theme.accent)
+                Text("在手机上打开").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.text)
+                Spacer()
+                Button { state.dialog = nil } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Theme.subtext).frame(width: 32, height: 32).contentShape(Circle())
+                }
+                .buttonStyle(.plain).help("关闭 (Esc)")
+            }
+            Text(subtitle)
+                .font(.system(size: 12)).foregroundColor(Theme.subtext)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4).padding(.bottom, 14)
+
+            if let picked {
+                if addresses.count > 1 {
+                    HStack(spacing: 2) {
+                        ForEach(addresses) { address in
+                            let on = address.url == picked.url
+                            Button { select(address.url) } label: {
+                                Text(address.label).font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(on ? Theme.text : Theme.subtext)
+                                    .frame(maxWidth: .infinity, minHeight: 30)
+                                    .background(on ? Theme.cardHover : Color.clear)
+                                    .clipShape(Capsule())
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .help(address.reach)
+                        }
+                    }
+                    .padding(3)
+                    .background(Theme.card).clipShape(Capsule())
+                    .padding(.bottom, 14)
+                }
+                if let qr {
+                    Image(nsImage: qr).interpolation(.none).resizable()
+                        .frame(width: 168, height: 168)
+                        .padding(10).background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 14)
+                }
+                HStack(spacing: 6) {
+                    Text(picked.url + suffix)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                        .foregroundColor(Theme.text)
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                        .background(Theme.card).clipShape(Capsule())
+                    roundButton(copied ? "checkmark" : "doc.on.doc", help: "复制链接") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(picked.url + suffix, forType: .string)
+                        copied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+                    }
+                    // Deliberately localhost: opening it on the Mac that serves it should not depend
+                    // on the Mac routing back to itself through Tailscale or the router.
+                    roundButton("arrow.up.right.square", help: "在这台 Mac 的浏览器里打开") {
+                        if let url = URL(string: "http://localhost:\(state.web.port)/\(suffix)") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+                Label(picked.reach + "。能访问这个地址的设备都能操作" + (terminalId == nil ? "所有终端" : "这个终端"),
+                      systemImage: "info.circle")
+                    .font(.system(size: 11)).foregroundColor(Theme.subtext)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            } else {
+                Text("没有联网，或者 Web 服务没有启动。连上网络后再打开这里。")
+                    .font(.system(size: 12)).foregroundColor(Theme.subtext)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 22)
+        .frame(width: 404)
+        .onAppear {
+            // Re-read on every open: the tailnet goes up and down, and Wi-Fi changes address.
+            select(addresses.first { $0.url == pick }?.url ?? addresses.first?.url)
+        }
+    }
+
+    private var subtitle: String {
+        if let terminal {
+            return "\(terminal.name) · 打开后直接进入它的聊天视图，和在 Web 看板上点开这张卡片一样"
+        }
+        return "打开后能看到所有终端，点一张卡片就能操作它"
+    }
+
+    private func select(_ url: String?) {
+        pick = url
+        qr = url.flatMap { QRCode.image(for: $0 + suffix) }
+    }
+
+    private func roundButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 13))
+                .foregroundColor(Theme.subtext)
+                .frame(width: 36, height: 36)
+                .background(Theme.card).clipShape(Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain).help(help)
+    }
+}

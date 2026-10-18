@@ -407,21 +407,8 @@ enum SearchIndex {
         var project: String = ""
     }
 
-    /// Injected wrappers that reach the transcript as `user` records but were never typed.
-    private static let noise = ["<local-command", "<command-name", "<command-message",
-                                "<command-args", "<system-reminder", "<user-memory",
-                                "Caveat: The messages below", "[Request interrupted",
-                                "<bash-input", "<bash-stdout", "<bash-stderr"]
-
-    private static func cleanPrompt(_ raw: String) -> String? {
-        var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, !noise.contains(where: { t.hasPrefix($0) }) else { return nil }
-        // A reminder block glued onto the end of a real prompt is not part of what was said.
-        if let r = t.range(of: "<system-reminder>"), r.lowerBound != t.startIndex {
-            t = String(t[t.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return t.isEmpty ? nil : t
-    }
+    /// Injected wrappers never typed by anyone — see `PromptText`.
+    private static func cleanPrompt(_ raw: String) -> String? { PromptText.clean(raw) }
 
     /// Walk complete lines from `from`, stopping before a partial trailing line — a transcript
     /// being appended to right now must not have half a record indexed and then marked done.

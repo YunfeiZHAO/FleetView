@@ -1041,6 +1041,7 @@ function openTerm(id,name){
   renderPresets();          // latest Notes as quick-commands
   beaconSelect(id,'chat');
   setView('chat');          // reading history is the common remote case
+  termSyncHash();
   // Next frame, so the panes have their real heights and the ceiling is measured against those.
   // The collapsed bar needs the same treatment: its height is a measurement too, and until now
   // nothing took one after the overlay became visible (see autoGrow).
@@ -1122,6 +1123,7 @@ function closeTerm(){
   document.getElementById('termerr').classList.remove('on');
   curId='';termLoaded=false;stopChatPoll();
   beaconSelect('','');
+  termSyncHash();
 }
 /* Chat = structured transcript (native scrolling, works on touch).
    Terminal = the live ttyd mirror, loaded lazily so just reading costs nothing. */
@@ -2543,7 +2545,7 @@ function fbNewTab(){
    comes back to the same folder or file. replaceState: walking a folder is not history. */
 function fbSyncHash(){
   const p=document.getElementById('fb').classList.contains('show')?(fbFile||fbDir):'';
-  const want=p?'#fb='+encodeURIComponent(p):'';
+  const want=p?'#fb='+encodeURIComponent(p):(curId?'#t='+curId:'');
   if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
 }
 
@@ -3014,9 +3016,41 @@ async function tick(){
     net.stateAt=Date.now();
     if(termOpen()){watchTermAlive(state);return;}
     render(state);
+    openPendingTerm(state);
     reportLocation(state);   // once per browser; no-op until the page is served over HTTPS
   }catch(e){}                // the signal indicator says offline; ping() is what decides that
 }
+/* A link straight to one terminal's conversation: #t=<terminal id>. The Mac's "在手机上打开" hands
+   these out, so scanning one lands exactly where tapping that card here would — the chat, not the
+   raw terminal it used to be. Acted on after a /state, because until then the page cannot tell a
+   terminal that is attachable from one that is closed or gone. */
+let pendingT=null;
+function readTermHash(){
+  const m=location.hash.match(/^#t=([0-9A-Fa-f-]{36})$/);
+  pendingT=m?m[1].toUpperCase():null;
+}
+function openPendingTerm(s){
+  if(!pendingT||!s) return;
+  const id=pendingT; pendingT=null;
+  const t=(s.terminals||[]).find(x=>x.id===id);
+  if(!t){ toast('That terminal is no longer on the board'); termSyncHash(); return; }
+  if(t.canOpen) openTerm(t.id,t.name); else { toast('Open this terminal on the Mac first'); termSyncHash(); }
+}
+/* The address bar follows the open conversation, so a reload or a shared link comes back to it.
+   replaceState: opening a terminal is not a page of history. The file browser owns the hash while
+   it is up (see fbSyncHash). */
+function termSyncHash(){
+  if(document.getElementById('fb').classList.contains('show')) return;
+  const want=curId?'#t='+curId:'';
+  if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+}
+readTermHash();
+window.addEventListener('hashchange',()=>{
+  readTermHash();
+  if(!pendingT) return;
+  if(termOpen()) closeTerm();
+  if(state) openPendingTerm(state);
+});
 tick();setInterval(tick,1500);
 // A tab opened by the file browser's ↗, or one reloaded while it was open, lands on that folder or file.
 { const m=location.hash.match(/^#fb=(.+)$/); if(m){ try{ fbOpenPath(decodeURIComponent(m[1])); }catch(e){} } }
