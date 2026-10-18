@@ -76,6 +76,8 @@ final class SearchModel: ObservableObject {
         var sessions: [Group]
         var fleet: [FleetHit]           // fleet mode: the terminals/clusters under this project
         var count: Int                  // hits below, across everything
+        /// The newest matching message, which is what projects and their hits are ordered by.
+        var newest: String = ""
     }
 
     @Published var query = "" { didSet { scheduleSearch() } }
@@ -86,8 +88,20 @@ final class SearchModel: ObservableObject {
     /// Set once when the panel opens — fleet mode reads the live board through it.
     weak var app: AppState?
 
-    /// Which project is expanded. nil = all collapsed to headers; a path = that one open.
-    @Published var focusedProject: String?
+    /// The projects opened in the list. Conversation results arrive as a list of projects, all
+    /// closed: which project is the first thing you aim at, and a list of hundreds of messages
+    /// with the project in grey under each one gave nothing to aim with.
+    @Published var expandedProjects: Set<String> = []
+
+    /// Board and archive results are short and are the answer themselves; they are never folded.
+    var folds: Bool { mode == .history || mode == .session }
+
+    func isExpanded(_ p: ProjectGroup) -> Bool { !folds || expandedProjects.contains(p.id) }
+
+    func toggle(_ p: ProjectGroup) {
+        if expandedProjects.contains(p.id) { expandedProjects.remove(p.id) }
+        else { expandedProjects.insert(p.id) }
+    }
 
     @Published private(set) var projectGroups: [ProjectGroup] = []
     @Published private(set) var groups: [Group] = []
@@ -332,10 +346,8 @@ final class SearchModel: ObservableObject {
     /// With one project matched there is nothing to choose between, so open it rather than making
     /// the reader click a header to see the only answer.
     private func autoFocusSingleProject() {
-        if projectGroups.count == 1 { focusedProject = projectGroups[0].id }
-        else if let f = focusedProject, !projectGroups.contains(where: { $0.id == f }) {
-            focusedProject = nil
-        }
+        if projectGroups.count == 1 { expandedProjects = [projectGroups[0].id] }
+        else { expandedProjects.formIntersection(projectGroups.map(\.id)) }
     }
 
     /// Bucket by transcript, preserving BM25 order: the first time a file appears decides where
@@ -357,8 +369,17 @@ final class SearchModel: ObservableObject {
         return order.compactMap { byPath[$0] }
     }
 
-    /// Sessions rolled up under the project they ran in, in the order the best hit appeared.
+    /// Sessions rolled up under the project they ran in, newest first all the way down: projects by
+    /// their newest hit, and each project's hits by time. Relevance still decides which hits make
+    /// the cut (the index returns the best `limit`); time decides the order, because "the one from
+    /// last Tuesday" is how a conversation is remembered, and BM25 order scattered one week's
+    /// work across the list.
     private func byProject(_ sessions: [Group]) -> [ProjectGroup] {
+        let sessions = sessions.map { s -> Group in
+            var s = s
+            s.hits.sort { $0.ts > $1.ts }
+            return s
+        }
         var order: [String] = []
         var acc: [String: ProjectGroup] = [:]
         for s in sessions {
@@ -374,7 +395,13 @@ final class SearchModel: ObservableObject {
                                         sessions: [s], fleet: [], count: s.hits.count)
             }
         }
-        return order.compactMap { acc[$0] }
+        return order.compactMap { key -> ProjectGroup? in
+            guard var g = acc[key] else { return nil }
+            g.sessions.sort { ($0.hits.first?.ts ?? "") > ($1.hits.first?.ts ?? "") }
+            g.newest = g.sessions.first?.hits.first?.ts ?? ""
+            return g
+        }
+        .sorted { $0.newest > $1.newest }
     }
 
     // MARK: - Preview

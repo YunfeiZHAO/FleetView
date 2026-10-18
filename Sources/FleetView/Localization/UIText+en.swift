@@ -326,6 +326,9 @@ extension UIText {
         case .peerReading(let a): return "Reading \(a)…"
         case .peerNoTerminals(let a): return "No terminals on \(a)"
         case .cardJustFinished: return "Just finished"
+        case .searchProjectSummary(let a, let b): return "\(a) result\(a == 1 ? "" : "s") in \(b) conversation\(b == 1 ? "" : "s")"
+        case .searchProjectClosedHint: return "Press Return or click the project to open it. Results are newest first."
+        case .searchProjectOpenHint: return "Press Return or click the project to close it."
         }
     }
 }

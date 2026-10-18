@@ -298,6 +298,7 @@ enum SearchIndex {
                 }
             }
         }
+        repairProjects(db)
         guard !jobs.isEmpty else { return }
 
         // Parse in parallel (JSON decoding is the whole cost), write serially.
@@ -372,6 +373,61 @@ enum SearchIndex {
 
     private static func bind(_ stmt: OpaquePointer?, _ i: Int32, _ s: String) {
         sqlite3_bind_text(stmt, i, s, -1, transient)
+    }
+
+    /// Slugs already tried and not resolved this run, so a folder that is gone is not walked for
+    /// again on every refresh. Touched only on `queue`.
+    private static var unresolvedSlugs: Set<String> = []
+
+    /// Label conversations whose transcript is gone and whose folder was never recorded.
+    ///
+    /// The index keeps a conversation after its file is deleted, and a file deleted before its
+    /// `cwd` had been read leaves its row with no project at all. Search filed every such hit under
+    /// one "unknown project" — 79 of the 245 hits for one query — which is exactly where a hit
+    /// cannot be found by project. A Claude transcript is filed under its project's slug, though,
+    /// so the folder can still be named: decoded against the disk, or failing that taken from
+    /// another file under the same slug that did record one (its subagents usually have).
+    private static func repairProjects(_ db: OpaquePointer) {
+        var paths: [String] = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT path FROM file WHERE project = '' AND src = ?",
+                              -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int(stmt, 1, Int32(Source.claude.rawValue))
+            while sqlite3_step(stmt) == SQLITE_ROW { paths.append(String(cString: sqlite3_column_text(stmt, 0))) }
+        }
+        sqlite3_finalize(stmt)
+        guard !paths.isEmpty else { return }
+
+        var sibling: OpaquePointer?
+        var update: OpaquePointer?
+        sqlite3_prepare_v2(db, "SELECT project FROM file WHERE substr(path, 1, ?) = ? AND project != '' LIMIT 1",
+                           -1, &sibling, nil)
+        sqlite3_prepare_v2(db, "UPDATE file SET project = ? WHERE path = ?", -1, &update, nil)
+        defer { sqlite3_finalize(sibling); sqlite3_finalize(update) }
+        var repaired = 0
+        sqlite3_exec(db, "BEGIN", nil, nil, nil)
+        for path in paths {
+            // …/projects/<slug>/<file>, or deeper under <slug> for a session's subagents.
+            guard let r = path.range(of: "/projects/"),
+                  let slash = path[r.upperBound...].firstIndex(of: "/") else { continue }
+            let slug = String(path[r.upperBound..<slash])
+            guard !unresolvedSlugs.contains(slug) else { continue }
+            var project = SessionForge.cwdFromSlug(slug)
+            if project == nil {
+                let prefix = String(path[..<slash]) + "/"
+                sqlite3_reset(sibling)
+                sqlite3_bind_int(sibling, 1, Int32(prefix.utf8.count))
+                bind(sibling, 2, prefix)
+                if sqlite3_step(sibling) == SQLITE_ROW { project = String(cString: sqlite3_column_text(sibling, 0)) }
+            }
+            guard let project, !project.isEmpty else { unresolvedSlugs.insert(slug); continue }
+            sqlite3_reset(update)
+            bind(update, 1, project)
+            bind(update, 2, path)
+            if sqlite3_step(update) == SQLITE_DONE { repaired += 1 }
+        }
+        sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        if repaired > 0 { FV.log("search: labelled \(repaired) unlabelled transcripts with their project") }
     }
 
     /// The folder to file this transcript under, which an incremental pass usually cannot see.

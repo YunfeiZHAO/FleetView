@@ -92,6 +92,35 @@ enum Snapshot {
                   to: "\(dir)/search-\(suffix).png")
             state.searchOpen = false
             state.searchModel.reset()
+            // Conversation search over whatever the scratch home's agent folders hold:
+            // FV_SNAPSHOT_HISTORY=<query>. Drawn folded, then with the first project open.
+            if let q = ProcessInfo.processInfo.environment["FV_SNAPSHOT_HISTORY"] {
+                let m = state.searchModel
+                m.app = state
+                state.searchOpen = true
+                m.mode = .history
+                m.refreshIndex()
+                m.query = q
+                let deadline = Date().addingTimeInterval(20)
+                while (m.indexing || m.projectGroups.isEmpty), Date() < deadline {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.6))   // the debounced search
+                shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                      to: "\(dir)/search-history-\(suffix).png")
+                if let first = m.projectGroups.first {
+                    m.toggle(first)
+                    if let hit = first.sessions.flatMap(\.hits).max(by: { $0.ts < $1.ts }) {
+                        m.selectedKey = "h:\(hit.id)"
+                        m.showPreview(hit)
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                    }
+                    shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                          to: "\(dir)/search-history-open-\(suffix).png")
+                }
+                state.searchOpen = false
+                m.reset()
+            }
         }
         exit(0)
     }

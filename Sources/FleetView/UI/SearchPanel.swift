@@ -15,23 +15,32 @@ struct SearchPanel: View {
     @ObservedObject var model: SearchModel
     @FocusState private var focused: Bool
 
-    /// One selectable row: a thing on the board, or one message that matched.
+    /// One selectable row: a project to open, a thing on the board, or one message that matched.
     enum Item: Identifiable {
+        case project(SearchModel.ProjectGroup)
         case fleet(SearchModel.FleetHit)
         case hit(SearchIndex.Hit, SearchModel.Group)
 
         var id: String {
             switch self {
+            case .project(let p): return "p:\(p.id)"
             case .fleet(let f): return "f:\(f.id.uuidString)"
             case .hit(let h, _): return "h:\(h.id)"
             }
         }
     }
 
+    /// A project's rows when it is open: board hits, then its messages newest first across all of
+    /// its conversations.
+    private func rows(of p: SearchModel.ProjectGroup) -> [Item] {
+        guard model.isExpanded(p) else { return [] }
+        let hits = p.sessions.flatMap { g in g.hits.map { (h: $0, g: g) } }.sorted { $0.h.ts > $1.h.ts }
+        return p.fleet.map { Item.fleet($0) } + hits.map { Item.hit($0.h, $0.g) }
+    }
+
+    /// Every row in list order, for the arrow keys. Projects are rows only where they fold.
     private var items: [Item] {
-        model.projectGroups.flatMap { p in
-            p.fleet.map { Item.fleet($0) } + p.sessions.flatMap { g in g.hits.map { Item.hit($0, g) } }
-        }
+        model.projectGroups.flatMap { p in (model.folds ? [Item.project(p)] : []) + rows(of: p) }
     }
     private var selected: Item? { items.first { $0.id == model.selectedKey } }
 
@@ -177,17 +186,21 @@ struct SearchPanel: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(model.projectGroups) { p in
-                            HStack(spacing: 8) {
-                                Image(systemName: "folder").font(.system(size: 12))
-                                Text(p.name).font(.fvLabelSmall).lineLimit(1)
-                                Spacer()
-                                Text("\(p.count)").font(.fvLabelSmall).monospacedDigit()
+                            if model.folds {
+                                row(.project(p))
+                            } else {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "folder").font(.system(size: 12))
+                                    Text(p.name).font(.fvLabelSmall).lineLimit(1)
+                                    Spacer()
+                                    Text("\(p.count)").font(.fvLabelSmall).monospacedDigit()
+                                }
+                                .foregroundColor(Theme.onSurfaceVariant)
+                                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
                             }
-                            .foregroundColor(Theme.onSurfaceVariant)
-                            .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
-                            ForEach(p.fleet) { f in row(.fleet(f)) }
-                            ForEach(p.sessions) { g in
-                                ForEach(g.hits) { h in row(.hit(h, g)) }
+                            // Under its project, indented, so a message reads as belonging to it.
+                            ForEach(rows(of: p)) { item in
+                                row(item).padding(.leading, model.folds ? 22 : 0)
                             }
                         }
                     }
@@ -208,6 +221,7 @@ struct SearchPanel: View {
         let on = item.id == model.selectedKey
         Group {
             switch item {
+            case .project(let p): projectRow(p, on: on)
             case .fleet(let f): fleetRow(f, on: on)
             case .hit(let h, let g): hitRow(h, group: g, on: on)
             }
@@ -219,8 +233,29 @@ struct SearchPanel: View {
         .contentShape(Rectangle())
         .id(item.id)
         .onTapGesture(count: 2) { select(item.id); openSelected() }
-        .onTapGesture { select(item.id) }
+        .onTapGesture {
+            select(item.id)
+            if case .project(let p) = item { withAnimation(.easeOut(duration: 0.15)) { model.toggle(p) } }
+        }
         .modifier(HitDrag(item: item, state: state))
+    }
+
+    private func projectRow(_ p: SearchModel.ProjectGroup, on: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(model.isExpanded(p) ? 90 : 0))
+                .frame(width: 12)
+            Image(systemName: "folder").font(.system(size: 13))
+            Text(p.name).font(.fvTitleSmall).lineLimit(1)
+                .foregroundColor(on ? Theme.onSecondaryContainer : Theme.onSurface)
+            Spacer(minLength: 8)
+            Text(shortDate(p.newest)).font(.fvLabelSmall).monospacedDigit()
+            Text("\(p.count)").font(.fvLabel).monospacedDigit()
+                .padding(.horizontal, 8).frame(minWidth: 28, minHeight: 20)
+                .background(on ? Theme.surfaceContainerHigh : Theme.surfaceContainerHighest)
+                .clipShape(Capsule())
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
     }
 
     private func fleetRow(_ h: SearchModel.FleetHit, on: Bool) -> some View {
@@ -262,8 +297,11 @@ struct SearchPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
                     AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 10)
-                    Text(group.title ?? projectName(group.project)).lineLimit(1)
-                    Text("·")
+                    // The project is the row above when the list folds; say it only where it doesn't.
+                    if let title = group.title ?? (model.folds ? nil : projectName(group.project)) {
+                        Text(title).lineLimit(1)
+                        Text("·")
+                    }
                     Text(shortDate(hit.ts))
                 }
                 .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
@@ -287,6 +325,8 @@ struct SearchPanel: View {
 
     @ViewBuilder private var detail: some View {
         switch selected {
+        case .project(let p)?:
+            projectDetail(p)
         case .hit(let hit, _)?:
             conversation(hit)
         case .fleet(let f)?:
@@ -440,6 +480,7 @@ struct SearchPanel: View {
 
     private func openSelected() {
         switch selected {
+        case .project(let p)?: withAnimation(.easeOut(duration: 0.15)) { model.toggle(p) }
         case .hit(let h, _)?: model.open(h, in: state)
         case .fleet(let f)?: openFleet(f)
         case nil: break
@@ -455,6 +496,26 @@ struct SearchPanel: View {
             state.scrollToId = pid
             state.closeSearch()
         }
+    }
+
+    private func projectDetail(_ p: SearchModel.ProjectGroup) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "folder").font(.system(size: 16)).foregroundColor(Theme.onSurfaceVariant)
+                Text(p.name).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+            }
+            if p.id != "—" {
+                Text(p.id).font(.fvMono).foregroundColor(Theme.onSurfaceVariant)
+                    .textSelection(.enabled).lineLimit(2).truncationMode(.middle)
+            }
+            Text(L(.searchProjectSummary(p.count, p.sessions.count)))
+                .font(.fvBody).foregroundColor(Theme.onSurface)
+            Text(model.isExpanded(p) ? L(.searchProjectOpenHint) : L(.searchProjectClosedHint))
+                .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Helpers
@@ -496,13 +557,27 @@ struct SearchPanel: View {
         return a
     }
 
+    /// "2026-07-29T02:23:30.123Z" → "07-29 10:23", in this Mac's time zone. Transcripts stamp
+    /// UTC, and cutting the string apart showed the UTC clock — eight hours off in Beijing.
     private func shortDate(_ iso: String) -> String {
-        // "2026-07-29T10:23:30.123Z" → "07-29 10:23"
-        guard iso.count >= 16 else { return "" }
-        let d = iso.prefix(10).suffix(5)
-        let t = iso.dropFirst(11).prefix(5)
-        return "\(d) \(t)"
+        guard let d = Self.iso.date(from: iso) ?? Self.isoPlain.date(from: iso) else {
+            guard iso.count >= 16 else { return "" }
+            return "\(iso.prefix(10).suffix(5)) \(iso.dropFirst(11).prefix(5))"
+        }
+        return Self.short.string(from: d)
     }
+
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
+    private static let short: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f
+    }()
 }
 
 /// Dragging a row onto the board opens it there, the same gesture the session tree uses. A long

@@ -326,6 +326,9 @@ extension UIText {
         case .peerReading(let a): return "正在读取 \(a)…"
         case .peerNoTerminals(let a): return "\(a) 上没有终端"
         case .cardJustFinished: return "刚完成"
+        case .searchProjectSummary(let a, let b): return "\(a) 条结果，来自 \(b) 个对话"
+        case .searchProjectClosedHint: return "按回车或点左边的项目展开，结果按时间从新到旧排列。"
+        case .searchProjectOpenHint: return "按回车或点左边的项目收起。"
         }
     }
 }

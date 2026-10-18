@@ -334,6 +334,9 @@ enum UIText {
     case peerReading(String)
     case peerNoTerminals(String)
     case cardJustFinished
+    case searchProjectSummary(Int, Int)
+    case searchProjectClosedHint
+    case searchProjectOpenHint
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,
