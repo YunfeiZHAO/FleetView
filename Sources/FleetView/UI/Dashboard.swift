@@ -1037,7 +1037,8 @@ struct ProjectSection: View {
     private var newTokens: Int { state.projectNewTokens(project.id) }
     private var deltas: [TokenSample] { state.projectTokenDeltas(project.id) }
     private var lastTokenTime: Date? { state.projectLastTokenTime(project.id) }
-    @State private var showChart = true
+    /// Off until asked for: a chart under every active project pushed the cards a screen down.
+    @State private var showChart = false
     @State private var copied = false
     @State private var gripHot = false
     /// A fixed point for the rate chip's 5s schedule. Held in @State so it survives the re-renders
@@ -1283,18 +1284,10 @@ struct ProjectSection: View {
                 }
                 iconButton("folder", help: "在 Finder 中显示") { state.openInFinder(project.id) }
                 iconButton("plus", help: "新终端") { state.requestNewTerminal(projectId: project.id) }
-                Menu {
-                    Button("在 Finder 中显示") { state.openInFinder(project.id) }
-                    Button("复制路径") { copyToClipboard(project.path) }
-                    Divider()
-                    Button("从 FleetView 移除项目", role: .destructive) { state.removeProject(project.id) }
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 14))
-                        .foregroundColor(Theme.onSurfaceVariant)
-                        .frame(width: Theme.controlHeight, height: Theme.controlHeight)
+                // Closes the project on this board only: its folder and its conversations stay.
+                iconButton("xmark", help: "从 FleetView 移除这个项目（文件夹和对话历史都不受影响）") {
+                    state.removeProject(project.id)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("更多")
             }
         }
         .frame(height: 40)

@@ -188,6 +188,7 @@ struct TerminalCardView: View {
     /// Whose it is, and what it has cost — then the actions, on hover.
     private var footer: some View {
         HStack(spacing: 8) {
+            idChip
             if terminal.agentKind != .unknown {
                 AgentMark(kind: terminal.agentKind, tint: container?.fg)
                     .help(terminal.agentKind == .claude ? "Claude" : "Codex")
@@ -200,7 +201,7 @@ struct TerminalCardView: View {
             }
             Spacer(minLength: 4)
             controls
-                .opacity(hovering || idFlash != nil ? 1 : 0)
+                .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
         }
         .frame(height: 28)
@@ -208,7 +209,6 @@ struct TerminalCardView: View {
 
     private var controls: some View {
         HStack(spacing: 4) {
-            copyButton
             roundButton("iphone", help: "在手机上打开这个终端的聊天") {
                 state.dialog = .webLink(terminalId: terminal.id)
             }
@@ -279,19 +279,28 @@ struct TerminalCardView: View {
         }
     }
 
-    /// Click copies the terminal id (what `project-manager` takes); double-click copies the
-    /// conversation file's path.
+    /// The terminal's id, bottom left: four characters and an ellipsis, so it is never the thing
+    /// that gives way. Click copies the whole UUID (what `project-manager` takes); double-click copies
+    /// the conversation file's path. Four characters still resolve a terminal for `project-manager`.
     ///
     /// One exclusive gesture, not two `onTapGesture`s, and high-priority so it beats the card: two
     /// stacked taps fire the single on the first click and the double never forms, and the card's
     /// own tap (raise) competes for the same click from above.
-    private var copyButton: some View {
-        Image(systemName: idFlash == nil ? "doc.on.doc" : (idFlash == "none" ? "xmark" : "checkmark"))
-            .font(.system(size: 12))
-            .foregroundColor(fgSecondary)
-            .frame(width: 28, height: 28)
-            .background(roundFill).clipShape(Circle())
-            .contentShape(Circle())
+    private var idChip: some View {
+        let short = String(terminal.id.uuidString.prefix(4)).lowercased() + "…"
+        let flash: String? = idFlash.map {
+            switch $0 {
+            case "id":   return "已复制"
+            case "path": return "已复制路径"
+            default:     return "没有记录"
+            }
+        }
+        return Text(flash ?? short)
+            .font(.fvMono)
+            .lineLimit(1)
+            .foregroundColor(idFlash != nil ? (container?.fg ?? Theme.primary) : fgSecondary)
+            // The whole chip, not just its glyphs: five 11pt characters are a small target.
+            .contentShape(Rectangle())
             .highPriorityGesture(
                 TapGesture(count: 2).onEnded { copyTranscriptPath() }
                     .exclusively(before: TapGesture().onEnded {
@@ -299,8 +308,8 @@ struct TerminalCardView: View {
                         flashId("id")
                     })
             )
-            .help(idFlash == "none" ? "这个终端没有对话记录"
-                  : "单击复制终端 ID（\(String(terminal.id.uuidString.prefix(8)).lowercased())），双击复制对话文件路径")
+            .fixedSize()
+            .help("单击复制终端 ID（\(String(terminal.id.uuidString.prefix(8)).lowercased())…），双击复制对话文件路径")
     }
 
     private func flashId(_ text: String) {
