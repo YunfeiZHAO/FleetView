@@ -65,6 +65,9 @@ struct TreeRow: Identifiable {
         /// graph with an edge it deliberately did not follow. `turns` is nil when that earlier half
         /// is no longer on disk — there is still something to say, just nothing to press.
         case compacted(boundary: String, turns: Int?)
+        /// The same prompt sent again: side branches of one turn, each a single turn, whose text is
+        /// a sibling's word for word. One row instead of N identical ones; expandable.
+        case versions(id: String, uuids: [String])
     }
     let kind: Kind
     let laneDepth: Int          // 0 = the active/main lane
@@ -84,6 +87,7 @@ struct TreeRow: Identifiable {
         case .node(let u): return u
         case .fold(let f, _): return f
         case .compacted(let b, _): return "compact-\(b)"
+        case .versions(let id, _): return id
         }
     }
     var nodeUuid: String? { if case .node(let u) = kind { return u }; return nil }
@@ -581,7 +585,8 @@ enum SessionTreeBuilder {
         var colorCounter = 0
 
         struct Frame { let uuid: String; let depth: Int; let color: Int
-                       let isFirst: Bool; let pass: [(Int, Int)] }
+                       let isFirst: Bool; let pass: [(Int, Int)]
+                       var versions: [String]? = nil }
         // The compaction the root sits on, if it has one: a row above the first turn, where the
         // conversation actually carries on. It takes over `mainStartsHere` from the root so the
         // accent lane begins at the pill and runs unbroken into the turns below it.
@@ -598,6 +603,14 @@ enum SessionTreeBuilder {
         var stack: [Frame] = [Frame(uuid: root, depth: 0, color: -1, isFirst: false, pass: [])]
 
         while let f = stack.popLast() {
+            if let v = f.versions {
+                rows.append(TreeRow(kind: .versions(id: "ver-\(v[0])", uuids: v),
+                                    laneDepth: f.depth, colorIndex: f.color, isBranchFirst: true,
+                                    isBranchLast: true, passLanes: f.pass, branchChildCount: 0,
+                                    onActivePath: false, isCurrentLeaf: false,
+                                    mainLanePasses: true, mainStartsHere: false, mainEndsHere: false))
+                continue
+            }
             let node = tree.nodes[f.uuid]
             let children = node?.children ?? []
             let continuation = children.first { tree.activePath.contains($0) } ?? children.last
@@ -628,7 +641,27 @@ enum SessionTreeBuilder {
             // they render oldest-first between this row and the continuation).
             var childPass = f.pass
             if f.depth > 0 && continuation != nil { childPass.append((f.depth, f.color)) }
-            for o in others.reversed() {
+            // A retry — the same prompt sent again and abandoned after one turn — says nothing its
+            // sibling does not, and three of them were three identical rows. They share one row.
+            func text(_ u: String) -> String {
+                (tree.nodes[u]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            // Only retries of the turn that carried on: "another N versions" has to have the one it
+            // is another version *of* right there on the path.
+            let contText = continuation.map(text) ?? ""
+            let retries = others.filter { o in
+                (tree.nodes[o]?.children ?? []).isEmpty && !contText.isEmpty && text(o) == contText
+            }
+            let kept = others.filter { !retries.contains($0) }
+            if !retries.isEmpty {
+                let c = colorCounter % TreeLane.paletteCount
+                colorCounter += 1
+                var v = Frame(uuid: retries[0], depth: min(f.depth + 1, 2), color: c,
+                              isFirst: true, pass: childPass)
+                v.versions = retries
+                stack.append(v)
+            }
+            for o in kept.reversed() {
                 let c = colorCounter % TreeLane.paletteCount
                 colorCounter += 1
                 stack.append(Frame(uuid: o, depth: min(f.depth + 1, 2), color: c,
@@ -670,6 +703,24 @@ enum SessionTreeBuilder {
             }
             if j < rows.count { out.append(rows[j]); j += 1 }
             i = j
+        }
+        return out
+    }
+
+    /// Re-expand a versions row into one row per version, drawn exactly as they would have been.
+    static func expandVersions(_ rows: [TreeRow], id: String) -> [TreeRow] {
+        var out: [TreeRow] = []
+        for r in rows {
+            if case .versions(let vid, let uuids) = r.kind, vid == id {
+                for u in uuids {
+                    out.append(TreeRow(kind: .node(u), laneDepth: r.laneDepth, colorIndex: r.colorIndex,
+                                       isBranchFirst: true, isBranchLast: true, passLanes: r.passLanes,
+                                       branchChildCount: 0, onActivePath: false, isCurrentLeaf: false,
+                                       mainLanePasses: true, mainStartsHere: false, mainEndsHere: false))
+                }
+            } else {
+                out.append(r)
+            }
         }
         return out
     }

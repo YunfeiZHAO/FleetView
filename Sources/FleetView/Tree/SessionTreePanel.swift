@@ -14,30 +14,37 @@ struct SessionTreePanel: View {
 
     /// A click-to-copy id card. Session and terminal ids sit side by side so it is always clear
     /// WHICH conversation and WHICH terminal this tree belongs to.
-    private func idChip(label: String, value: String, copied: Binding<Bool>, tint: Color) -> some View {
+    private func idChip(label: String, value: String, copied: Binding<Bool>, mono: Bool,
+                        glyph: TermStatus? = nil) -> some View {
         Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(value, forType: .string)
-            withAnimation(.easeOut(duration: 0.12)) { copied.wrappedValue = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                withAnimation { copied.wrappedValue = false }
-            }
+            copied.wrappedValue = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { copied.wrappedValue = false }
         } label: {
-            HStack(spacing: 5) {
-                Circle().fill(tint).frame(width: 5, height: 5)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(label).font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(Theme.subtext.opacity(0.8)).lineLimit(1)
-                    Text(copied.wrappedValue ? "copied" : String(value.prefix(8)))
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundColor(copied.wrappedValue ? Theme.green : Theme.text)
-                }
+            HStack(spacing: 6) {
+                if let glyph { StatusGlyph(status: glyph, size: 12) }
+                else { Image(systemName: copied.wrappedValue ? "checkmark" : "doc.on.doc").font(.system(size: 11)) }
+                Text(copied.wrappedValue ? "已复制" : label)
+                    .font(mono && !copied.wrappedValue ? .fvMono : .fvLabel).lineLimit(1)
             }
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.stroke, lineWidth: 1))
+            .foregroundColor(Theme.onSurfaceVariant)
+            .padding(.horizontal, 10).frame(height: 28)
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.chip).strokeBorder(Theme.outlineVariant, lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help("点击复制完整 id")
+    }
+
+    private func metaChip(_ symbol: String, _ text: String, help: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 11))
+            Text(text).font(.fvLabel).monospacedDigit()
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
+        .padding(.horizontal, 10).frame(height: 28)
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.chip).strokeBorder(Theme.outlineVariant, lineWidth: 1))
+        .help(help)
     }
 
     private var boundTerminal: TerminalSession? {
@@ -47,7 +54,6 @@ struct SessionTreePanel: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.stroke)
             if let reason = model.emptyReason {
                 emptyState(reason)
             } else if model.loading && model.rows.isEmpty {
@@ -58,7 +64,8 @@ struct SessionTreePanel: View {
             }
         }
         .background(Theme.panel)
-        .onExitCommand { state.closeSessionTree() }              // Esc closes the panel
+        // Esc peels one layer at a time: a pinned card first, then the panel.
+        .onExitCommand { model.selected != nil ? (model.selected = nil) : state.closeSessionTree() }
         .background {                                            // ⌘F focus search · ⌘↓ jump to leaf
             Button("") { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command).hidden()
@@ -73,77 +80,80 @@ struct SessionTreePanel: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.accent)
-                Text("会话树").font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
-                if let sid = model.boundSessionId {
-                    idChip(label: "session", value: sid, copied: $copiedSid, tint: Theme.subtext)
-                }
-                if let t = boundTerminal {
-                    idChip(label: t.name, value: t.id.uuidString.lowercased(),
-                           copied: $copiedTid, tint: Theme.statusColor(t.status))
-                }
+                    .font(.system(size: 15)).foregroundColor(Theme.primary)
+                Text("对话树").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                if model.loading { ProgressView().controlSize(.small).scaleEffect(0.7) }
                 Spacer()
                 Button { state.closeSessionTree() } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Theme.subtext)
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .frame(width: 32, height: 32).contentShape(Circle())
                 }
                 .buttonStyle(.plain).help("关闭 (Esc)")
             }
-            if model.emptyReason == nil {
-                HStack(spacing: 6) {
-                    Text("⑂ \(model.tree.branchPoints) · \(model.tree.nodeCount) 节点")
-                        .font(.system(size: 10)).foregroundColor(Theme.subtext)
-                    Spacer()
-                    if model.loading { ProgressView().controlSize(.small) }
+            HStack(spacing: 6) {
+                if model.emptyReason == nil {
+                    metaChip("arrow.triangle.branch", "\(model.tree.branchPoints)", help: "分叉点")
+                    metaChip("bubble.left", "\(model.tree.nodeCount)", help: "轮数")
+                }
+                if let sid = model.boundSessionId {
+                    idChip(label: String(sid.prefix(8)), value: sid, copied: $copiedSid, mono: true)
+                }
+                if let t = boundTerminal {
+                    idChip(label: t.name, value: t.id.uuidString.lowercased(), copied: $copiedTid,
+                           mono: false, glyph: t.status)
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
+        .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 12)
     }
 
     // MARK: Search
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10))
-                .foregroundColor(Theme.subtext.opacity(0.8))
-            TextField("搜索 prompt 与回复", text: $model.query)
-                .textFieldStyle(.plain).font(.system(size: 12)).foregroundColor(Theme.text)
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14))
+                .foregroundColor(Theme.onSurfaceVariant)
+            TextField("搜索提问与回复", text: $model.query)
+                .textFieldStyle(.plain).font(.fvBody).foregroundColor(Theme.onSurface)
                 .focused($searchFocused)
                 .onExitCommand { model.query = "" }
             if !model.query.isEmpty {
-                Text("\(model.rows.count)").font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Theme.subtext)
+                Text("\(model.rows.count)").font(.fvLabelSmall).monospacedDigit()
+                    .foregroundColor(Theme.onSurfaceVariant)
                 Button { model.query = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
-                        .foregroundColor(Theme.subtext.opacity(0.7))
-                }.buttonStyle(.plain)
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                        .foregroundColor(Theme.onSurfaceVariant)
+                }.buttonStyle(.plain).help("清除")
             }
             Button { model.searchAnswers.toggle() } label: {
-                Text("含回复")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundColor(model.searchAnswers ? Theme.accent : Theme.subtext.opacity(0.7))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(model.searchAnswers ? Theme.accent.opacity(0.15) : Color.clear)
-                    .clipShape(Capsule())
+                HStack(spacing: 4) {
+                    if model.searchAnswers { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)) }
+                    Text("含回复").font(.fvLabelSmall)
+                }
+                .foregroundColor(model.searchAnswers ? Theme.onSecondaryContainer : Theme.onSurfaceVariant)
+                .padding(.horizontal, 10).frame(height: 26)
+                .background(model.searchAnswers ? Theme.secondaryContainer : Color.clear)
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain).help("搜索范围是否包含 agent 回复")
             Button { model.newestFirst.toggle() } label: {
                 Image(systemName: model.newestFirst ? "arrow.down" : "arrow.up")
-                    .font(.system(size: 9.5, weight: .bold)).foregroundColor(Theme.subtext)
+                    .font(.system(size: 12, weight: .medium)).foregroundColor(Theme.onSurfaceVariant)
+                    .frame(width: 26, height: 26).contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help(model.newestFirst ? "最新在上 — 点击改为最早在上" : "最早在上 — 点击改为最新在上")
         }
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(Theme.card.opacity(searchFocused ? 0.95 : 0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(searchFocused ? Theme.accent.opacity(0.5) : Theme.stroke, lineWidth: 1))
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.leading, 14).padding(.trailing, 6)
+        .frame(height: Theme.controlHeight)
+        .background(Theme.surfaceContainerHigh)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(searchFocused ? Theme.primary : Color.clear, lineWidth: 1))
+        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     // MARK: Tree
@@ -225,6 +235,8 @@ struct TreeRowView: View {
             foldRow(id: id, count: hidden.count)
         case .compacted(let boundary, let turns):
             compactedRow(boundary: boundary, turns: turns)
+        case .versions(let id, let uuids):
+            versionsRow(id: id, count: uuids.count)
         case .node:
             nodeRow
         }
@@ -237,11 +249,14 @@ struct TreeRowView: View {
             Button {
                 withAnimation(.easeOut(duration: 0.18)) { model.expandFold(id) }
             } label: {
-                Text("⋯ \(count) turns")
-                    .font(.system(size: 10.5)).foregroundColor(Theme.subtext)
-                    .padding(.horizontal, 11).padding(.vertical, 3)
-                    .background(Theme.card).clipShape(Capsule())
-                    .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
+                    Text("\(count) 轮").font(.fvLabel)
+                }
+                .foregroundColor(Theme.onSurfaceVariant)
+                .padding(.horizontal, 12).frame(height: 26)
+                .overlay(Capsule().strokeBorder(Theme.outlineVariant, lineWidth: 1))
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain).help("展开被折叠的 \(count) 个节点")
             Spacer(minLength: 0)
@@ -266,32 +281,48 @@ struct TreeRowView: View {
                 Button {
                     withAnimation(.easeOut(duration: 0.18)) { model.expandCompaction(boundary) }
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 9, weight: .bold))
-                        Text("展开压缩前的 \(turns) 轮对话")
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: 11))
+                        Text("展开压缩前的 \(turns) 轮对话").font(.fvLabel)
                     }
-                    .foregroundColor(Theme.accent)
-                    .padding(.horizontal, 11).padding(.vertical, 4)
-                    .background(Theme.accent.opacity(0.12)).clipShape(Capsule())
-                    .overlay(Capsule().stroke(Theme.accent.opacity(0.45), lineWidth: 1))
+                    .foregroundColor(Theme.onSecondaryContainer)
+                    .padding(.horizontal, 12).frame(height: 28)
+                    .background(Theme.secondaryContainer).clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .help("下面这段是从一次上下文压缩之后继续的 —— 展开压缩前的 \(turns) 轮对话")
             } else {
-                HStack(spacing: 5) {
-                    Image(systemName: "clock.badge.xmark")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("压缩前的对话已不在这个项目里")
-                        .font(.system(size: 10.5))
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.badge.xmark").font(.system(size: 11))
+                    Text("压缩前的对话已不在这个项目里").font(.fvLabel)
                 }
-                .foregroundColor(Theme.subtext.opacity(0.8))
-                .padding(.horizontal, 11).padding(.vertical, 4)
-                .background(Theme.card).clipShape(Capsule())
-                .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+                .foregroundColor(Theme.onSurfaceVariant)
+                .padding(.horizontal, 12).frame(height: 28)
+                .overlay(Capsule().strokeBorder(Theme.outlineVariant, lineWidth: 1))
                 .help("这段对话继续自一个已经不在 ~/.claude/projects 里的会话文件")
             }
+            Spacer(minLength: 0)
+        }
+        .frame(height: 34)
+    }
+
+    private func versionsRow(id: String, count: Int) -> some View {
+        HStack(spacing: 0) {
+            TreeRailView(row: row, rowHeight: 34, hasChips: false, flipped: model.newestFirst)
+                .frame(width: TreeLane.railWidth, height: 34)
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { model.expandVersions(id) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.on.square").font(.system(size: 11))
+                    Text("同一个提问的另 \(count) 个版本").font(.fvLabel)
+                }
+                .foregroundColor(Theme.onSurfaceVariant)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("同一个提问发过 \(count + 1) 次，其余几次都只走了一轮。点开逐个查看")
             Spacer(minLength: 0)
         }
         .frame(height: 34)
@@ -316,54 +347,58 @@ struct TreeRowView: View {
                     // they are a few rows up, and all that is missing is the fact that the agent
                     // could no longer see them from this turn onwards.
                     if node?.compactedBefore == true {
-                        Text("⇠ 已压缩")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Theme.amber)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Theme.amber.opacity(0.14)).clipShape(Capsule())
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(Theme.warn)
+                            .frame(width: 20, height: 20)
+                            .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: 6))
                             .help("上下文在这一轮之前被压缩过 —— 更早的对话还在树上，但从这里开始 agent 看不到它们了")
                     }
                     if row.branchChildCount > 0 {
-                        Text("⑂ \(row.branchChildCount + 1)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Theme.accent)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Theme.accent.opacity(0.14)).clipShape(Capsule())
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
+                            Text("\(row.branchChildCount + 1)").font(.fvLabelSmall).monospacedDigit()
+                        }
+                        .foregroundColor(Theme.onSurfaceVariant)
+                        .padding(.horizontal, 6).frame(height: 20)
+                        .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: 6))
+                        .help("从这一轮分出了 \(row.branchChildCount + 1) 条")
                     }
+                    // Regular weight on every row: a column that is all bold has no emphasis left.
                     promptText
-                        .font(.system(size: 12.5, weight: row.onActivePath ? .medium : .regular))
+                        .font(.fvBody)
                         .lineLimit(2)
                     Spacer(minLength: 4)
                     Text(relativeTime)
-                        .font(.system(size: 10)).foregroundColor(Theme.subtext.opacity(0.8))
+                        .font(.fvLabelSmall).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
                         .layoutPriority(1)
                 }
                 if let n = node, !n.answerPreview.isEmpty {
-                    answerText(n).font(.system(size: 11)).lineLimit(1)
+                    answerText(n).font(.fvBodySmall).lineLimit(1)
                 }
                 if !chips.isEmpty {
                     HStack(spacing: 5) {
                         ForEach(chips, id: \.name) { chip in
-                            HStack(spacing: 4) {
-                                Circle().fill(Theme.statusColor(chip.status)).frame(width: 6, height: 6)
-                                Text("\(chip.name) 停在这里").font(.system(size: 9.5, weight: .semibold))
-                                    .foregroundColor(Theme.text)
+                            HStack(spacing: 5) {
+                                StatusGlyph(status: chip.status, size: 11)
+                                Text("\(chip.name) 停在这里").font(.fvLabelSmall)
+                                    .foregroundColor(Theme.onSurface)
                             }
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Theme.card).clipShape(Capsule())
-                            .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+                            .padding(.horizontal, 8).frame(height: 22)
+                            .overlay(Capsule().strokeBorder(Theme.outlineVariant, lineWidth: 1))
                         }
                     }
                 }
             }
-            .padding(.trailing, 12).padding(.vertical, 8)
+            .padding(.trailing, 14).padding(.vertical, 8)
             .opacity(row.onActivePath ? 1 : 0.62)
         }
         .frame(minHeight: rowHeight)
-        .background(isSelected ? Theme.card : (hover ? Theme.cardHover.opacity(0.55) : Color.clear))
-        .overlay(alignment: .leading) {
-            if isSelected { Rectangle().fill(Theme.accent).frame(width: 2) }
-        }
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
+                .fill(isSelected ? Theme.secondaryContainer : (hover ? Theme.surfaceContainerHigh : Color.clear))
+                .padding(.horizontal, 6)
+        )
         .contentShape(Rectangle())
         .background(GeometryReader { g in
             Color.clear.onChange(of: hover) { _, h in
@@ -395,16 +430,16 @@ struct TreeRowView: View {
     @ViewBuilder private var promptText: some View {
         let preview = node?.preview ?? ""
         if model.searching {
-            Text(treeHighlight(preview, query: model.query, base: Theme.text))
+            Text(treeHighlight(preview, query: model.query, base: Theme.onSurface))
         } else {
-            Text(preview).foregroundColor(Theme.text)
+            Text(preview).foregroundColor(Theme.onSurface)
         }
     }
 
     @ViewBuilder private func answerText(_ n: TreeTurn) -> some View {
         let answerHit = model.searching && model.hits(n).answer
-        let body = "↳ " + (answerHit ? model.answerSnippet(n) : n.answerPreview)
-        let tint = answerHit ? Theme.tertiary : Theme.subtext
+        let body = "↳ " + plainMarkdown(answerHit ? model.answerSnippet(n) : n.answerPreview)
+        let tint = answerHit ? Theme.tertiary : Theme.onSurfaceVariant
         if model.searching {
             Text(treeHighlight(body, query: model.query, base: tint))
         } else {
@@ -414,14 +449,14 @@ struct TreeRowView: View {
 
     private func hitBadge(_ label: String, _ color: Color) -> some View {
         Text(label)
-            .font(.system(size: 8.5, weight: .bold)).foregroundColor(color)
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(color.opacity(0.15)).clipShape(Capsule())
+            .font(.fvLabelSmall).foregroundColor(color)
+            .padding(.horizontal, 6).frame(height: 20)
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(color.opacity(0.5), lineWidth: 1))
     }
 
     private var relativeTime: String {
         guard let ts = node?.ts, let d = TreeTime.parse(ts) else { return "" }
-        return RelativeTime.short(d) ?? ""
+        return RelativeTime.compact(d)
     }
 }
 
@@ -493,8 +528,13 @@ struct TreeRailView: View {
                         lineWidth: 1.5)
                 }
             }
-            // The dot (only node rows draw one).
-            if case .node = row.kind {
+            // The dot (node rows, and a versions row, which stands for nodes).
+            var hasDot = false
+            switch row.kind {
+            case .node, .versions: hasDot = true
+            default: break
+            }
+            if hasDot {
                 let x = TreeLane.x(row.laneDepth)
                 let color = row.laneDepth == 0 ? Theme.accent : laneColor(row.colorIndex)
                 if row.laneDepth == 0 {
@@ -590,75 +630,90 @@ struct TreeInspector: View {
 /// Hovering a turn shows a clipped preview; clicking one pins it and reveals the full prompt and
 /// the full reply.
 struct TreeDetailCard: View {
+    @EnvironmentObject var state: AppState
     let turn: TreeTurn
     let pinned: Bool
     let query: String
     var onUnpin: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 if turn.nativeSessionId != nil {
-                    Image(systemName: "bolt.fill").font(.system(size: 8)).foregroundColor(Theme.green)
+                    Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundColor(Theme.primary)
                         .help("已有会话的 leaf 正好在此 — fork 无需写文件")
                 }
-                Text(absoluteTime(turn.ts)).font(.system(size: 9.5)).foregroundColor(Theme.subtext)
+                Text(absoluteTime(turn.ts)).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
+                if pinned {
+                    Button(action: onUnpin) {
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Theme.onSurfaceVariant)
+                            .frame(width: 28, height: 28).contentShape(Circle())
+                    }
+                    .buttonStyle(.plain).help("关闭 (Esc)")
+                }
             }
             content
         }
-        .padding(13)
-        .frame(width: 380, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 13)
-                .fill(Theme.panel)
-                .overlay(                       // one soft top highlight = "lifted", not blurred
-                    RoundedRectangle(cornerRadius: 13).fill(
-                        LinearGradient(colors: [Color.white.opacity(0.055), .clear],
-                                       startPoint: .top, endPoint: .bottom))
-                )
-        )
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(pinned ? Theme.accent.opacity(0.55) : Theme.stroke, lineWidth: 1))
-        .shadow(color: .black.opacity(0.55), radius: 26, y: 12)
+        .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 16)
+        .frame(width: 420, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.sheet).fill(Theme.surfaceContainerHigh))
+        .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
         // A hover preview must not eat clicks meant for the tree; a pinned card is interactive
         // so its text can be selected and scrolled.
         .allowsHitTesting(pinned)
-        .transition(.opacity.combined(with: .move(edge: .trailing)))
+        .transition(.opacity)
     }
 
     @ViewBuilder private var content: some View {
         if pinned {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(treeHighlight(turn.text, query: query, base: Theme.text))
-                        .font(.system(size: 12))
+            Text(markdownText(turn.text, query: query, base: Theme.onSurface))
+                .font(.fvTitleSmall)
+                .textSelection(.enabled)
+                .lineLimit(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !turn.answer.isEmpty {
+                Divider().overlay(Theme.outlineVariant)
+                ScrollView {
+                    // Rendered, not shown raw: agents answer in Markdown, and the monospaced dump
+                    // this replaces put `**` and backticks in front of every point that mattered.
+                    Text(markdownText(turn.answer, query: query, base: Theme.onSurface))
+                        .font(.system(size: 13))
+                        .lineSpacing(3)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if !turn.answer.isEmpty {
-                        Divider().overlay(Theme.stroke)
-                        Text(treeHighlight(turn.answer, query: query, base: Theme.subtext))
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
                 }
+                .frame(maxHeight: 340)
             }
-            .frame(maxHeight: 420)
+            HStack {
+                Spacer()
+                Button {
+                    state.forkOpenNode(nodeUuid: turn.uuid, nativeSid: turn.nativeSessionId,
+                                       prompt: turn.text, joinClusterOf: nil)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 13))
+                        Text("从这里开新终端").font(.fvLabel)
+                    }
+                    .foregroundColor(Theme.onSecondaryContainer)
+                    .padding(.horizontal, 16).frame(height: 36)
+                    .background(Theme.secondaryContainer).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("用这一轮之前的上下文开一个新终端；原会话不受影响。也可以把这一行拖到看板上")
+            }
         } else {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 8) {
                 // The hover card shows excerpts, so it never lays out a multi-thousand-character
                 // string that the reader isn't going to see.
-                Text(treeHighlight(turn.preview, query: query, base: Theme.text))
-                    .font(.system(size: 12)).lineLimit(4)
+                Text(treeHighlight(turn.preview, query: query, base: Theme.onSurface))
+                    .font(.fvTitleSmall).lineLimit(4)
                 if !turn.answerPreview.isEmpty {
-                    Text(treeHighlight(turn.answerPreview, query: query, base: Theme.subtext))
-                        .font(.system(size: 11, design: .monospaced))
+                    Text(markdownText(turn.answerPreview, query: query, base: Theme.onSurfaceVariant))
+                        .font(.fvBodySmall)
                         .lineLimit(5)
                 }
-                Text("点击该节点查看完整内容 · 拖动它可开新终端")
-                    .font(.system(size: 9.5)).foregroundColor(Theme.subtext.opacity(0.7))
-                    .padding(.top, 1)
             }
         }
     }
@@ -668,6 +723,16 @@ struct TreeDetailCard: View {
         let f = DateFormatter(); f.dateFormat = "MM-dd HH:mm"
         return f.string(from: d)
     }
+}
+
+/// A one-line preview of Markdown, with the markers taken out rather than rendered: a row has no
+/// room for formatting, and `**` in front of every second word was what it showed instead.
+func plainMarkdown(_ s: String) -> String {
+    var t = s.replacingOccurrences(of: "**", with: "")
+        .replacingOccurrences(of: "__", with: "")
+        .replacingOccurrences(of: "`", with: "")
+    while t.hasPrefix("#") || t.hasPrefix(">") || t.hasPrefix(" ") { t.removeFirst() }
+    return t
 }
 
 // MARK: - Time parsing

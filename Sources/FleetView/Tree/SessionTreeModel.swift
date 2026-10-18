@@ -58,6 +58,7 @@ final class SessionTreeModel: ObservableObject {
     private(set) var boundSessionId: String?
     private var sessionInfo: [String: [(name: String, status: TermStatus)]] = [:]
     private var expandedFolds: Set<String> = []
+    private var expandedVersions: Set<String> = []
     /// `compact_boundary` uuids the user has asked to see behind. Unlike a fold — which only hides
     /// rows that were already built — following one of these changes the graph, so it costs a
     /// rebuild rather than a row transform.
@@ -121,6 +122,7 @@ final class SessionTreeModel: ObservableObject {
         self.focus.hovered = nil
         self.focus.focusY = nil
         self.expandedFolds = []
+        self.expandedVersions = []
         self.expandedCompactions = []
         reload(showSpinner: true)
         startRefresh()
@@ -143,6 +145,11 @@ final class SessionTreeModel: ObservableObject {
 
     func expandFold(_ id: String) {
         expandedFolds.insert(id)
+        applyRows()
+    }
+
+    func expandVersions(_ id: String) {
+        expandedVersions.insert(id)
         applyRows()
     }
 
@@ -192,6 +199,11 @@ final class SessionTreeModel: ObservableObject {
     private func applyRows() {
         var r = tree.rows
         for f in expandedFolds { r = SessionTreeBuilder.expandFold(r, foldId: f, tree: tree) }
+        for v in expandedVersions { r = SessionTreeBuilder.expandVersions(r, id: v) }
+        if searching {
+            // A merged retry can be exactly what was searched for: open them all before filtering.
+            for row in r { if case .versions(let id, _) = row.kind { r = SessionTreeBuilder.expandVersions(r, id: id) } }
+        }
         if searching {
             // Show ONLY hits — a dimmed haystack is still a haystack. Folds carry no text, so drop them.
             r = r.filter { row in

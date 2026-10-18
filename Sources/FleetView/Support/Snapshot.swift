@@ -58,6 +58,29 @@ enum Snapshot {
                 state.draggingTerminalId = nil
                 state.clusterDrop = nil
             }
+            // The session tree, when a real transcript is named (read only): FV_SNAPSHOT_TRANSCRIPT.
+            if let path = ProcessInfo.processInfo.environment["FV_SNAPSHOT_TRANSCRIPT"],
+               let i = state.terminals.firstIndex(where: { $0.name == "手表app" }) {
+                state.dialog = nil
+                state.terminals[i].transcriptPath = path
+                state.openSessionTree(state.terminals[i].id)
+                let deadline = Date().addingTimeInterval(15)
+                while (state.treeModel.loading || state.treeModel.rows.isEmpty), Date() < deadline {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                }
+                shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                      to: "\(dir)/tree-\(suffix).png")
+                // A pinned turn: the last one on the path that has an answer.
+                if let u = state.treeModel.rows.compactMap(\.nodeUuid)
+                    .last(where: { !(state.treeModel.tree.nodes[$0]?.answer.isEmpty ?? true) }) {
+                    state.treeModel.selected = u
+                    state.treeModel.focus.focusY = 420
+                    shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                          to: "\(dir)/tree-pinned-\(suffix).png")
+                    state.treeModel.selected = nil
+                }
+                state.closeSessionTree()
+            }
             state.dialog = nil
             state.searchModel.app = state
             state.searchOpen = true
