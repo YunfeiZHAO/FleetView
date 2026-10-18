@@ -17,15 +17,15 @@ struct CloneSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill").foregroundColor(Theme.accent)
-                Text("克隆 GitHub 仓库").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                Text(L(.cloneTitle)).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
             }
 
-            field(label: "仓库") {
-                TextField("owner/repo 或 https://github.com/owner/repo", text: $repo)
+            field(label: L(.cloneRepo)) {
+                TextField(L(.cloneRepoPlaceholder), text: $repo)
                     .textFieldStyle(.plain).onSubmit(startClone)
             }
 
-            field(label: "放到这个文件夹里") {
+            field(label: L(.cloneInto)) {
                 HStack(spacing: 8) {
                     TextField("", text: $parentDir).textFieldStyle(.plain)
                     Button { pickParent() } label: { Image(systemName: "folder") }
@@ -46,13 +46,13 @@ struct CloneSheet: View {
             }
 
             HStack {
-                Label("克隆在后台进行，进度显示在顶栏，可以随时取消。", systemImage: "info.circle")
+                Label(L(.cloneBackground), systemImage: "info.circle")
                     .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button("取消") { dismiss() }
+                Button(L(.cancel)) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(action: startClone) { Text("克隆").fontWeight(.medium) }
+                Button(action: startClone) { Text(L(.cloneButton)).fontWeight(.medium) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(repo.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -97,7 +97,7 @@ struct CloneSheet: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: parentDir)
-        panel.prompt = "选择"
+        panel.prompt = L(.choose)
         if panel.runModal() == .OK, let url = panel.url { parentDir = url.path }
     }
 }

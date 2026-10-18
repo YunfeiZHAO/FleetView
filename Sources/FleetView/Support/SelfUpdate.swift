@@ -42,11 +42,11 @@ enum SelfUpdate {
         var errorDescription: String? {
             switch self {
             case .notABundle(let p):
-                return "自动更新只能在 FleetView.app 里运行，当前是：\(p)"
+                return L(.updNotABundle(p))
             case .notWritable(let p):
-                return "没有写入权限：\(p)\n把 FleetView.app 放到 /Applications 或你的用户目录下再试。"
+                return L(.updNotWritable(p))
             case .noAsset:
-                return "这个 release 没有附带 .zip,只能手动下载源码构建。"
+                return L(.updNoAsset)
             }
         }
     }
@@ -78,10 +78,10 @@ enum SelfUpdate {
         // with no FleetView on the Mac at all.
         guard updates.status == nil else { return }
         let target = Bundle.main.bundleURL
-        updates.status = "更新 \(release.version)"
+        updates.status = L(.updStatus(release.version))
 
         let jobs = BackgroundJobs.shared
-        let job = jobs.start(.update, title: "更新到 FleetView \(release.version)", detail: "连接 GitHub…")
+        let job = jobs.start(.update, title: L(.updJobTitle(release.version)), detail: L(.updConnecting))
         let download = Download(url: url, version: release.version) { fraction, detail in
             jobs.progress(job, fraction, detail)
         } done: { result in
@@ -94,7 +94,7 @@ enum SelfUpdate {
                 // Past the download there is nothing left to stop that would not leave a
                 // half-installed app behind, so the ✕ goes; what remains is seconds of local work.
                 jobs.setCancel(job, nil)
-                jobs.progress(job, nil, "校验下载…")
+                jobs.progress(job, nil, L(.updVerifying))
                 Task.detached {
                     do {
                         let staged = try stage(zip: zip, expecting: release.version)
@@ -123,18 +123,18 @@ enum SelfUpdate {
         try? FileManager.default.removeItem(at: staged)
         try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
         guard run("/usr/bin/ditto", ["-x", "-k", zip.path, staged.path]) else {
-            throw Failure("下载的文件不是有效的 zip")
+            throw Failure(L(.updNotZip))
         }
         let app = staged.appendingPathComponent("FleetView.app")
         guard FileManager.default.fileExists(atPath: app.path) else {
-            throw Failure("压缩包里没有 FleetView.app")
+            throw Failure(L(.updNoApp))
         }
         // The zip says who it is. A release whose tag and bundle disagree is a mistake somewhere,
         // and installing it would leave the app claiming a version it is not.
         let plist = app.appendingPathComponent("Contents/Info.plist")
         let got = (NSDictionary(contentsOf: plist)?["CFBundleShortVersionString"] as? String) ?? ""
         guard UpdateCheck.normalise(got) == UpdateCheck.normalise(version) else {
-            throw Failure("压缩包里的版本是 \(got.isEmpty ? "未知" : got),与 release 声明的 \(version) 不一致")
+            throw Failure(L(.updVersionMismatch(got.isEmpty ? L(.updUnknown) : got, version)))
         }
         // Downloads arrive quarantined; left in place the replacement app cannot launch without the
         // right-click dance, which would look exactly like a failed update.
@@ -142,7 +142,7 @@ enum SelfUpdate {
         // FleetView is ad-hoc signed, so this proves integrity rather than provenance — which is
         // precisely the question here: did the bytes survive the network intact?
         guard run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) else {
-            throw Failure("下载的 app 签名校验失败，已放弃安装")
+            throw Failure(L(.updBadSignature))
         }
         try? FileManager.default.removeItem(at: zip)
         return staged
@@ -150,14 +150,14 @@ enum SelfUpdate {
 
     /// The point of no return: write the swap script, launch it detached, and quit so it can work.
     private static func handOff(staged: URL, target: URL, updates: UpdateCheck, job: UUID) {
-        updates.status = "安装中…"
-        BackgroundJobs.shared.progress(job, 1, "安装中，FleetView 会自动重启…")
+        updates.status = L(.updInstalling)
+        BackgroundJobs.shared.progress(job, 1, L(.updInstallingRestart))
         do {
             try FileManager.default.createDirectory(at: updateDir, withIntermediateDirectories: true)
             try swapScript.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         } catch {
-            fail("无法准备安装脚本：\(error.localizedDescription)", job: job, updates: updates)
+            fail(L(.updScriptPrepare(error.localizedDescription)), job: job, updates: updates)
             return
         }
         let pid = ProcessInfo.processInfo.processIdentifier
@@ -167,7 +167,7 @@ enum SelfUpdate {
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", cmd]
         do { try p.run() } catch {
-            fail("无法启动安装脚本：\(error.localizedDescription)", job: job, updates: updates)
+            fail(L(.updScriptLaunch(error.localizedDescription)), job: job, updates: updates)
             return
         }
         // `&` detaches it: /bin/sh exits immediately and bash is reparented to launchd, so it
@@ -185,8 +185,8 @@ enum SelfUpdate {
         updates.status = nil
         FV.log("self-update failed: \(why)")
         guard let job else { alert(why); return }
-        BackgroundJobs.shared.fail(job, why + "\n详细记录见 ~/.fleetview/update.log",
-                                   recoverLabel: "打开发布页") {
+        BackgroundJobs.shared.fail(job, why + L(.updSeeLog),
+                                   recoverLabel: L(.updOpenReleasePage)) {
             NSWorkspace.shared.open(releasesPage)
         }
     }
@@ -198,10 +198,10 @@ enum SelfUpdate {
     /// offered the install, so there is no background work yet for it to be a row on.
     private static func alert(_ why: String) {
         let a = NSAlert()
-        a.messageText = "自动更新失败"
-        a.informativeText = why + "\n\n详细记录见 ~/.fleetview/update.log"
-        a.addButton(withTitle: "好")
-        a.addButton(withTitle: "打开发布页")
+        a.messageText = L(.updFailedTitle)
+        a.informativeText = why + L(.updSeeLogBody)
+        a.addButton(withTitle: L(.ok))
+        a.addButton(withTitle: L(.updOpenReleasePage))
         if a.runModal() == .alertSecondButtonReturn { NSWorkspace.shared.open(releasesPage) }
     }
 
@@ -323,7 +323,7 @@ private final class Download: NSObject, URLSessionDownloadDelegate {
         let known = totalBytesExpectedToWrite > 0
         let fraction = known ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : nil
         let detail = known ? "\(Self.mb(totalBytesWritten)) / \(Self.mb(totalBytesExpectedToWrite))"
-                           : "已下载 \(Self.mb(totalBytesWritten))"
+                           : L(.updDownloaded(Self.mb(totalBytesWritten)))
         Task { @MainActor [onProgress] in onProgress(fraction, detail) }
     }
 
@@ -332,7 +332,7 @@ private final class Download: NSObject, URLSessionDownloadDelegate {
         // This file is deleted the moment the method returns, so the move happens here and not
         // after a hop to the main actor.
         if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
-            settle(.failure(SelfUpdate.Failure("下载失败：HTTP \(http.statusCode)")))
+            settle(.failure(SelfUpdate.Failure(L(.updHTTP(http.statusCode)))))
             return
         }
         let zip = FileManager.default.temporaryDirectory
@@ -342,7 +342,7 @@ private final class Download: NSObject, URLSessionDownloadDelegate {
             try FileManager.default.moveItem(at: location, to: zip)
             saved = zip
         } catch {
-            settle(.failure(SelfUpdate.Failure("无法保存下载文件：\(error.localizedDescription)")))
+            settle(.failure(SelfUpdate.Failure(L(.updSaveFailed(error.localizedDescription)))))
         }
     }
 
@@ -354,7 +354,7 @@ private final class Download: NSObject, URLSessionDownloadDelegate {
         } else if let saved {
             settle(.success(saved))
         } else {
-            settle(.failure(SelfUpdate.Failure("下载结束了，但没有拿到文件")))
+            settle(.failure(SelfUpdate.Failure(L(.updNoFile))))
         }
         session.finishTasksAndInvalidate()
     }
@@ -381,21 +381,21 @@ enum UpdateUI {
         let a = NSAlert()
         switch outcome {
         case .newer(let r):
-            a.messageText = "FleetView \(r.version) 已发布"
-            a.informativeText = "当前版本 \(FV.shortVersion)。"
+            a.messageText = L(.updAvailableTitle(r.version))
+            a.informativeText = L(.updCurrentVersion(FV.shortVersion))
                 + (r.notes.isEmpty ? "" : "\n\n" + String(r.notes.prefix(600)))
             // The install button leads the alert only when it can actually work; otherwise the
             // release page is the honest offer, with the reason spelled out underneath.
             if let blocked = SelfUpdate.precheck(r) {
-                a.informativeText += "\n\n（无法自动安装：\(blocked.localizedDescription)）"
-                a.addButton(withTitle: "查看发布页")
-                a.addButton(withTitle: "以后再说")
+                a.informativeText += L(.updCannotInstall(blocked.localizedDescription))
+                a.addButton(withTitle: L(.updViewRelease))
+                a.addButton(withTitle: L(.updLater))
                 if a.runModal() == .alertFirstButtonReturn { updates.openReleasePage() }
             } else {
-                a.addButton(withTitle: "下载并安装")
-                a.addButton(withTitle: "查看发布页")
-                a.addButton(withTitle: "以后再说")
-                a.informativeText += "\n\n安装完成后 FleetView 会自动重启；终端跑在 tmux 里，不受影响。"
+                a.addButton(withTitle: L(.updInstall))
+                a.addButton(withTitle: L(.updViewRelease))
+                a.addButton(withTitle: L(.updLater))
+                a.informativeText += L(.updRestartNote)
                 switch a.runModal() {
                 case .alertFirstButtonReturn:  SelfUpdate.install(r, updates: updates)
                 case .alertSecondButtonReturn: updates.openReleasePage()
@@ -404,10 +404,10 @@ enum UpdateUI {
             }
             return
         case .current(let v):
-            a.messageText = "已是最新版本"
-            a.informativeText = "FleetView \(v)。"
+            a.messageText = L(.updUpToDate)
+            a.informativeText = L(.updVersionLine(v))
         case .failed(let why):
-            a.messageText = "检查更新失败"
+            a.messageText = L(.updCheckFailed)
             a.informativeText = why
         }
         a.runModal()

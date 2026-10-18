@@ -50,7 +50,7 @@ final class UpdateCheck: ObservableObject {
     /// call the throttle turns away.
     func check(force: Bool = false, then: ((Outcome) -> Void)? = nil) {
         guard AuditConfig.current.updates else {
-            then?(.failed("更新检查已关闭：~/.fleetview/logging.json 里 \"updates\": false"))
+            then?(.failed(L(.updChecksOff)))
             return
         }
         let last = UserDefaults.standard.double(forKey: lastCheckKey)
@@ -69,7 +69,7 @@ final class UpdateCheck: ObservableObject {
                   let tag = obj["tag_name"] as? String else {
                 // GitHub answers a repo with no releases at all with a 404 body, which lands here
                 // too — worth saying out loud when someone asked, silent when nobody did.
-                let why = error?.localizedDescription ?? "GitHub 没有返回可用的版本信息"
+                let why = error?.localizedDescription ?? L(.updNoRelease)
                 Task { @MainActor in then?(.failed(why)) }
                 return
             }

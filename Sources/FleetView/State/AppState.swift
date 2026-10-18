@@ -218,7 +218,7 @@ final class AppState: ObservableObject {
     func openSessionTree(_ id: UUID) {
         treePanelTerminalId = id
         guard let path = transcriptPath(for: id) else {
-            treeModel.showEmpty("此终端还没有 agent 会话\n发一条消息后再打开")
+            treeModel.showEmpty(L(.treeNoAgent))
             return
         }
         if AgentHome.isCodex(path) {
@@ -228,7 +228,7 @@ final class AppState: ObservableObject {
             let cwd = CodexSession.rolloutCwd(path)
                 ?? terminals.first { $0.id == id }?.cwd ?? ""
             guard !cwd.isEmpty else {
-                treeModel.showEmpty("读不出这个 Codex 会话的工作目录")
+                treeModel.showEmpty(L(.treeNoCodexCwd))
                 return
             }
             treeModel.open(source: .codex(cwd: cwd),
@@ -387,7 +387,7 @@ final class AppState: ObservableObject {
                         FV.log("tree fork FAILED (codex): \(error.localizedDescription)")
                         guard !Headless.active else { return }   // nobody to show a dialog to
                         let a = NSAlert()
-                        a.messageText = "打不开这个 Codex 节点"
+                        a.messageText = L(.treeCodexOpenFailed)
                         a.informativeText = error.localizedDescription
                         a.runModal()
                     }
@@ -883,7 +883,7 @@ final class AppState: ObservableObject {
     /// the sheet that used to show them is no longer on screen by the time git gets round to them.
     func cloneRepository(_ repo: String, into parentDir: String) {
         let jobs = BackgroundJobs.shared
-        let id = jobs.start(.clone, title: "克隆 \(Git.repoName(from: repo))", detail: "准备中…")
+        let id = jobs.start(.clone, title: L(.jobCloneTitle(Git.repoName(from: repo))), detail: L(.jobPreparing))
         let task = Task { [weak self] in
             do {
                 let dest = try await Git.clone(repo: repo, into: parentDir) { fraction, line in
@@ -895,7 +895,7 @@ final class AppState: ObservableObject {
                 // The row went the moment ✕ was pressed, and Git.clone has already swept up the
                 // half-written directory. Nothing left to say.
             } catch {
-                jobs.fail(id, error.localizedDescription, recoverLabel: "重试") {
+                jobs.fail(id, error.localizedDescription, recoverLabel: L(.jobRetry)) {
                     BackgroundJobs.shared.dismiss(id)
                     self?.cloneRepository(repo, into: parentDir)
                 }
@@ -1703,19 +1703,19 @@ final class AppState: ObservableObject {
         guard let proj = project(projectId) else { return }
         nameSheet = NameSheetRequest(kind: .newTerminal(projectId),
                                      initialName: defaultTerminalName(for: proj),
-                                     title: "新终端", confirmLabel: "打开")
+                                     title: L(.sheetNewTerminal), confirmLabel: L(.sheetOpen))
     }
 
     func requestRename(_ termId: UUID) {
         guard let t = terminals.first(where: { $0.id == termId }) else { return }
         nameSheet = NameSheetRequest(kind: .rename(termId), initialName: t.name,
-                                     title: "重命名终端", confirmLabel: "重命名")
+                                     title: L(.sheetRenameTerminal), confirmLabel: L(.sheetRename))
     }
 
     func requestRenameCluster(_ clusterId: UUID) {
         guard let c = cluster(clusterId) else { return }
         nameSheet = NameSheetRequest(kind: .renameCluster(clusterId), initialName: c.name,
-                                     title: "重命名组", confirmLabel: "重命名")
+                                     title: L(.sheetRenameCluster), confirmLabel: L(.sheetRename))
     }
 
     func confirmName(_ name: String) {
@@ -2287,11 +2287,11 @@ final class AppState: ObservableObject {
         guard web.port > 0 else { return [] }
         var out: [WebAddress] = []
         if let ip = Tooling.tailscaleIP() {
-            out.append(WebAddress(label: "Tailscale", reach: "任何登入同一 tailnet 的设备，出门也能开",
+            out.append(WebAddress(label: "Tailscale", reach: L(.webReachTailscale),
                                   url: "http://\(ip):\(web.port)/"))
         }
         if let ip = Tooling.lanIP() {
-            out.append(WebAddress(label: "局域网", reach: "同一个 Wi-Fi，手机上不需要装任何东西",
+            out.append(WebAddress(label: L(.webLabelLAN), reach: L(.webReachLAN),
                                   url: "http://\(ip):\(web.port)/"))
         }
         return out

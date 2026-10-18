@@ -24,8 +24,8 @@ enum SessionForge {
         case writeFailed(String)
         var errorDescription: String? {
             switch self {
-            case .nodeNotFound: return "node not found in project directory"
-            case .writeFailed(let m): return "could not write forked session: \(m)"
+            case .nodeNotFound: return L(.errNodeNotFound)
+            case .writeFailed(let m): return L(.errForkWrite(m))
             }
         }
     }

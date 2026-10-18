@@ -35,8 +35,8 @@ final class BackgroundJobs: ObservableObject {
         /// rather than the Chinese of the popover it opens.
         var verb: String {
             switch self {
-            case .clone:  return "Cloning"
-            case .update: return "Updating"
+            case .clone:  return L(.jobCloning)
+            case .update: return L(.jobUpdating)
             }
         }
     }
@@ -77,11 +77,11 @@ final class BackgroundJobs: ObservableObject {
     /// One short line for the pill.
     var pillLabel: String {
         if jobs.count > 1 {
-            return "\(jobs.count) tasks"
+            return L(.jobNTasks(jobs.count))
         }
         guard let job = jobs.first else { return "" }
-        if job.failure != nil { return "\(job.kind.verb) failed" }
-        if job.done { return "Done" }
+        if job.failure != nil { return L(.jobVerbFailed(job.kind.verb)) }
+        if job.done { return L(.jobDone) }
         if let f = job.fraction { return "\(job.kind.verb) \(Int(f * 100))%" }
         return "\(job.kind.verb)…"
     }
@@ -124,7 +124,7 @@ final class BackgroundJobs: ObservableObject {
     func fail(_ id: UUID, _ why: String, recoverLabel: String? = nil, recover: (() -> Void)? = nil) {
         guard let i = index(id) else { return }
         let text = why.trimmingCharacters(in: .whitespacesAndNewlines)
-        jobs[i].failure = text.isEmpty ? "失败，没有更多信息。" : text
+        jobs[i].failure = text.isEmpty ? L(.jobFailedNoInfo) : text
         jobs[i].cancel = nil
         jobs[i].recoverLabel = recoverLabel
         jobs[i].recover = recover

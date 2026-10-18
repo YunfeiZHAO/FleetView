@@ -78,7 +78,7 @@ struct SearchPanel: View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(Theme.onSurfaceVariant).font(.system(size: 18))
-            TextField(model.mode == .fleet ? "搜索终端、项目和组…" : "搜索对话…", text: $model.query)
+            TextField(model.mode == .fleet ? L(.searchFleetPlaceholder) : L(.searchConvPlaceholder), text: $model.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .foregroundColor(Theme.onSurface)
@@ -92,7 +92,7 @@ struct SearchPanel: View {
             if !model.query.isEmpty {
                 Button { model.query = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(Theme.onSurfaceVariant)
-                }.buttonStyle(.plain).help("清除")
+                }.buttonStyle(.plain).help(L(.clear))
             }
             Text("Esc").font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -116,9 +116,9 @@ struct SearchPanel: View {
             }
             if model.mode != .fleet {
                 Divider().frame(height: 20).overlay(Theme.outlineVariant).padding(.horizontal, 4)
-                chip("我的提问", on: model.scope == .prompts) { model.scope = .prompts }
-                chip("回复", on: model.scope == .replies) { model.scope = .replies }
-                chip("全部", on: model.scope == .both) { model.scope = .both }
+                chip(L(.searchMine), on: model.scope == .prompts) { model.scope = .prompts }
+                chip(L(.searchReplies), on: model.scope == .replies) { model.scope = .replies }
+                chip(L(.searchAll), on: model.scope == .both) { model.scope = .both }
                 chip("Claude", on: model.source == .claude) {
                     model.source = model.source == .claude ? nil : .claude
                 }
@@ -129,7 +129,7 @@ struct SearchPanel: View {
             Spacer()
             if model.truncated {
                 Image(systemName: "ellipsis.circle").font(.system(size: 13)).foregroundColor(Theme.warn)
-                    .help("结果被截断，只显示了前 \(model.total) 条")
+                    .help(L(.searchTruncated(model.total)))
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 12)
@@ -168,8 +168,8 @@ struct SearchPanel: View {
                     tint: Theme.onSurfaceVariant)
         } else if model.projectGroups.isEmpty {
             message(model.mode == .archive
-                        ? (model.indexing ? model.indexNote : "还没有已移除的终端")
-                        : (model.indexing ? model.indexNote : "没有找到"),
+                        ? (model.indexing ? model.indexNote : L(.searchNoArchived))
+                        : (model.indexing ? model.indexNote : L(.searchNothing)),
                     icon: model.mode == .archive ? "archivebox" : "questionmark.circle",
                     tint: Theme.onSurfaceVariant)
         } else {
@@ -201,7 +201,7 @@ struct SearchPanel: View {
     }
 
     private var statsLine: String {
-        model.stats.messages > 0 ? "索引里有 \(model.stats.files) 个对话、\(model.stats.messages) 条消息" : ""
+        model.stats.messages > 0 ? L(.searchStats(model.stats.files, model.stats.messages)) : ""
     }
 
     @ViewBuilder private func row(_ item: Item) -> some View {
@@ -255,7 +255,7 @@ struct SearchPanel: View {
                 .frame(width: 24, height: 24)
                 .background(on ? Theme.surfaceContainerHigh : Theme.surfaceContainerHighest)
                 .clipShape(Circle())
-                .help(isPrompt ? "你的提问" : "agent 的回复")
+                .help(isPrompt ? L(.searchYourPrompt) : L(.searchAgentReply))
             VStack(alignment: .leading, spacing: 4) {
                 Text(highlighted(snippet(hit.body), base: on ? Theme.onSecondaryContainer : Theme.onSurface))
                     .font(.fvBody).lineLimit(2)
@@ -305,7 +305,7 @@ struct SearchPanel: View {
                 Text(shortDate(hit.ts)).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
                 if let p = model.preview, p.id == hit.id {
-                    Text("\(p.context.count) 条").font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
+                    Text(L(.searchNMessages(p.context.count))).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 }
             }
             .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 10)
@@ -336,7 +336,7 @@ struct SearchPanel: View {
                 if let failure = model.failure {
                     Text(failure).font(.fvLabelSmall).foregroundColor(Theme.warn).lineLimit(1)
                 }
-                primaryButton(model.opening == hit.id ? "正在打开…" : "在新终端打开",
+                primaryButton(model.opening == hit.id ? L(.searchOpening) : L(.searchOpenNew),
                               icon: "arrow.up.right.square", busy: model.opening == hit.id) {
                     model.open(hit, in: state)
                 }
@@ -382,7 +382,7 @@ struct SearchPanel: View {
             HStack {
                 hint(draggable: false)
                 Spacer()
-                primaryButton(f.kind == .terminal ? "跳到这个终端" : "切到这个项目",
+                primaryButton(f.kind == .terminal ? L(.searchJumpTerminal) : L(.searchSwitchProject),
                               icon: "arrow.right", busy: false) { openFleet(f) }
             }
         }
@@ -395,10 +395,10 @@ struct SearchPanel: View {
         HStack(spacing: 6) {
             Text("↑↓").font(.fvLabelSmall).padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: 6))
-            Text("选择").font(.fvLabelSmall)
+            Text(L(.searchSelect)).font(.fvLabelSmall)
             if draggable {
                 Image(systemName: "hand.draw").font(.system(size: 12)).padding(.leading, 8)
-                Text("也可以拖到看板上").font(.fvLabelSmall)
+                Text(L(.searchDragHint)).font(.fvLabelSmall)
             }
         }
         .foregroundColor(Theme.onSurfaceVariant)
@@ -460,7 +460,7 @@ struct SearchPanel: View {
     // MARK: - Helpers
 
     private func projectName(_ path: String) -> String {
-        path == "—" ? "未知项目" : (path as NSString).lastPathComponent
+        path == "—" ? L(.unknownProject) : (path as NSString).lastPathComponent
     }
 
     /// One line, collapsed and windowed onto the first match — a matched prompt is often a wall of

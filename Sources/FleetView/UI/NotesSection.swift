@@ -42,8 +42,8 @@ struct NotesSection: View {
             header
             if !state.notesCollapsed {
                 if shown.isEmpty && shownPeer.isEmpty && query.isEmpty {
-                    Text(viewingPeer == nil ? "单击复制 · 双击编辑"
-                                            : "\(viewingPeer!.label) 没有笔记")
+                    Text(viewingPeer == nil ? L(.notesHint)
+                                            : L(.notesPeerEmpty(viewingPeer!.label)))
                         .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                         .padding(.horizontal, 16).padding(.vertical, 6)
                 } else {
@@ -51,7 +51,7 @@ struct NotesSection: View {
                     // long, and a list is long whether the length came from here or from a peer.
                     if state.notes.count + state.peerNotes.count > 5 { filterField }
                     if shown.isEmpty && shownPeer.isEmpty {
-                        Text("没有包含“\(filter)”的笔记")
+                        Text(L(.notesNoMatch(filter)))
                             .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                             .padding(.horizontal, 16).padding(.vertical, 8)
                     } else {
@@ -77,7 +77,7 @@ struct NotesSection: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 13))
                 .foregroundColor(Theme.onSurfaceVariant)
-            TextField("筛选", text: $filter)
+            TextField(L(.notesFilter), text: $filter)
                 .textFieldStyle(.plain).font(.fvBodySmall).foregroundColor(Theme.onSurface)
                 .focused($filterFocused)
                 .onExitCommand { filter = "" }
@@ -86,7 +86,7 @@ struct NotesSection: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 13))
                         .foregroundColor(Theme.onSurfaceVariant)
                 }
-                .buttonStyle(.plain).help("清除")
+                .buttonStyle(.plain).help(L(.clear))
             }
         }
         .padding(.horizontal, 14)
@@ -106,11 +106,11 @@ struct NotesSection: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.onSurfaceVariant)
                     .rotationEffect(.degrees(state.notesCollapsed ? 0 : 90))
-                Text("笔记").font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
+                Text(L(.notesTitle)).font(.fvLabel).foregroundColor(Theme.onSurfaceVariant)
                 if let p = viewingPeer {
                     // Named in the header, not only on the rows: this list is somebody else's while
                     // a peer is selected, and every edit made in it lands on their machine.
-                    Text("来自 \(p.label)")
+                    Text(L(.notesFrom(p.label)))
                         .font(.fvLabelSmall).foregroundColor(Theme.primary)
                         .lineLimit(1)
                 }
@@ -131,7 +131,7 @@ struct NotesSection: View {
         HStack(spacing: 7) {
             Image(systemName: "plus").font(.system(size: 13, weight: .medium))
                 .foregroundColor(Theme.primary)
-            TextField(viewingPeer == nil ? "添加笔记…" : "在 \(viewingPeer!.label) 上添加笔记…",
+            TextField(viewingPeer == nil ? L(.notesAdd) : L(.notesAddOn(viewingPeer!.label)),
                       text: $newNote)
                 .textFieldStyle(.plain).font(.fvBodySmall).foregroundColor(Theme.onSurface)
                 .focused($addFocused)
@@ -178,7 +178,7 @@ struct PeerNoteRow: View {
     /// No per-row origin tag: the whole section belongs to one machine while a peer is selected and
     /// the header says which, so repeating it on every row was the same sentence N times.
     private var row: some View {
-        Text(note.text.isEmpty ? "空笔记" : note.text)
+        Text(note.text.isEmpty ? L(.notesEmpty) : note.text)
             .font(.fvMonoBody)
             .foregroundColor(note.text.isEmpty ? Theme.onSurfaceVariant : Theme.onSurface)
             .lineLimit(3)
@@ -192,16 +192,16 @@ struct PeerNoteRow: View {
         .onTapGesture(count: 2) { beginEdit() }
         .onTapGesture { copy() }
         .contextMenu {
-            Button("复制") { copy() }
-            Button("在 \(note.from) 上编辑") { beginEdit() }
+            Button(L(.copy)) { copy() }
+            Button(L(.notesEditOn(note.from))) { beginEdit() }
             Divider()
-            Button("在 \(note.from) 上删除", role: .destructive) { state.removePeerNote(note) }
+            Button(L(.notesDeleteOn(note.from)), role: .destructive) { state.removePeerNote(note) }
         }
-        .help("来自 \(note.from) · 单击复制 · 双击在那台机器上编辑")
+        .help(L(.notesPeerHelp(note.from)))
     }
 
     private var copiedChip: some View {
-        Text("已复制").font(.fvLabelSmall).foregroundColor(Theme.onPrimary)
+        Text(L(.copied)).font(.fvLabelSmall).foregroundColor(Theme.onPrimary)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(Theme.primary).clipShape(Capsule())
             .padding(6)
@@ -210,7 +210,7 @@ struct PeerNoteRow: View {
 
     private var editor: some View {
         HStack(spacing: 7) {
-            TextField("\(note.from) 上的笔记", text: $draft)
+            TextField(L(.notesPeerField(note.from)), text: $draft)
                 .textFieldStyle(.plain).font(.fvMonoBody).foregroundColor(Theme.onSurface)
                 .focused($focused)
                 .onSubmit(commit)
@@ -218,10 +218,10 @@ struct PeerNoteRow: View {
             Button(action: commit) {
                 Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
                     .foregroundColor(Theme.green)
-            }.buttonStyle(.plain).help("保存到 \(note.from)")
+            }.buttonStyle(.plain).help(L(.notesSaveOn(note.from)))
             Button { editing = false } label: {
                 Image(systemName: "xmark").font(.system(size: 12)).foregroundColor(Theme.subtext)
-            }.buttonStyle(.plain).help("取消")
+            }.buttonStyle(.plain).help(L(.cancel))
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(Theme.surfaceContainerHigh).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
@@ -267,7 +267,7 @@ struct NoteRow: View {
     // MARK: - Display
 
     private var row: some View {
-        Text(note.text.isEmpty ? "空笔记" : note.text)
+        Text(note.text.isEmpty ? L(.notesEmpty) : note.text)
             .font(.fvMonoBody)
             .foregroundColor(note.text.isEmpty ? Theme.onSurfaceVariant : Theme.onSurface)
             .lineLimit(3)
@@ -281,18 +281,18 @@ struct NoteRow: View {
             .onTapGesture(count: 2) { beginEdit() }   // double-click → edit
             .onTapGesture { copy() }                  // single-click → copy
             .contextMenu {
-                Button("复制") { copy() }
-                Button("编辑") { beginEdit() }
+                Button(L(.copy)) { copy() }
+                Button(L(.edit)) { beginEdit() }
                 Divider()
-                Button("删除", role: .destructive) { withAnimation { state.removeNote(note.id) } }
+                Button(L(.delete), role: .destructive) { withAnimation { state.removeNote(note.id) } }
             }
-            .help("单击复制 · 双击编辑")
+            .help(L(.notesHint))
     }
 
     private var copiedChip: some View {
         HStack(spacing: 4) {
             Image(systemName: "checkmark")
-            Text("已复制")
+            Text(L(.copied))
         }
         .font(.fvLabelSmall).foregroundColor(Theme.onPrimary)
         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -305,17 +305,17 @@ struct NoteRow: View {
 
     private var editor: some View {
         HStack(spacing: 7) {
-            TextField("笔记", text: $draft)
+            TextField(L(.notesField), text: $draft)
                 .textFieldStyle(.plain).font(.fvMonoBody).foregroundColor(Theme.onSurface)
                 .focused($focused)
                 .onSubmit(commit)
                 .onExitCommand(perform: cancel)
             Button(action: commit) {
                 Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(Theme.green)
-            }.buttonStyle(.plain).help("保存")
+            }.buttonStyle(.plain).help(L(.save))
             Button(action: cancel) {
                 Image(systemName: "xmark").font(.system(size: 12)).foregroundColor(Theme.subtext)
-            }.buttonStyle(.plain).help("取消")
+            }.buttonStyle(.plain).help(L(.cancel))
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(Theme.surfaceContainerHigh).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))

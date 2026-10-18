@@ -118,11 +118,11 @@ struct TerminalCardView: View {
             if done {
                 Image(systemName: "bookmark.fill").font(.system(size: 12))
                     .foregroundColor(container?.fg ?? Theme.tertiary)
-                    .help("已加书签")
+                    .help(L(.cardMarked))
             }
             if terminal.windowHidden == true {        // window hidden, agent running: a click opens it
                 Image(systemName: "eye.slash").font(.system(size: 12)).foregroundColor(fgSecondary)
-                    .help("窗口已隐藏，agent 在后台继续运行")
+                    .help(L(.cardHidden))
             }
             timeLabel
         }
@@ -140,7 +140,7 @@ struct TerminalCardView: View {
                 Text(RelativeTime.clock(since: since, now: ctx.date))
                     .font(.fvLabel).monospacedDigit().lineLimit(1)
                     .foregroundColor(container?.fg ?? Theme.primary)
-                    .help("已运行 \(RelativeTime.clock(since: since, now: ctx.date))")
+                    .help(L(.cardRunningFor(RelativeTime.clock(since: since, now: ctx.date))))
             }
             .fixedSize()
         } else if let last = terminal.lastActivity {
@@ -155,8 +155,8 @@ struct TerminalCardView: View {
     }
 
     private var lastRunHelp: String {
-        guard let secs = terminal.lastRunSeconds else { return "最后一次活动" }
-        return "上一轮用了 \(RelativeTime.clock(seconds: secs))"
+        guard let secs = terminal.lastRunSeconds else { return L(.cardLastActivity) }
+        return L(.cardLastRun(RelativeTime.clock(seconds: secs)))
     }
 
     // Collapse whitespace and hard-cap length so a very long prompt can't overflow the card.
@@ -197,7 +197,7 @@ struct TerminalCardView: View {
                 Text(TokenUsage.short(terminal.newTokens))
                     .font(.fvLabelSmall).monospacedDigit()
                     .foregroundColor(fgSecondary)
-                    .help("\(terminal.newTokens) tokens（输入 + 输出，不含缓存读取）")
+                    .help(L(.tokensHelp(terminal.newTokens)))
             }
             Spacer(minLength: 4)
             controls
@@ -209,7 +209,7 @@ struct TerminalCardView: View {
 
     private var controls: some View {
         HStack(spacing: 4) {
-            roundButton("iphone", help: "在手机上打开这个终端的聊天") {
+            roundButton("iphone", help: L(.cardOpenOnPhone)) {
                 state.dialog = .webLink(terminalId: terminal.id)
             }
             Menu { menuItems(inMenu: true) } label: {
@@ -219,7 +219,7 @@ struct TerminalCardView: View {
                     .background(roundFill).clipShape(Circle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("更多")
+            .help(L(.more))
         }
     }
 
@@ -231,33 +231,33 @@ struct TerminalCardView: View {
     @ViewBuilder private func menuItems(inMenu: Bool) -> some View {
         if inMenu {
             if terminal.status.isOpen {
-                Button("置于最前") { state.raiseTerminal(terminal.id) }
+                Button(L(.cardRaise)) { state.raiseTerminal(terminal.id) }
             } else {
-                Button("重新打开") { state.reopenTerminal(terminal.id) }
+                Button(L(.cardReopen)) { state.reopenTerminal(terminal.id) }
             }
-            Button("复制对话文件路径") { copyTranscriptPath() }
+            Button(L(.cardCopyPath)) { copyTranscriptPath() }
             Divider()
         }
-        Button("重命名…") {
+        Button(L(.cardRename)) {
             if inMenu { state.requestRename(terminal.id) } else { renaming = true }
         }
-        Button(state.treePanelTerminalId == terminal.id ? "关闭对话树" : "打开对话树") {
+        Button(state.treePanelTerminalId == terminal.id ? L(.cardCloseTree) : L(.cardOpenTree)) {
             if state.treePanelTerminalId == terminal.id { state.closeSessionTree() }
             else { state.openSessionTree(terminal.id) }
         }
-        Button("复制（分叉会话）") { state.duplicateTerminal(terminal.id) }
-        Button("复制为空白终端") { state.duplicateTerminal(terminal.id, blank: true) }
-        Button(done ? "取消书签" : "加书签") { state.toggleSubtaskDone(terminal.id) }
+        Button(L(.cardDuplicateFork)) { state.duplicateTerminal(terminal.id) }
+        Button(L(.cardDuplicateBlank)) { state.duplicateTerminal(terminal.id, blank: true) }
+        Button(done ? L(.cardUnmark) : L(.cardMark)) { state.toggleSubtaskDone(terminal.id) }
         if terminal.windowHidden == true {
-            Button("显示窗口") { state.showTerminal(terminal.id) }
+            Button(L(.cardShowWindow)) { state.showTerminal(terminal.id) }
         } else if state.windowState(terminal.id) == .open {
-            Button("隐藏窗口（继续运行）") { state.hideTerminal(terminal.id) }
+            Button(L(.cardHideWindow)) { state.hideTerminal(terminal.id) }
         }
         if terminal.clusterId != nil {
-            Button("移出组") { state.removeFromCluster(terminal.id) }
+            Button(L(.cardLeaveCluster)) { state.removeFromCluster(terminal.id) }
         }
         Divider()
-        Button("移除终端", role: .destructive) { state.removeTerminal(terminal.id) }
+        Button(L(.cardRemove), role: .destructive) { state.removeTerminal(terminal.id) }
     }
 
     private func copyToClipboard(_ s: String) {
@@ -290,9 +290,9 @@ struct TerminalCardView: View {
         let short = String(terminal.id.uuidString.prefix(4)).lowercased() + "…"
         let flash: String? = idFlash.map {
             switch $0 {
-            case "id":   return "已复制"
-            case "path": return "已复制路径"
-            default:     return "没有记录"
+            case "id":   return L(.idCopied)
+            case "path": return L(.idPathCopied)
+            default:     return L(.idNoLog)
             }
         }
         return Text(flash ?? short)
@@ -309,7 +309,7 @@ struct TerminalCardView: View {
                     })
             )
             .fixedSize()
-            .help("单击复制终端 ID（\(String(terminal.id.uuidString.prefix(8)).lowercased())…），双击复制对话文件路径")
+            .help(L(.idHelp(String(terminal.id.uuidString.prefix(8)).lowercased())))
     }
 
     private func flashId(_ text: String) {

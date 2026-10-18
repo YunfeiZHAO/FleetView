@@ -186,7 +186,7 @@ final class SessionTreeModel: ObservableObject {
                 guard let self, self.generation == gen else { return }
                 self.loading = false
                 if built.nodeCount == 0 {
-                    self.showEmpty("这个会话还没有可显示的对话节点")
+                    self.showEmpty(L(.treeEmpty))
                     return
                 }
                 self.tree = built

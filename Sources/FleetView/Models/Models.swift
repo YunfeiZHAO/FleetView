@@ -11,12 +11,12 @@ enum TermStatus: String, Codable {
     /// What the window calls it — one word per state, and the same word everywhere it appears.
     var label: String {
         switch self {
-        case .closed:   return "已关闭"
-        case .shell:    return "Shell"
-        case .idle:     return "空闲"
-        case .working:  return "运行中"
-        case .needsYou: return "等你处理"
-        case .exited:   return "已退出"
+        case .closed:   return L(.statusClosed)
+        case .shell:    return L(.statusShell)
+        case .idle:     return L(.statusIdle)
+        case .working:  return L(.statusWorking)
+        case .needsYou: return L(.statusNeedsYou)
+        case .exited:   return L(.statusExited)
         }
     }
 

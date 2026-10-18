@@ -25,7 +25,7 @@ enum RelativeTime {
     /// when nothing is running — the unit letter is enough once you have seen it.
     static func compact(_ date: Date, now: Date = Date()) -> String {
         let s = Int(now.timeIntervalSince(date))
-        if s < 60 { return "刚刚" }
+        if s < 60 { return L(.justNow) }
         let m = s / 60
         if m < 60 { return "\(m)m" }
         let h = m / 60

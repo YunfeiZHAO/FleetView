@@ -13,7 +13,7 @@ struct NameSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(request.title).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
 
-            TextField("名称", text: $name)
+            TextField(L(.nameField), text: $name)
                 .textFieldStyle(.plain).font(.fvBody)
                 .padding(.horizontal, 14).frame(height: 40)
                 .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
@@ -23,7 +23,7 @@ struct NameSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { state.nameSheet = nil; dismiss() }
+                Button(L(.cancel)) { state.nameSheet = nil; dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(request.confirmLabel, action: confirm)
                     .buttonStyle(.borderedProminent)

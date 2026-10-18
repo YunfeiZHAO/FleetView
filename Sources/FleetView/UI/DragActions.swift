@@ -64,12 +64,12 @@ struct ActionZoneView: View {
 
     private var title: String {
         switch zone {
-        case .done:         return done ? "取消书签" : "加书签"
-        case .duplicate:    return "复制"
-        case .rename:       return "重命名"
-        case .tree:         return "对话树"
-        case .leaveCluster: return "移出组"
-        case .remove:       return "移除"
+        case .done:         return done ? L(.dockUnmark) : L(.dockMark)
+        case .duplicate:    return L(.dockDuplicate)
+        case .rename:       return L(.dockRename)
+        case .tree:         return L(.dockTree)
+        case .leaveCluster: return L(.dockLeaveCluster)
+        case .remove:       return L(.dockRemove)
         }
     }
 

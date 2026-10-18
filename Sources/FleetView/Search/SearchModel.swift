@@ -21,10 +21,10 @@ final class SearchModel: ObservableObject {
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .fleet:   return "终端"
-            case .session: return "当前会话"
-            case .history: return "全部历史"
-            case .archive: return "已移除"
+            case .fleet:   return L(.modeFleet)
+            case .session: return L(.modeSession)
+            case .history: return L(.modeHistory)
+            case .archive: return L(.modeArchive)
             }
         }
         var icon: String {
@@ -113,11 +113,11 @@ final class SearchModel: ObservableObject {
     func refreshIndex() {
         guard !indexing else { return }
         indexing = true
-        indexNote = stats.messages == 0 ? "建立索引…" : "更新索引…"
+        indexNote = stats.messages == 0 ? L(.indexBuilding) : L(.indexUpdating)
         SearchIndex.refresh(progress: { [weak self] p in
             Task { @MainActor in
                 guard let self else { return }
-                self.indexNote = "索引 \(p.files)/\(p.total) · \(p.messages) 条"
+                self.indexNote = L(.indexProgress(p.files, p.total, p.messages))
             }
         }, done: { [weak self] in
             Task { @MainActor in
@@ -159,7 +159,7 @@ final class SearchModel: ObservableObject {
         let paths = mode == .session ? openTranscripts() : []
         if mode == .session, paths.isEmpty {
             groups = []; projectGroups = []; total = 0; truncated = false
-            failure = "没有打开的会话"
+            failure = L(.searchNoSession)
             return
         }
         failure = nil
@@ -370,7 +370,7 @@ final class SearchModel: ObservableObject {
             } else {
                 order.append(key)
                 acc[key] = ProjectGroup(id: key,
-                                        name: key == "—" ? "未知项目" : (key as NSString).lastPathComponent,
+                                        name: key == "—" ? L(.unknownProject) : (key as NSString).lastPathComponent,
                                         sessions: [s], fleet: [], count: s.hits.count)
             }
         }

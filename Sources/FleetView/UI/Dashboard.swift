@@ -125,17 +125,17 @@ struct DashboardView: View {
     private var dropHint: String? {
         switch state.clusterDrop {
         case .cluster(let id):
-            return "松开：加入「\(state.cluster(id)?.name ?? "组")」"
+            return L(.dropJoinCluster(state.cluster(id)?.name ?? L(.groupFallback)))
         case .card(let id):
             guard let t = state.terminals.first(where: { $0.id == id }) else { return nil }
-            return "松开：和「\(t.name)」组成一组"
+            return L(.dropGroupWith(t.name))
         case .leaveCluster:
             let name = state.terminals.first { $0.id == state.draggingTerminalId }?
                 .clusterId.flatMap { state.cluster($0)?.name }
-            return "松开：移出「\(name ?? "组")」"
+            return L(.dropLeaveCluster(name ?? L(.groupFallback)))
         case .project(let id):
-            let name = state.projects.first { $0.id == id }?.name ?? "项目"
-            return "松开：移到「\(name)」"
+            let name = state.projects.first { $0.id == id }?.name ?? L(.projectFallback)
+            return L(.dropMoveTo(name))
         case nil:
             return nil
         }
@@ -153,14 +153,14 @@ struct DashboardView: View {
         else { return nil }
         // An agent mid-turn is the one thing worth saying ahead of everything else: the move kills
         // the session to reopen it, and the turn in flight does not survive that.
-        if t.status == .working { return "agent 正在跑，会被打断后带着记录重开" }
+        if t.status == .working { return L(.dropNoteWorking) }
         if t.agentKind == .codex {
             // Codex files rollouts by date, so there is no path to move — saying "the history moves
             // too" would be describing something that never happens.
-            return "Codex 记录按日期存放，不用搬；会在新项目里重新打开"
+            return L(.dropNoteCodex)
         }
-        guard t.transcriptPath != nil else { return "还没有对话记录，只是换个项目" }
-        return "对话记录一起搬过去，然后重新打开这段对话"
+        guard t.transcriptPath != nil else { return L(.dropNoteNoHistory) }
+        return L(.dropNoteMove)
     }
 
     /// One outline around something on the board, in "fleet" coordinates.
@@ -255,8 +255,8 @@ struct DashboardView: View {
         // New Folder button does it without FleetView inventing a second dialog for naming and
         // placing a directory — it is the same control every other Mac app offers here.
         panel.canCreateDirectories = true
-        panel.prompt = "打开项目"
-        panel.message = "选一个文件夹作为项目，或者新建一个。"
+        panel.prompt = L(.pickOpenProject)
+        panel.message = L(.pickOpenMessage)
         if panel.runModal() == .OK { for url in panel.urls { state.addProject(path: url.path) } }
     }
 
@@ -266,10 +266,10 @@ struct DashboardView: View {
     static func newFolder(into state: AppState) {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.nameFieldLabel = "文件夹名称："
+        panel.nameFieldLabel = L(.pickFolderName)
         panel.nameFieldStringValue = "new-project"
-        panel.prompt = "创建"
-        panel.message = "给新项目文件夹起个名字。"
+        panel.prompt = L(.pickCreate)
+        panel.message = L(.pickCreateMessage)
         // Where this user's projects actually live; the panel falls back to its own last location
         // when that folder is absent.
         let projectsHome = FV.home.appendingPathComponent("PycharmProjects")
@@ -302,10 +302,10 @@ enum BoardActions {
     static func confirmCloseAll(_ state: AppState, reason: String) {
         let open = state.openTerminalCount
         let a = NSAlert()
-        a.messageText = open > 0 ? "关闭 \(open) 个终端？" : "关闭所有终端？"
-        a.informativeText = "正在运行的 agent 会被停止。终端卡片会留在看板上——点击卡片可以重新打开并继续原来的会话。"
-        a.addButton(withTitle: "关闭全部")
-        a.addButton(withTitle: "取消")
+        a.messageText = open > 0 ? L(.alertCloseN(open)) : L(.alertCloseAll)
+        a.informativeText = L(.alertCloseBody)
+        a.addButton(withTitle: L(.alertCloseButton))
+        a.addButton(withTitle: L(.cancel))
         a.buttons.first?.hasDestructiveAction = true
         guard a.runModal() == .alertFirstButtonReturn else { return }
         state.closeAllTerminals(reason: reason)
@@ -317,16 +317,12 @@ enum BoardActions {
         let p = state.projects.count, t = state.terminals.count
         guard p > 0 || t > 0 else { return }
         let a = NSAlert()
-        a.messageText = "清空看板？"
+        a.messageText = L(.alertClearTitle)
         // Says what goes and what stays. "This cannot be undone" alone leaves people guessing
         // whether their conversations are about to be deleted — they are not.
-        a.informativeText = """
-        \(p) 个项目和 \(t) 个终端会从 FleetView 移除，正在运行的 agent 会被停止。终端名称、mark 和 cluster 分组会一并丢失，无法撤销。
-
-        对话历史不受影响：它们保存在 Claude / Codex 自己的记录里，⌘K 仍然可以搜索并打开。项目文件夹本身也不会被删除。
-        """
-        a.addButton(withTitle: "清空看板")
-        a.addButton(withTitle: "取消")
+        a.informativeText = L(.alertClearBody(p, t))
+        a.addButton(withTitle: L(.alertClearButton))
+        a.addButton(withTitle: L(.cancel))
         a.buttons.first?.hasDestructiveAction = true
         guard a.runModal() == .alertFirstButtonReturn else { return }
         state.clearBoard(reason: reason)
@@ -352,7 +348,7 @@ struct Sidebar: View {
 
             // Terminals (collapsible) — the selected peer's while one is being viewed, so the
             // sidebar turns to that machine along with the board rather than describing this one.
-            sectionHeader(title: "终端",
+            sectionHeader(title: L(.sidebarTerminals),
                           count: state.peerSelected == nil ? state.tasks.count
                                                            : state.peerTerminals.count,
                           collapsed: state.tasksCollapsed) {
@@ -365,7 +361,7 @@ struct Sidebar: View {
                 } else if state.taskGroups.isEmpty {
                     // "No terminals yet" is a lie when there are plenty and the filter is hiding them.
                     Text(state.showOnlyMarked && !state.terminals.isEmpty
-                         ? "没有加了书签的终端" : "还没有终端")
+                         ? L(.sidebarNoMarked) : L(.sidebarNoTerminals))
                         .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                         .padding(.horizontal, 18).padding(.top, 6)
                     Spacer(minLength: 0)
@@ -384,11 +380,11 @@ struct Sidebar: View {
             // Icons only: three words side by side truncated at the sidebar's default width, and
             // each of these is a once-in-a-while action with its name in the tooltip.
             HStack(spacing: 0) {
-                footerButton("folder", help: "打开文件夹作为项目") { DashboardView.pickFolder(into: state) }
-                footerButton("folder.badge.plus", help: "新建文件夹并作为项目打开") {
+                footerButton("folder", help: L(.sidebarOpenFolder)) { DashboardView.pickFolder(into: state) }
+                footerButton("folder.badge.plus", help: L(.sidebarNewFolder)) {
                     DashboardView.newFolder(into: state)
                 }
-                footerButton("square.and.arrow.down", help: "克隆 GitHub 仓库") { showingClone = true }
+                footerButton("square.and.arrow.down", help: L(.sidebarClone)) { showingClone = true }
             }
             .padding(.vertical, 6)
         }
@@ -422,7 +418,7 @@ struct Sidebar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help("两小时内没动过的项目")
+                        .help(L(.sidebarDormantHelp))
                         if showDormant {
                             ForEach(dormant) { group in groupView(group) }
                         }
@@ -554,7 +550,7 @@ struct TaskRow: View {
                         Text("\(memberCount)").font(.fvLabelSmall).monospacedDigit()
                     }
                     .foregroundColor(Theme.onSurfaceVariant)
-                    .help("\(memberCount) 个终端")
+                    .help(L(.nTerminals(memberCount)))
                 }
                 if done {
                     Image(systemName: "bookmark.fill").font(.system(size: 11)).foregroundColor(Theme.tertiary)
@@ -649,7 +645,7 @@ struct TopBar: View {
         .padding(.horizontal, 14)
         .frame(height: Theme.controlHeight)
         .background(bg).clipShape(Capsule())
-        .help("\(n) 个\(status.label)")
+        .help(L(.statusCount(n, status.label)))
     }
 
     /// The way in to conversation search, drawn as the field it opens.
@@ -657,7 +653,7 @@ struct TopBar: View {
         Button { state.toggleSearch() } label: {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").font(.system(size: 14))
-                Text("搜索").font(.fvBody)
+                Text(L(.topSearch)).font(.fvBody)
                 Spacer(minLength: 8)
                 Text("⌘K").font(.fvLabelSmall)
                     .padding(.horizontal, 8).padding(.vertical, 2)
@@ -671,7 +667,7 @@ struct TopBar: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help("搜索所有 Claude / Codex 对话历史 (⌘K)")
+        .help(L(.topSearchHelp))
     }
 
     /// Background work — a clone, a self-update — with a bar on it and a way out of it. Present
@@ -685,7 +681,7 @@ struct TopBar: View {
     @ViewBuilder private var recentStripButton: some View {
         if state.terminals.contains(where: { $0.status != .working && $0.lastActivity != nil }) {
             barButton("clock.arrow.circlepath", on: state.showRecentStrip,
-                      help: state.showRecentStrip ? "隐藏「最近使用」" : "显示「最近使用」") {
+                      help: state.showRecentStrip ? L(.topHideRecent) : L(.topShowRecent)) {
                 state.showRecentStrip.toggle(); state.save()
             }
         }
@@ -717,16 +713,16 @@ struct TopBar: View {
                 .background(broken ? Theme.errorContainer : Theme.primaryContainer).clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .help("后台任务 — 点击查看进度或取消")
+            .help(L(.topJobsHelp))
             .popover(isPresented: $showJobs, arrowEdge: .bottom) { jobsPopover }
         }
     }
 
     private var jobsPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("后台任务").font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+            Text(L(.topJobsTitle)).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
             ForEach(jobs.jobs) { job in JobRowView(job: job) }
-            Text("这些任务在后台跑，看板、终端和正在工作的 agent 都不受影响。")
+            Text(L(.topJobsBody))
                 .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -752,13 +748,13 @@ struct TopBar: View {
                     .padding(.leading, 14).frame(height: Theme.controlHeight)
                 }
                 .buttonStyle(.plain)
-                .help("FleetView \(r.version) 已发布 — 点击安装")
+                .help(L(.topUpdateHelp(r.version)))
                 Button { state.updates.dismiss() } label: {
                     Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
                         .foregroundColor(Theme.onAccent.opacity(0.7))
                 }
                 .buttonStyle(.plain).padding(.trailing, 12)
-                .help("忽略这个版本")
+                .help(L(.topSkipVersion))
             }
             .background(Theme.accent).clipShape(Capsule())
         }
@@ -773,7 +769,7 @@ struct TopBar: View {
         if marked > 0 || state.showOnlyMarked {
             barButton(state.showOnlyMarked ? "bookmark.fill" : "bookmark", text: "\(marked)",
                       on: state.showOnlyMarked,
-                      help: state.showOnlyMarked ? "显示全部终端" : "只显示加了书签的终端") {
+                      help: state.showOnlyMarked ? L(.topShowAll) : L(.topShowMarked)) {
                 state.showOnlyMarked.toggle(); state.save()
             }
         }
@@ -784,7 +780,7 @@ struct TopBar: View {
     /// "do this on quit too" setting lives, next to the thing it automates.
     private var powerButton: some View {
         let open = state.openTerminalCount
-        return barButton("power", text: open > 0 ? "\(open)" : nil, help: "关闭所有终端 / 退出时关闭") {
+        return barButton("power", text: open > 0 ? "\(open)" : nil, help: L(.topPowerHelp)) {
             state.dialog = .closeAll
         }
     }
@@ -794,13 +790,13 @@ struct TopBar: View {
     private var peersButton: some View {
         let others = state.peerFleet.found.filter { !$0.isSelf }.count
         return barButton("network", text: state.peerFleet.scanned && others > 0 ? "\(others)" : nil,
-                         help: "局域网里的其他 FleetView") {
+                         help: L(.topPeersHelp)) {
             state.togglePeerStrip()
         }
     }
 
     private var webButton: some View {
-        barButton("iphone", help: "在手机上打开看板") { state.dialog = .webLink(terminalId: nil) }
+        barButton("iphone", help: L(.topWebHelp)) { state.dialog = .webLink(terminalId: nil) }
     }
 
 }
@@ -813,16 +809,16 @@ struct MainArea: View {
     var body: some View {
         if state.projects.isEmpty {
             EmptyState(icon: "square.grid.2x2",
-                       title: "打开一个项目开始",
-                       subtitle: "每个项目都可以为你的 agent 开干净的终端窗口。",
-                       button: "打开文件夹") { DashboardView.pickFolder(into: state) }
+                       title: L(.emptyTitle),
+                       subtitle: L(.emptySubtitle),
+                       button: L(.emptyButton)) { DashboardView.pickFolder(into: state) }
         } else if state.showOnlyMarked && state.visibleProjects.isEmpty {
             // The filter is on and nothing is marked. Offering the way out here matters: this screen
             // is otherwise indistinguishable from having lost every terminal.
             EmptyState(icon: "bookmark",
-                       title: "没有加了书签的终端",
-                       subtitle: "看板现在只显示加了书签的终端。给某张卡片加书签，或者显示全部。",
-                       button: "显示全部终端") { state.showOnlyMarked = false; state.save() }
+                       title: L(.emptyMarkedTitle),
+                       subtitle: L(.emptyMarkedSubtitle),
+                       button: L(.topShowAll)) { state.showOnlyMarked = false; state.save() }
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -904,7 +900,7 @@ struct RunningStrip: View {
     var body: some View {
         if !live.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                ZoneHeader(title: "进行中", count: live.count)
+                ZoneHeader(title: L(.zoneLive), count: live.count)
                 LazyVGrid(columns: BoardGrid.columns, alignment: .leading, spacing: BoardGrid.spacing) {
                     ForEach(live) { t in
                         VStack(alignment: .leading, spacing: 6) {
@@ -940,7 +936,7 @@ struct ProjectTag: View {
         // than the thing looks.
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { state.openInFinder(terminal.projectId) }
-        .help("双击在 Finder 中打开 \(name)")
+        .help(L(.tagOpenInFinder(name)))
     }
 }
 
@@ -976,7 +972,7 @@ struct RecentStrip: View {
     var body: some View {
         if state.showRecentStrip && !recent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ZoneHeader(icon: "clock.arrow.circlepath", title: "最近使用", count: recent.count)
+                ZoneHeader(icon: "clock.arrow.circlepath", title: L(.zoneRecent), count: recent.count)
                     .padding(.horizontal, 4)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: BoardGrid.spacing) {
@@ -1008,7 +1004,7 @@ struct DormantZone: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ZoneHeader(title: "两小时内没动过", count: projects.count)
+            ZoneHeader(title: L(.zoneDormant), count: projects.count)
             ForEach(projects) { p in
                 ProjectSection(project: p, dormant: !state.wokenProjects.contains(p.id),
                                woken: state.wokenProjects.contains(p.id)).id(p.id)
@@ -1147,7 +1143,7 @@ struct ProjectSection: View {
             if let s = pickedSkill ?? skills.first {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(s.name).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
-                    Text(s.description.isEmpty ? "SKILL.md 里没有写描述。" : s.description)
+                    Text(s.description.isEmpty ? L(.skillNoDescription) : s.description)
                         .font(.system(size: 11)).foregroundColor(Theme.subtext)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
@@ -1160,7 +1156,7 @@ struct ProjectSection: View {
                             Image(systemName: "doc.on.doc").font(.system(size: 10))
                                 .foregroundColor(Theme.subtext).padding(3)
                         }
-                        .buttonStyle(.plain).help("复制绝对路径")
+                        .buttonStyle(.plain).help(L(.copyAbsolutePath))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1186,7 +1182,7 @@ struct ProjectSection: View {
                     .frame(width: 16, height: 24)
                     .contentShape(Rectangle())
                     .onHover { gripHot = $0 }
-                    .help("拖动调整项目顺序")
+                    .help(L(.projDragHelp))
                     .onDrag {
                         // AppKit calls this on the main thread; the closure is simply not typed for it.
                         MainActor.assumeIsolated { state.draggingProjectId = project.id }
@@ -1208,7 +1204,7 @@ struct ProjectSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(collapsed ? "展开这个项目" : "折叠这个项目")
+                .help(collapsed ? L(.projExpand) : L(.projCollapse))
             }
             // lineLimit(1): a name that wraps changes the header's height, and the figures next to
             // it re-measure every few seconds.
@@ -1216,7 +1212,7 @@ struct ProjectSection: View {
                 .lineLimit(1)
                 .onTapGesture(count: 2) { state.openInFinder(project.id) }
                 .onTapGesture { copyToClipboard(project.name) }
-                .help("\(project.path)\n单击复制名称 · 双击在 Finder 中打开")
+                .help(L(.projNameHelp(project.path)))
             // Folded, the cards can no longer speak for themselves, and a terminal waiting on an
             // answer behind a closed section is the one thing folding could genuinely cost you.
             // The header shows it — as the same shapes the cards use, not as words.
@@ -1227,17 +1223,17 @@ struct ProjectSection: View {
             // Figures pinned to one line at their intrinsic width: squeezed, they took a second line,
             // the header grew, and every card below moved — once every five seconds.
             HStack(spacing: 14) {
-                meta("rectangle.on.rectangle", "\(total)", help: "\(total) 个终端")
+                meta("rectangle.on.rectangle", "\(total)", help: L(.nTerminals(total)))
                 if newTokens > 0 {
                     meta("sum", TokenUsage.short(newTokens),
-                         help: "\(newTokens) tokens（输入 + 输出，不含缓存读取）")
+                         help: L(.tokensHelp(newTokens)))
                     // Anchored on a date this view keeps, never on `.now` — `.now` is re-evaluated
                     // on every body pass, which handed the timeline a new schedule each render.
                     TimelineView(.periodic(from: rateEpoch, by: 5)) { context in
                         let recent = state.projectTokensRecent(project.id, now: context.date)
                         if recent > 0 {
                             meta("chart.line.uptrend.xyaxis", "\(TokenUsage.short(recent))/m",
-                                 tint: Theme.primary, help: "最近一分钟新增的 tokens")
+                                 tint: Theme.primary, help: L(.projRateHelp))
                         }
                     }
                 }
@@ -1246,13 +1242,13 @@ struct ProjectSection: View {
                         Text(RelativeTime.compact(lastActivity, now: ctx.date))
                             .font(.fvLabel).monospacedDigit()
                             .foregroundColor(Theme.onSurfaceVariant)
-                            .help("最后活动")
+                            .help(L(.projLastActivity))
                     }
                 }
             }
             .lineLimit(1).fixedSize()
             if copied {
-                Text("已复制").font(.fvLabelSmall)
+                Text(L(.copied)).font(.fvLabelSmall)
                     .foregroundColor(Theme.onPrimary).padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Theme.primary).clipShape(Capsule()).transition(.opacity)
             }
@@ -1262,7 +1258,7 @@ struct ProjectSection: View {
             HStack(spacing: 2) {
                 if skillCount > 0 {
                     iconButton("wand.and.stars", count: skillCount, on: showSkills,
-                               help: showSkills ? "收起技能" : ".claude/skills 里有 \(skillCount) 个技能") {
+                               help: showSkills ? L(.projHideSkills) : L(.projSkills(skillCount))) {
                         withAnimation(.easeOut(duration: 0.18)) { showSkills.toggle() }
                         if showSkills {
                             skills = ProjectSkills.scan(projectPath: project.path)
@@ -1272,20 +1268,20 @@ struct ProjectSection: View {
                 }
                 if !archived.isEmpty {
                     iconButton("archivebox", count: archived.count,
-                               help: "\(archived.count) 个已移除的终端：在搜索里打开，拖回看板即可恢复") {
+                               help: L(.projArchived(archived.count))) {
                         state.openArchive(projectId: project.id)
                     }
                 }
                 if deltas.count > 1 {
                     iconButton("chart.bar.xaxis", on: showChart,
-                               help: showChart ? "隐藏 token 图表" : "显示 token 图表") {
+                               help: showChart ? L(.projHideChart) : L(.projShowChart)) {
                         withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
                     }
                 }
-                iconButton("folder", help: "在 Finder 中显示") { state.openInFinder(project.id) }
-                iconButton("plus", help: "新终端") { state.requestNewTerminal(projectId: project.id) }
+                iconButton("folder", help: L(.projShowInFinder)) { state.openInFinder(project.id) }
+                iconButton("plus", help: L(.projNewTerminal)) { state.requestNewTerminal(projectId: project.id) }
                 // Closes the project on this board only: its folder and its conversations stay.
-                iconButton("xmark", help: "从 FleetView 移除这个项目（文件夹和对话历史都不受影响）") {
+                iconButton("xmark", help: L(.projRemove)) {
                     state.removeProject(project.id)
                 }
             }
@@ -1298,7 +1294,7 @@ struct ProjectSection: View {
             StatusGlyph(status: status, size: 14)
             Text("\(n)").font(.fvLabel).monospacedDigit().foregroundColor(Theme.statusColor(status))
         }
-        .help("\(n) 个\(status.label)")
+        .help(L(.statusCount(n, status.label)))
     }
 
     private func meta(_ symbol: String, _ text: String, tint: Color = Theme.onSurfaceVariant,
@@ -1341,7 +1337,7 @@ struct ProjectSection: View {
         Button { state.requestNewTerminal(projectId: project.id) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 14))
-                Text("新终端").font(.fvLabel)
+                Text(L(.projNewTerminal)).font(.fvLabel)
             }
             .foregroundColor(Theme.onSurfaceVariant)
             .padding(.horizontal, 16).padding(.vertical, 16)
@@ -1410,18 +1406,18 @@ struct ClusterContainer: View {
                 Text(name)
                     .font(.fvTitleSmall).foregroundColor(Theme.onSurface).lineLimit(1)
                     .onTapGesture(count: 2) { state.requestRenameCluster(clusterId) }
-                    .help("双击重命名")
+                    .help(L(.clusterRenameHint))
                 // The cluster's real size, with what the filter is showing of it — the header must
                 // not claim a two-terminal task when the task has six.
                 Text(members.count == allMembers.count ? "\(allMembers.count)"
                                                        : "\(members.count) / \(allMembers.count)")
                     .font(.fvTitleSmall).monospacedDigit().foregroundColor(Theme.onSurfaceVariant)
-                    .help(members.count == allMembers.count ? "\(allMembers.count) 个终端"
-                                                            : "显示了 \(allMembers.count) 个里的 \(members.count) 个")
+                    .help(members.count == allMembers.count ? L(.nTerminals(allMembers.count))
+                                                            : L(.clusterShown(allMembers.count, members.count)))
                 Spacer()
                 HStack(spacing: 2) {
-                    clusterButton("pencil", help: "重命名这个组") { state.requestRenameCluster(clusterId) }
-                    clusterButton("plus", help: "给这个任务再加一个 agent") { state.addToCluster(clusterId) }
+                    clusterButton("pencil", help: L(.clusterRename)) { state.requestRenameCluster(clusterId) }
+                    clusterButton("plus", help: L(.clusterAdd)) { state.addToCluster(clusterId) }
                 }
                 .opacity(hovering ? 1 : 0)
             }
@@ -1538,8 +1534,8 @@ struct TreeDragChip: View {
         var label: String? {
             switch self {
             case .none:        return nil
-            case .newTerminal: return "松开：从这一轮开新终端"
-            case .joinCluster: return "松开：开新终端并加入这个组"
+            case .newTerminal: return L(.dropTreeNew)
+            case .joinCluster: return L(.dropTreeJoin)
             }
         }
     }
@@ -1601,7 +1597,7 @@ private struct JobRowView: View {
                             .foregroundColor(Theme.subtext)
                     }
                     .buttonStyle(.plain)
-                    .help(job.cancel != nil ? "取消" : "清除")
+                    .help(job.cancel != nil ? L(.cancel) : L(.clear))
                 }
             }
             if !broken {

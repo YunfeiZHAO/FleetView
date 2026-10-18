@@ -49,42 +49,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu
         // The About panel reads the bundle's version, which is the other half of "what am I running";
         // it had no action at all, so the item was decoration.
-        appMenu.addItem(withTitle: "About FleetView",
+        appMenu.addItem(withTitle: L(.menuAbout),
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
-        let update = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+        let update = NSMenuItem(title: L(.menuCheckUpdates), action: #selector(checkForUpdates), keyEquivalent: "")
         update.target = self
         appMenu.addItem(update)
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide FleetView", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L(.menuHide), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        let closeAll = NSMenuItem(title: "关闭所有终端…", action: #selector(closeAllTerminals), keyEquivalent: "")
+        let closeAll = NSMenuItem(title: L(.menuCloseAll), action: #selector(closeAllTerminals), keyEquivalent: "")
         closeAll.target = self
         appMenu.addItem(closeAll)
-        let clear = NSMenuItem(title: "清空所有项目并关闭所有终端…", action: #selector(clearBoard), keyEquivalent: "")
+        let clear = NSMenuItem(title: L(.menuClearBoard), action: #selector(clearBoard), keyEquivalent: "")
         clear.target = self
         appMenu.addItem(clear)
         appMenu.addItem(.separator())
-        let uninstall = NSMenuItem(title: "卸载状态钩子（Claude + Codex）", action: #selector(uninstallHooks), keyEquivalent: "")
+        let uninstall = NSMenuItem(title: L(.menuUninstallHooks), action: #selector(uninstallHooks), keyEquivalent: "")
         uninstall.target = self
         appMenu.addItem(uninstall)
-        let reveal = NSMenuItem(title: "在 Finder 中显示数据目录（~/.fleetview）", action: #selector(revealSupport), keyEquivalent: "")
+        let reveal = NSMenuItem(title: L(.menuRevealSupport), action: #selector(revealSupport), keyEquivalent: "")
         reveal.target = self
         appMenu.addItem(reveal)
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit FleetView", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L(.menuQuit), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
-        let editMenu = NSMenu(title: "Edit")
+        let editMenu = NSMenu(title: L(.menuEdit))
         editItem.submenu = editMenu
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: L(.menuCut), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L(.menuCopy), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L(.menuPaste), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L(.menuSelectAll), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(.separator())
         // ⌘K is bound in the view too; the menu item is what makes it discoverable.
-        let search = NSMenuItem(title: "搜索对话历史…", action: #selector(openSearch), keyEquivalent: "k")
+        let search = NSMenuItem(title: L(.menuSearch), action: #selector(openSearch), keyEquivalent: "k")
         search.target = self
         editMenu.addItem(search)
 
@@ -93,15 +93,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // does not involve pinching until it looks about right.
         let viewItem = NSMenuItem()
         mainMenu.addItem(viewItem)
-        let viewMenu = NSMenu(title: "View")
+        let viewMenu = NSMenu(title: L(.menuView))
         viewItem.submenu = viewMenu
-        let bigger = NSMenuItem(title: "终端字体放大", action: #selector(terminalFontBigger), keyEquivalent: "+")
+        let bigger = NSMenuItem(title: L(.menuFontBigger), action: #selector(terminalFontBigger), keyEquivalent: "+")
         bigger.target = self
         viewMenu.addItem(bigger)
-        let smaller = NSMenuItem(title: "终端字体缩小", action: #selector(terminalFontSmaller), keyEquivalent: "-")
+        let smaller = NSMenuItem(title: L(.menuFontSmaller), action: #selector(terminalFontSmaller), keyEquivalent: "-")
         smaller.target = self
         viewMenu.addItem(smaller)
-        let actual = NSMenuItem(title: "终端字体实际大小", action: #selector(terminalFontActual), keyEquivalent: "0")
+        let actual = NSMenuItem(title: L(.menuFontActual), action: #selector(terminalFontActual), keyEquivalent: "0")
         actual.target = self
         viewMenu.addItem(actual)
 
@@ -116,8 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HookInstaller.uninstall()
         CodexHookInstaller.uninstall()
         let a = NSAlert()
-        a.messageText = "状态钩子已卸载"
-        a.informativeText = "已从 ~/.claude/settings.json、~/.codex/config.toml 和 sp-claude 的 ~/.sub-pool/claude-home/settings.json 里移除 FleetView 的钩子。重新启动 FleetView 之前，状态不会再实时更新。"
+        a.messageText = L(.hooksRemovedTitle)
+        a.informativeText = L(.hooksRemovedBody)
         a.runModal()
     }
 

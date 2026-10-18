@@ -79,13 +79,13 @@ struct WebLinkDialog: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "iphone").font(.system(size: 16)).foregroundColor(Theme.accent)
-                Text("在手机上打开").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                Text(L(.webTitle)).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 Spacer()
                 Button { state.dialog = nil } label: {
                     Image(systemName: "xmark").font(.system(size: 13, weight: .medium))
                         .foregroundColor(Theme.onSurfaceVariant).frame(width: 32, height: 32).contentShape(Circle())
                 }
-                .buttonStyle(.plain).help("关闭 (Esc)")
+                .buttonStyle(.plain).help(L(.closeEsc))
             }
             Text(subtitle)
                 .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
@@ -129,7 +129,7 @@ struct WebLinkDialog: View {
                         .padding(.horizontal, 14)
                         .frame(maxWidth: .infinity, minHeight: Theme.controlHeight, alignment: .leading)
                         .background(Theme.surfaceContainerHighest).clipShape(Capsule())
-                    roundButton(copied ? "checkmark" : "doc.on.doc", help: "复制链接") {
+                    roundButton(copied ? "checkmark" : "doc.on.doc", help: L(.copyLink)) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(picked.url + suffix, forType: .string)
                         copied = true
@@ -137,19 +137,19 @@ struct WebLinkDialog: View {
                     }
                     // Deliberately localhost: opening it on the Mac that serves it should not depend
                     // on the Mac routing back to itself through Tailscale or the router.
-                    roundButton("arrow.up.right.square", help: "在这台 Mac 的浏览器里打开") {
+                    roundButton("arrow.up.right.square", help: L(.openOnThisMac)) {
                         if let url = URL(string: "http://localhost:\(state.web.port)/\(suffix)") {
                             NSWorkspace.shared.open(url)
                         }
                     }
                 }
-                Label(picked.reach + "。能访问这个地址的设备都能操作" + (terminalId == nil ? "所有终端" : "这个终端"),
+                Label(terminalId == nil ? L(.webReachAll(picked.reach)) : L(.webReachOne(picked.reach)),
                       systemImage: "info.circle")
                     .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
             } else {
-                Text("没有联网，或者 Web 服务没有启动。连上网络后再打开这里。")
+                Text(L(.webOffline))
                     .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -164,9 +164,9 @@ struct WebLinkDialog: View {
 
     private var subtitle: String {
         if let terminal {
-            return "\(terminal.name) · 打开后直接进入它的聊天视图，和在 Web 看板上点开这张卡片一样"
+            return L(.webSubtitleTerminal(terminal.name))
         }
-        return "打开后能看到所有终端，点一张卡片就能操作它"
+        return L(.webSubtitleBoard)
     }
 
     private func select(_ url: String?) {
@@ -196,34 +196,32 @@ struct CloseAllDialog: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "power").font(.system(size: 16)).foregroundColor(Theme.error)
-                Text("关闭所有终端").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                Text(L(.closeAllTitle)).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 Spacer()
             }
             .padding(.bottom, 12)
-            Text(open > 0 ? "\(open) 个终端正在运行。关闭会停止它们的 agent 进程，tmux 会话一并销毁。"
-                          : "当前没有打开的终端。仍会清理可能残留的 tmux 会话。")
+            Text(open > 0 ? L(.closeAllRunning(open)) : L(.closeAllNone))
                 .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
             // The one thing that makes this safe to press: nothing is lost from the board.
-            Label("卡片会保留。点击卡片可以重新打开，并接着原来的 Claude / Codex 会话。",
+            Label(L(.closeAllKeepsCards),
                   systemImage: "arrow.uturn.backward")
                 .font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
             if working > 0 {
-                Label("\(working) 个 agent 正在工作，会被打断。", systemImage: "exclamationmark.triangle.fill")
+                Label(L(.closeAllInterrupts(working)), systemImage: "exclamationmark.triangle.fill")
                     .font(.fvBodySmall).foregroundColor(Theme.warn)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
             Toggle(isOn: Binding(get: { state.closeTerminalsOnQuit },
                                  set: { state.closeTerminalsOnQuit = $0; state.save() })) {
-                Text("退出 FleetView 时也关闭所有终端").font(.fvBodySmall).foregroundColor(Theme.onSurface)
+                Text(L(.closeOnQuit)).font(.fvBodySmall).foregroundColor(Theme.onSurface)
             }
             .toggleStyle(.checkbox)
             .padding(.top, 16)
-            Text(state.closeTerminalsOnQuit ? "退出即结束整个 fleet。"
-                                            : "默认关闭：退出后终端继续在后台运行，下次启动自动重新接上。")
+            Text(state.closeTerminalsOnQuit ? L(.closeOnQuitOn) : L(.closeOnQuitOff))
                 .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
@@ -234,14 +232,14 @@ struct CloseAllDialog: View {
                     state.dialog = nil
                     BoardActions.confirmClear(state, reason: "topbar")
                 } label: {
-                    Text("清空看板…").font(.fvLabel).foregroundColor(Theme.error)
+                    Text(L(.clearBoardEllipsis)).font(.fvLabel).foregroundColor(Theme.error)
                         .padding(.horizontal, 12).frame(height: 40).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("移除全部项目与终端卡片（对话历史不受影响）")
+                .help(L(.clearBoardHelp))
                 Spacer()
                 Button { state.dialog = nil } label: {
-                    Text("取消").font(.fvLabel).foregroundColor(Theme.primary)
+                    Text(L(.cancel)).font(.fvLabel).foregroundColor(Theme.primary)
                         .padding(.horizontal, 16).frame(height: 40).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -249,7 +247,7 @@ struct CloseAllDialog: View {
                     state.dialog = nil
                     state.closeAllTerminals(reason: "topbar")
                 } label: {
-                    Text("关闭全部终端").font(.fvLabel).foregroundColor(Theme.onPrimary)
+                    Text(L(.closeAllButton)).font(.fvLabel).lineLimit(1).fixedSize().foregroundColor(Theme.onPrimary)
                         .padding(.horizontal, 20).frame(height: 40)
                         .background(Theme.error).clipShape(Capsule())
                 }

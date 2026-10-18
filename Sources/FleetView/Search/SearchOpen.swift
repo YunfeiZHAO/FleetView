@@ -28,16 +28,16 @@ enum SearchOpen {
 
         var errorDescription: String? {
             switch self {
-            case .notClaudeProject(let p): return "not inside ~/.claude/projects: \(p)"
+            case .notClaudeProject(let p): return L(.errNotClaudeProject(p))
             case .treeflowMissing:
                 // Say the command, not just the name: this is the only thing standing between the
                 // user and a Codex conversation opening, and it is one line.
-                return "打开 Codex 会话需要 treeflow：\n"
+                return L(.treeflowMissing)
                      + "pip3 install 'git+https://github.com/nitpicker55555/Agent-Treeflow.git'"
             case .treeflow(let m): return "treeflow: \(m)"
             // Name the file: every remaining way to reach this is a property of one transcript
             // (deleted, or never recorded a cwd anywhere), and without it the report is unactionable.
-            case .noCwd(let p): return "could not determine the session's working directory\n\(p)"
+            case .noCwd(let p): return L(.errNoCwd(p))
             }
         }
     }

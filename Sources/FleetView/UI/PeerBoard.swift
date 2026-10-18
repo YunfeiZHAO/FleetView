@@ -127,7 +127,7 @@ struct PeerStrip: View {
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 2) {
-                tab(title: "本机", detail: nil, active: state.peerSelected == nil) {
+                tab(title: L(.peerThisMac), detail: nil, active: state.peerSelected == nil) {
                     state.selectPeer(nil)
                 }
                 ForEach(others) { p in
@@ -135,8 +135,8 @@ struct PeerStrip: View {
                         active: state.peerSelected?.id == p.id) {
                         state.selectPeer(p)
                     }
-                    .help(p.working > 0 ? "\(p.url) · \(p.terminals) 个终端，\(p.working) 个运行中"
-                                        : "\(p.url) · \(p.terminals) 个终端")
+                    .help(p.working > 0 ? L(.peerHelpWorking(p.url, p.terminals, p.working))
+                                        : L(.peerHelp(p.url, p.terminals)))
                 }
             }
             .padding(3)
@@ -144,16 +144,16 @@ struct PeerStrip: View {
             .background(Theme.surfaceContainerHigh).clipShape(Capsule())
             if fleet.scanning {
                 ProgressView().controlSize(.small).scaleEffect(0.6)
-                Text("正在扫描 \(fleet.sweepSize) 个地址…")
+                Text(L(.peerScanning(fleet.sweepSize)))
                     .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             } else if fleet.scanned && others.isEmpty {
-                Text("局域网里没有其他 FleetView")
+                Text(L(.peerNone))
                     .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             }
             // Said out loud, always — a sweep that quietly covered a slice of a large network would
             // otherwise let "none found" be read as "none there".
             if fleet.scanned && fleet.narrowed {
-                Text("网段太大，只扫描了本机所在的 /24")
+                Text(L(.peerNarrowed))
                     .font(.fvLabelSmall).foregroundColor(Theme.warn)
             }
             if let p = state.peerSelected {
@@ -161,13 +161,13 @@ struct PeerStrip: View {
                 // instruction sent from here lands in somebody else's live session.
                 Text(p.url).font(.fvMono)
                     .foregroundColor(Theme.onSurfaceVariant).textSelection(.enabled).lineLimit(1)
-                stripButton("arrow.up.forward.square", help: "在浏览器里打开这台机器的看板") {
+                stripButton("arrow.up.forward.square", help: L(.peerOpenBrowser)) {
                     NSWorkspace.shared.open(URL(string: p.url + "/")!)
                 }
             }
-            stripButton("arrow.clockwise", help: "重新扫描局域网") { Task { await state.rescanPeers() } }
+            stripButton("arrow.clockwise", help: L(.peerRescan)) { Task { await state.rescanPeers() } }
                 .disabled(fleet.scanning)
-            stripButton("xmark", help: "收起") { state.togglePeerStrip() }
+            stripButton("xmark", help: L(.collapse)) { state.togglePeerStrip() }
         }
     }
 

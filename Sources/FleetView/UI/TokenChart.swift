@@ -24,7 +24,7 @@ struct ProjectTokenChart: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             if let l = lastUpdated ?? lastDate {
-                Text("更新于 \(Self.updatedFmt.string(from: l))").font(.fvLabelSmall).monospacedDigit()
+                Text(L(.chartUpdated(Self.updatedFmt.string(from: l)))).font(.fvLabelSmall).monospacedDigit()
                     .foregroundColor(Theme.onSurfaceVariant)
             }
             chart

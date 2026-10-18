@@ -362,13 +362,13 @@ final class TerminalWindowController: NSObject, NSWindowDelegate, @preconcurrenc
     func setTitle(_ title: String) { window.title = title }
 
     private func addHideButton() {
-        let button = NSButton(title: "隐藏", target: self, action: #selector(hideClicked))
-        button.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: "隐藏窗口")
+        let button = NSButton(title: L(.winHide), target: self, action: #selector(hideClicked))
+        button.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: L(.winHideA11y))
         button.imagePosition = .imageLeading
         button.bezelStyle = .accessoryBarAction
         button.controlSize = .small
         button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        button.toolTip = "隐藏窗口：agent 在后台继续运行，不再绘制。点看板上的卡片重新打开。"
+        button.toolTip = L(.winHideHelp)
         button.sizeToFit()
         let bar = NSView(frame: NSRect(x: 0, y: 0, width: button.frame.width + 10, height: 28))
         button.setFrameOrigin(NSPoint(x: 2, y: (28 - button.frame.height) / 2))

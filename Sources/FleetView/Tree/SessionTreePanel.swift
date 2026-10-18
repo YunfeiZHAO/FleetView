@@ -25,7 +25,7 @@ struct SessionTreePanel: View {
             HStack(spacing: 6) {
                 if let glyph { StatusGlyph(status: glyph, size: 12) }
                 else { Image(systemName: copied.wrappedValue ? "checkmark" : "doc.on.doc").font(.system(size: 11)) }
-                Text(copied.wrappedValue ? "已复制" : label)
+                Text(copied.wrappedValue ? L(.copied) : label)
                     .font(mono && !copied.wrappedValue ? .fvMono : .fvLabel).lineLimit(1)
             }
             .foregroundColor(Theme.onSurfaceVariant)
@@ -33,7 +33,7 @@ struct SessionTreePanel: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.chip).strokeBorder(Theme.outlineVariant, lineWidth: 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help("点击复制完整 id")
+        .buttonStyle(.plain).help(L(.treeCopyId))
     }
 
     private func metaChip(_ symbol: String, _ text: String, help: String) -> some View {
@@ -84,7 +84,7 @@ struct SessionTreePanel: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 15)).foregroundColor(Theme.primary)
-                Text("对话树").font(.fvTitleMedium).foregroundColor(Theme.onSurface)
+                Text(L(.treeTitle)).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 if model.loading { ProgressView().controlSize(.small).scaleEffect(0.7) }
                 Spacer()
                 Button { state.closeSessionTree() } label: {
@@ -92,12 +92,12 @@ struct SessionTreePanel: View {
                         .foregroundColor(Theme.onSurfaceVariant)
                         .frame(width: 32, height: 32).contentShape(Circle())
                 }
-                .buttonStyle(.plain).help("关闭 (Esc)")
+                .buttonStyle(.plain).help(L(.closeEsc))
             }
             HStack(spacing: 6) {
                 if model.emptyReason == nil {
-                    metaChip("arrow.triangle.branch", "\(model.tree.branchPoints)", help: "分叉点")
-                    metaChip("bubble.left", "\(model.tree.nodeCount)", help: "轮数")
+                    metaChip("arrow.triangle.branch", "\(model.tree.branchPoints)", help: L(.treeBranchPoints))
+                    metaChip("bubble.left", "\(model.tree.nodeCount)", help: L(.treeTurns))
                 }
                 if let sid = model.boundSessionId {
                     idChip(label: String(sid.prefix(8)), value: sid, copied: $copiedSid, mono: true)
@@ -117,7 +117,7 @@ struct SessionTreePanel: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.system(size: 14))
                 .foregroundColor(Theme.onSurfaceVariant)
-            TextField("搜索提问与回复", text: $model.query)
+            TextField(L(.treeSearch), text: $model.query)
                 .textFieldStyle(.plain).font(.fvBody).foregroundColor(Theme.onSurface)
                 .focused($searchFocused)
                 .onExitCommand { model.query = "" }
@@ -127,26 +127,26 @@ struct SessionTreePanel: View {
                 Button { model.query = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 13))
                         .foregroundColor(Theme.onSurfaceVariant)
-                }.buttonStyle(.plain).help("清除")
+                }.buttonStyle(.plain).help(L(.clear))
             }
             Button { model.searchAnswers.toggle() } label: {
                 HStack(spacing: 4) {
                     if model.searchAnswers { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)) }
-                    Text("含回复").font(.fvLabelSmall)
+                    Text(L(.treeWithReplies)).font(.fvLabelSmall)
                 }
                 .foregroundColor(model.searchAnswers ? Theme.onSecondaryContainer : Theme.onSurfaceVariant)
                 .padding(.horizontal, 10).frame(height: 26)
                 .background(model.searchAnswers ? Theme.secondaryContainer : Color.clear)
                 .clipShape(Capsule())
             }
-            .buttonStyle(.plain).help("搜索范围是否包含 agent 回复")
+            .buttonStyle(.plain).help(L(.treeWithRepliesHelp))
             Button { model.newestFirst.toggle() } label: {
                 Image(systemName: model.newestFirst ? "arrow.down" : "arrow.up")
                     .font(.system(size: 12, weight: .medium)).foregroundColor(Theme.onSurfaceVariant)
                     .frame(width: 26, height: 26).contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(model.newestFirst ? "最新在上 — 点击改为最早在上" : "最早在上 — 点击改为最新在上")
+            .help(model.newestFirst ? L(.treeNewestFirst) : L(.treeOldestFirst))
         }
         .padding(.leading, 14).padding(.trailing, 6)
         .frame(height: Theme.controlHeight)
@@ -210,7 +210,7 @@ struct SessionTreePanel: View {
         VStack(spacing: 12) {
             Spacer()
             ProgressView().controlSize(.regular)
-            Text("正在解析对话树…").font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
+            Text(L(.treeLoading)).font(.fvBodySmall).foregroundColor(Theme.onSurfaceVariant)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -251,14 +251,14 @@ struct TreeRowView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
-                    Text("\(count) 轮").font(.fvLabel)
+                    Text(L(.treeNTurns(count))).font(.fvLabel)
                 }
                 .foregroundColor(Theme.onSurfaceVariant)
                 .padding(.horizontal, 12).frame(height: 26)
                 .overlay(Capsule().strokeBorder(Theme.outlineVariant, lineWidth: 1))
                 .contentShape(Capsule())
             }
-            .buttonStyle(.plain).help("展开被折叠的 \(count) 个节点")
+            .buttonStyle(.plain).help(L(.treeExpandFold(count)))
             Spacer(minLength: 0)
         }
         .frame(height: 32)
@@ -284,23 +284,23 @@ struct TreeRowView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 11))
-                        Text("展开压缩前的 \(turns) 轮对话").font(.fvLabel)
+                        Text(L(.treeExpandCompaction(turns))).font(.fvLabel)
                     }
                     .foregroundColor(Theme.onSecondaryContainer)
                     .padding(.horizontal, 12).frame(height: 28)
                     .background(Theme.secondaryContainer).clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("下面这段是从一次上下文压缩之后继续的 —— 展开压缩前的 \(turns) 轮对话")
+                .help(L(.treeExpandCompactionHelp(turns)))
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.badge.xmark").font(.system(size: 11))
-                    Text("压缩前的对话已不在这个项目里").font(.fvLabel)
+                    Text(L(.treeCompactionGone)).font(.fvLabel)
                 }
                 .foregroundColor(Theme.onSurfaceVariant)
                 .padding(.horizontal, 12).frame(height: 28)
                 .overlay(Capsule().strokeBorder(Theme.outlineVariant, lineWidth: 1))
-                .help("这段对话继续自一个已经不在 ~/.claude/projects 里的会话文件")
+                .help(L(.treeCompactionGoneHelp))
             }
             Spacer(minLength: 0)
         }
@@ -316,13 +316,13 @@ struct TreeRowView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "square.on.square").font(.system(size: 11))
-                    Text("同一个提问的另 \(count) 个版本").font(.fvLabel)
+                    Text(L(.treeVersions(count))).font(.fvLabel)
                 }
                 .foregroundColor(Theme.onSurfaceVariant)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("同一个提问发过 \(count + 1) 次，其余几次都只走了一轮。点开逐个查看")
+            .help(L(.treeVersionsHelp(count + 1)))
             Spacer(minLength: 0)
         }
         .frame(height: 34)
@@ -340,7 +340,7 @@ struct TreeRowView: View {
                     if model.searching, let n = node {
                         let h = model.hits(n)
                         if h.prompt { hitBadge("prompt", Theme.accent) }
-                        if h.answer { hitBadge("回复", Theme.tertiary) }
+                        if h.answer { hitBadge(L(.treeHitReply), Theme.tertiary) }
                     }
                     // Codex's half of the compaction story. Claude's is a row of its own above
                     // the root, because there the earlier turns are somewhere else entirely; here
@@ -352,7 +352,7 @@ struct TreeRowView: View {
                             .foregroundColor(Theme.warn)
                             .frame(width: 20, height: 20)
                             .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: 6))
-                            .help("上下文在这一轮之前被压缩过 —— 更早的对话还在树上，但从这里开始 agent 看不到它们了")
+                            .help(L(.treeCompactedHelp))
                     }
                     if row.branchChildCount > 0 {
                         HStack(spacing: 3) {
@@ -362,7 +362,7 @@ struct TreeRowView: View {
                         .foregroundColor(Theme.onSurfaceVariant)
                         .padding(.horizontal, 6).frame(height: 20)
                         .background(Theme.surfaceContainerHighest).clipShape(RoundedRectangle(cornerRadius: 6))
-                        .help("从这一轮分出了 \(row.branchChildCount + 1) 条")
+                        .help(L(.treeBranchesHelp(row.branchChildCount + 1)))
                     }
                     // Regular weight on every row: a column that is all bold has no emphasis left.
                     promptText
@@ -381,7 +381,7 @@ struct TreeRowView: View {
                         ForEach(chips, id: \.name) { chip in
                             HStack(spacing: 5) {
                                 StatusGlyph(status: chip.status, size: 11)
-                                Text("\(chip.name) 停在这里").font(.fvLabelSmall)
+                                Text(L(.treeStoppedHere(chip.name))).font(.fvLabelSmall)
                                     .foregroundColor(Theme.onSurface)
                             }
                             .padding(.horizontal, 8).frame(height: 22)
@@ -641,7 +641,7 @@ struct TreeDetailCard: View {
             HStack(spacing: 8) {
                 if turn.nativeSessionId != nil {
                     Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundColor(Theme.primary)
-                        .help("已有会话的 leaf 正好在此 — fork 无需写文件")
+                        .help(L(.treeNativeLeaf))
                 }
                 Text(absoluteTime(turn.ts)).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
@@ -651,7 +651,7 @@ struct TreeDetailCard: View {
                             .foregroundColor(Theme.onSurfaceVariant)
                             .frame(width: 28, height: 28).contentShape(Circle())
                     }
-                    .buttonStyle(.plain).help("关闭 (Esc)")
+                    .buttonStyle(.plain).help(L(.closeEsc))
                 }
             }
             content
@@ -694,14 +694,14 @@ struct TreeDetailCard: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.branch").font(.system(size: 13))
-                        Text("从这里开新终端").font(.fvLabel)
+                        Text(L(.treeOpenHere)).font(.fvLabel)
                     }
                     .foregroundColor(Theme.onSecondaryContainer)
                     .padding(.horizontal, 16).frame(height: 36)
                     .background(Theme.secondaryContainer).clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("用这一轮之前的上下文开一个新终端；原会话不受影响。也可以把这一行拖到看板上")
+                .help(L(.treeOpenHereHelp))
             }
         } else {
             VStack(alignment: .leading, spacing: 8) {

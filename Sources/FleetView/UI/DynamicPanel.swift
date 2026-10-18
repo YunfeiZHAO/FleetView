@@ -21,7 +21,7 @@ struct DynamicPanel: View {
                     HStack(spacing: 10) {
                         Image(systemName: "rectangle.topthird.inset.filled").font(.system(size: 13))
                             .foregroundColor(Theme.onSurfaceVariant)
-                        Text(pinned.map { "面板 · \($0.label)" } ?? "面板").font(.fvLabel)
+                        Text(pinned.map { L(.panelTitlePinned($0.label)) } ?? L(.panelTitle)).font(.fvLabel)
                             .foregroundColor(Theme.onSurface).lineLimit(1)
                         Spacer()
                         historyMenu
@@ -33,7 +33,7 @@ struct DynamicPanel: View {
                                 .foregroundColor(Theme.onSurfaceVariant)
                                 .frame(width: 28, height: 28).contentShape(Circle())
                         }
-                        .buttonStyle(.plain).help(collapsed ? "展开面板" : "收起面板")
+                        .buttonStyle(.plain).help(collapsed ? L(.panelExpand) : L(.panelCollapse))
                     }
                     .padding(.leading, 16).padding(.trailing, 6)
                     .frame(height: Theme.controlHeight)
@@ -55,7 +55,7 @@ struct DynamicPanel: View {
     /// Every version an agent ever wrote is kept, so the menu is a real history, not a cache.
     private var historyMenu: some View {
         Menu {
-            Button("实时（最新版本）") { pinned = nil }
+            Button(L(.panelLive)) { pinned = nil }
             if !history.isEmpty { Divider() }
             ForEach(history) { version in
                 Button(version.label) { pinned = version }
@@ -68,7 +68,7 @@ struct DynamicPanel: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("面板的历史版本")
+        .help(L(.panelHistory))
         .onAppear { history = PanelVersions.shared.recentSummaries() }
         .onChange(of: state.panelVersion) { _ in history = PanelVersions.shared.recentSummaries() }
     }
