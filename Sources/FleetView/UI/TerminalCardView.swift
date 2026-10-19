@@ -62,8 +62,8 @@ struct TerminalCardView: View {
     /// which left a project's cards telling running from idle by one small shape: terminals start
     /// and stop on their own, and the change was easy to miss.
     ///
-    /// A change is "fresh" for `AppState.freshFor`: a run that has just started takes the strong
-    /// primary tone before settling into its container, and one that has just finished takes the
+    /// A change is "fresh" for `AppState.freshFor`: a run that has just started takes the light
+    /// purple before settling into the deep one (see `Theme.runFresh`), and one that has just finished takes the
     /// tertiary container before settling back to an ordinary card. The finished tint is a step
     /// below running on purpose — something stopping needs you less than something going.
     private enum Look: Equatable { case runningFresh, running, needsYou, finished, plain }
@@ -90,8 +90,8 @@ struct TerminalCardView: View {
     /// Background and foreground when the card takes a colour (see `Look`).
     private var container: (bg: Color, fg: Color)? {
         switch look {
-        case .runningFresh: return (Theme.primary, Theme.onPrimary)
-        case .running:      return (Theme.primaryContainer, Theme.onPrimaryContainer)
+        case .runningFresh: return (Theme.runFresh, Theme.onRunFresh)
+        case .running:      return (Theme.runSettled, Theme.onRunSettled)
         case .needsYou:     return (Theme.warnContainer, Theme.onWarnContainer)
         case .finished:     return (Theme.tertiaryContainer, Theme.onTertiaryContainer)
         case .plain:        return nil

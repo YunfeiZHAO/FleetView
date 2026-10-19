@@ -312,6 +312,7 @@ enum UIText {
     case projExpand
     case projCollapse
     case projNameHelp(String)
+    case projNameHelpFolded(String)
     case projRateHelp
     case projLastActivity
     case projHideSkills

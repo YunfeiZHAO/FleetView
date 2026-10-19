@@ -37,6 +37,9 @@ enum WebDashboardPage {
     --inverseSurface:#e6e0e9; --inverseOnSurface:#322f35;
     --scrim:rgba(0,0,0,.32);
     --onAccent:#36275d;
+    /* A running card: the light tone for its first ten seconds, the deep one after — in both
+       themes (see .card.run). */
+    --runFresh:#cfbdfe; --onRunFresh:#36275d; --runSettled:#4d3d75; --onRunSettled:#e9ddff;
     /* Your own words: a primary-container bubble, as in Material's chat patterns. */
     --quoteBg:#4d3d75; --quoteFg:#e9ddff; --quoteEdge:rgba(233,221,255,.08);
     --markBg:#2b292f; --markTint:#efb8c8;
@@ -70,6 +73,7 @@ enum WebDashboardPage {
     --inverseSurface:#322f35; --inverseOnSurface:#f5eff7;
     --scrim:rgba(0,0,0,.32);
     --onAccent:#ffffff;
+    --runFresh:#cfbdfe; --onRunFresh:#36275d; --runSettled:#65558f; --onRunSettled:#ffffff;
     --quoteBg:#e9ddff; --quoteFg:#4d3d75; --quoteEdge:rgba(77,61,117,.12);
     --markBg:#ece6ee; --markTint:#7e5260;
     --quoteBgSoft:rgba(233,221,255,.9);
@@ -275,10 +279,14 @@ enum WebDashboardPage {
      to the plain card. Terminals start and stop on their own (hooks, auto-recover, scheduled pings),
      and a one-off flash is missed by anyone not looking at that moment; ten seconds is long enough to
      catch with a glance and short enough not to become a state of its own to read (AppState.freshFor).
-     Secondary text is the same ink at 78% rather than a second hue — except on the strong primary,
-     where 78% of it stops reading as text. */
-  .card.run{--fill:var(--primaryContainer);--fg:var(--onPrimaryContainer);--fg2:color-mix(in srgb,var(--onPrimaryContainer) 78%,transparent)}
-  .card.run.fresh{--fill:var(--accent);--fg:var(--onAccent);--fg2:var(--onAccent)}
+     Secondary text is the same ink at 78% rather than a second hue — except on the fresh tone,
+     where 78% of it stops reading as text.
+     Running uses its own pair rather than primary / primary-container: those swap depth between
+     themes (in light, primary is the deep tone), which made the fresh card the darker one on a
+     light board and the lighter one on a dark board. Fresh is the light purple and settled the deep
+     one in both. */
+  .card.run{--fill:var(--runSettled);--fg:var(--onRunSettled);--fg2:color-mix(in srgb,var(--onRunSettled) 78%,transparent)}
+  .card.run.fresh{--fill:var(--runFresh);--fg:var(--onRunFresh);--fg2:var(--onRunFresh)}
   .card.need{--fill:var(--warnContainer);--fg:var(--onWarnContainer);--fg2:color-mix(in srgb,var(--onWarnContainer) 78%,transparent)}
   .card.idle.fresh{--fill:var(--tertiaryContainer);--fg:var(--onTertiaryContainer);--fg2:color-mix(in srgb,var(--onTertiaryContainer) 78%,transparent)}
   /* :not(.dragging), or a coloured card picked up would leave a filled block where the dashed space
@@ -316,7 +324,7 @@ enum WebDashboardPage {
   /* A full-width rule above every project is what tells the sections apart from 进行中 above them. */
   .proj{border-top:1px solid var(--outlineVariant);padding-top:16px}
   .ph{display:flex;align-items:center;gap:12px;min-height:40px;margin-bottom:8px;min-width:0}
-  .ph .pname{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ph .pname{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
   .ph .meta{display:flex;align-items:center;gap:14px;flex:none;color:var(--sub)}
   .ph .meta > span{display:inline-flex;align-items:center;gap:4px}
   .ph .acts{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
@@ -1068,6 +1076,7 @@ const I18N={
     'empty.noProjects':'还没有项目','empty.noProjectsSub':'在 Mac 上添加一个。',
     'toast.onlyMarked':'只显示加了书签的终端','toast.showAll':'显示全部终端',
     'proj.lastActivity':'最后活动','proj.browse':'浏览项目文件','proj.newTerm':'新建终端',
+    'proj.nameFolded':'点击展开','proj.nameOpen':'点击复制路径',
     'card.lastRun':'上一轮用了 {time}','card.lastActivity':'最后一次活动','card.marked':'已加书签',
     'card.hidden':'窗口已隐藏，agent 在后台继续运行',
     'card.idTitle':'单击复制终端 ID（{id}），双击复制对话文件路径','card.idCopied':'已复制','card.idPath':'路径',
@@ -1096,7 +1105,7 @@ const I18N={
     'chat.thinking':'思考','chat.input':'输入','chat.output':'输出','chat.failed':'失败','chat.copy':'复制',
     'chat.subagent':'子代理','chat.answerInTerm':'切到「终端」里回答','chat.empty':'还没有对话 — 发一条消息开始。',
     'diff.unchanged':'⋯ {n} 行未改动','diff.edit':'第 {n} 处修改',
-    'toast.copied':'已复制','toast.copyFailed':'复制失败','toast.copyFailedLong':'复制失败 — 长按路径手动选择',
+    'toast.copied':'已复制','toast.pathCopied':'已复制路径','toast.copyFailed':'复制失败','toast.copyFailedLong':'复制失败 — 长按路径手动选择',
     'composer.send':'发送','composer.stop':'停止',
     'composer.placeholder':'输入消息 — 回车发送，Shift+回车换行','composer.placeholderShort':'输入消息',
     'composer.smaller':'缩小字号','composer.larger':'放大字号','composer.expandEditor':'展开编辑器','composer.collapseEditor':'收起编辑器',
@@ -1148,6 +1157,7 @@ const I18N={
     'empty.noProjects':'No projects yet','empty.noProjectsSub':'Add one on the Mac.',
     'toast.onlyMarked':'Showing only marked terminals','toast.showAll':'Showing all terminals',
     'proj.lastActivity':'Last activity','proj.browse':'Browse project files','proj.newTerm':'New terminal',
+    'proj.nameFolded':'Click to expand','proj.nameOpen':'Click to copy the path',
     'card.lastRun':'Last turn took {time}','card.lastActivity':'Last activity','card.marked':'Marked',
     'card.hidden':'Window hidden — the agent keeps running in the background',
     'card.idTitle':'Click to copy the terminal ID ({id}); double-click to copy the conversation file path',
@@ -1181,7 +1191,7 @@ const I18N={
     'chat.thinking':'Thinking','chat.input':'Input','chat.output':'Output','chat.failed':'Failed','chat.copy':'Copy',
     'chat.subagent':'Subagent','chat.answerInTerm':'Answer it in the Terminal tab','chat.empty':'No conversation yet — send a message to start.',
     'diff.unchanged':{one:'⋯ 1 unchanged line',other:'⋯ {n} unchanged lines'},'diff.edit':'Edit {n}',
-    'toast.copied':'Copied','toast.copyFailed':'Copy failed','toast.copyFailedLong':'Copy failed — long-press the path to select it',
+    'toast.copied':'Copied','toast.pathCopied':'Path copied','toast.copyFailed':'Copy failed','toast.copyFailedLong':'Copy failed — long-press the path to select it',
     'composer.send':'Send','composer.stop':'Stop',
     'composer.placeholder':'Message — Enter to send, Shift+Enter for a new line','composer.placeholderShort':'Message',
     'composer.smaller':'Smaller text','composer.larger':'Larger text','composer.expandEditor':'Expand editor','composer.collapseEditor':'Collapse editor',
@@ -1947,15 +1957,6 @@ function updateStickyPrompt(){
    Watch the pane instead: every one of those ends up resizing it. */
 if(window.ResizeObserver){
   new ResizeObserver(()=>updateStickyPrompt()).observe(document.getElementById('chat'));
-}
-/* clipboard needs a secure context; plain-HTTP over Tailscale isn't one, so fall back */
-function copyText(t){
-  try{ if(navigator.clipboard&&window.isSecureContext){ navigator.clipboard.writeText(t); toast(tr('toast.copied')); return; } }catch(e){}
-  const ta=document.createElement('textarea');
-  ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
-  document.body.appendChild(ta); ta.select();
-  try{ document.execCommand('copy'); toast(tr('toast.copied')); }catch(e){ toast(tr('toast.copyFailed')); }
-  document.body.removeChild(ta);
 }
 function hhmm(ts){
   if(!ts)return '';
@@ -3485,7 +3486,7 @@ function flipBoard(before,root){
    popping in, and the fill crossfading from the old look. The crossfade only where that copy was
    already on screen — one arriving in 进行中 has its entrance instead. Colours are read off the
    stylesheet at the moment, so they are the current appearance's. */
-const LOOK_FILL={runFresh:'--accent',run:'--primaryContainer',need:'--warnContainer',done:'--tertiaryContainer',idle:'--card',plain:'--card'};
+const LOOK_FILL={runFresh:'--runFresh',run:'--runSettled',need:'--warnContainer',done:'--tertiaryContainer',idle:'--card',plain:'--card'};
 const LOOK_RING={runFresh:'--accent',run:'--accent',need:'--amber',done:'--tertiary'};
 function rgba(hex,a){
   const m=/^#([0-9a-f]{6})$/i.exec(hex);
@@ -3545,6 +3546,12 @@ function foldProj(pid){
   try{ localStorage.setItem('fv_folded',JSON.stringify([...folded])); }catch(e){}
   if(state) render(state);
 }
+/* The name, as on the Mac: folded, it opens the project — the obvious thing to click to see it;
+   open, it copies the path, the one thing about a project that gets pasted elsewhere. */
+function nameTap(pid,path,closed,dorm){
+  if(closed){ if(dorm) wake(pid); else foldProj(pid); }
+  else copyText(path,true).then(ok=>{ if(ok) toast(tr('toast.pathCopied')); });
+}
 /* `fold`: 'closed' — nothing below the header — or 'open'. `dorm`: the project sits in the dormant
    zone, where the chevron wakes it for this visit instead of folding it on this device. */
 function projSection(s,p,all,terms,fold,dorm){
@@ -3553,7 +3560,9 @@ function projSection(s,p,all,terms,fold,dorm){
     `title="${tr(fold==='open'?'common.collapse':'common.expand')}" aria-label="${tr(fold==='open'?'common.collapse':'common.expand')}">${ic('chevron-right','s16')}</button>`;
   // Only a top-level section slides on its own; one inside the dormant zone moves with that zone.
   let h=`<section class="proj${fold==='closed'?' folded':''}" data-pid="${p.id}"${dorm?'':` data-flip="p:${p.id}"`}><div class="ph">`+chev+
-    `<span class="pname tm" title="${att(p.path)}">${esc(p.name)}</span>`+
+    `<span class="pname tm" role="button" data-path="${att(p.path)}" `+
+    `onclick="nameTap('${p.id}',this.dataset.path,${fold==='closed'},${!!dorm})" `+
+    `title="${att(p.path+'\n'+tr(fold==='closed'?'proj.nameFolded':'proj.nameOpen'))}">${esc(p.name)}</span>`+
     // Same rule as the cluster header: the project's real size, and what is on screen of it.
     `<span class="meta lm"><span title="${tr('count.terminals',{n:all.length})}">${ic('square-terminal','s14')}${terms.length===all.length?all.length:terms.length+' / '+all.length}</span>`+
     (tot>0?`<span title="${tr('common.tokens',{n:tot})}">${ic('sigma','s14')}${short(tot)}</span>`:'')+

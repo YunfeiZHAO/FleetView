@@ -60,6 +60,15 @@ enum Theme {
     static let errorContainer          = dual(0x93000A, 0xFFDAD6)
     static let onErrorContainer        = dual(0xFFDAD6, 0x93000A)
 
+    // A running card. Just started is the light tone and settled the deep one in both appearances —
+    // M3's fixed tone 80 for the first ten seconds, then tone 30 (dark) / 40 (light). The plain
+    // roles would flip it: in light mode `primary` is the deep tone and its container the pale one,
+    // so the fresh card came out darker than the settled ones, the reverse of the dark board.
+    static let runFresh                = dual(0xCFBDFE, 0xCFBDFE)
+    static let onRunFresh              = dual(0x36275D, 0x36275D)
+    static let runSettled              = dual(0x4D3D75, 0x65558F)
+    static let onRunSettled            = dual(0xE9DDFF, 0xFFFFFF)
+
     // "Needs you". Material has no warning role, so this is what M3 does with a custom colour:
     // #E0A100 harmonised toward the seed, then taken at tones 80/40 (colour) and 30/90 (container).
     static let warn                    = dual(0xFFB86A, 0x895200)

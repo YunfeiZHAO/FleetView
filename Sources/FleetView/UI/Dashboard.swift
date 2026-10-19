@@ -1282,13 +1282,7 @@ struct ProjectSection: View {
                         return NSItemProvider(object: project.id.uuidString as NSString)
                     }
                 // Same chevron idiom as the sidebar's section headers, pointing at the same thing.
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        if dormant { _ = state.wokenProjects.insert(project.id) }
-                        else if woken { _ = state.wokenProjects.remove(project.id) }
-                        else { state.toggleProjectCollapsed(project.id) }
-                    }
-                } label: {
+                Button { toggleFold() } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Theme.onSurfaceVariant)
@@ -1301,11 +1295,13 @@ struct ProjectSection: View {
             }
             // lineLimit(1): a name that wraps changes the header's height, and the figures next to
             // it re-measure every few seconds.
+            // Folded, the name is the obvious thing to click to see the project, so that is what it
+            // does; open, it copies the path — the one thing about a project you paste elsewhere.
             Text(project.name).font(.fvTitleMedium).foregroundColor(Theme.onSurface)
                 .lineLimit(1)
                 .onTapGesture(count: 2) { state.openInFinder(project.id) }
-                .onTapGesture { copyToClipboard(project.name) }
-                .help(L(.projNameHelp(project.path)))
+                .onTapGesture { if collapsed { toggleFold() } else { copyToClipboard(project.path) } }
+                .help(collapsed ? L(.projNameHelpFolded(project.path)) : L(.projNameHelp(project.path)))
             // Folded, the cards can no longer speak for themselves, and a terminal waiting on an
             // answer behind a closed section is the one thing folding could genuinely cost you.
             // The header shows it — as the same shapes the cards use, not as words.
@@ -1341,7 +1337,7 @@ struct ProjectSection: View {
             }
             .lineLimit(1).fixedSize()
             if copied {
-                Text(L(.copied)).font(.fvLabelSmall)
+                Text(L(.idPathCopied)).font(.fvLabelSmall)
                     .foregroundColor(Theme.onPrimary).padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Theme.primary).clipShape(Capsule()).transition(.opacity)
             }
@@ -1415,6 +1411,15 @@ struct ProjectSection: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain).help(help)
+    }
+
+    /// Dormant projects wake for this visit and go back to sleep; the rest fold and stay folded.
+    private func toggleFold() {
+        withAnimation(.easeOut(duration: 0.18)) {
+            if dormant { _ = state.wokenProjects.insert(project.id) }
+            else if woken { _ = state.wokenProjects.remove(project.id) }
+            else { state.toggleProjectCollapsed(project.id) }
+        }
     }
 
     private func copyToClipboard(_ s: String) {
