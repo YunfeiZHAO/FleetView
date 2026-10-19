@@ -318,7 +318,9 @@ enum WebDashboardPage {
   .card.dragging{background:transparent;box-shadow:none;transform:none;outline:1.5px dashed var(--outline);outline-offset:-1.5px}
   .card.dragging > *{visibility:hidden}
   /* A group of terminals on one task: a frame around cards, not a coloured block. */
-  .cluster{border-radius:16px;padding:12px;box-shadow:inset 0 0 0 1px var(--outlineVariant);margin-bottom:12px}
+  /* Out into the margin by its own padding, so the cards inside are on the project grid's columns at
+     its size — laid out again inside the padding they were narrower and off the columns around them. */
+  .cluster{border-radius:16px;padding:12px;box-shadow:inset 0 0 0 1px var(--outlineVariant);margin:0 -12px 12px}
   .cluster .chead{display:flex;align-items:center;gap:8px;min-height:28px;margin-bottom:12px;color:var(--sub);min-width:0}
   .cluster .cname{color:var(--text);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* A full-width rule above every project is what tells the sections apart from 进行中 above them. */

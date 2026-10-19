@@ -192,6 +192,7 @@ enum Snapshot {
                              "同一个任务换个做法：只重跑失败的那几天"), tokens: 3_700_000)
         d2.clusterId = cluster.id
         s.clusters = [cluster]
+        s.wokenProjects = [data.id]       // so the group's outline is in the tall shot
         s.terminals = [
             t(fv, "FleetView-3", .needsYou, .codex, ago: 60,
               prompt: w("Allow swift build? It needs to write to .build/", "允许运行 swift build？需要写入 .build/ 目录"),

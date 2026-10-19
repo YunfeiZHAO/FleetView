@@ -935,10 +935,26 @@ struct MainArea: View {
 /// The board's grid, the same everywhere a card is laid out, so a card is the same size wherever it
 /// appears.
 enum BoardGrid {
-    static let columns = [GridItem(.adaptive(minimum: 280, maximum: 380), spacing: 12)]
+    static let minCard: CGFloat = 280
+    static let maxCard: CGFloat = 380
+    static let columns = [GridItem(.adaptive(minimum: minCard, maximum: maxCard), spacing: spacing)]
     static let spacing: CGFloat = 12
-    /// A card in a sideways strip, where there is no grid to size it.
+    /// A card in a sideways strip before the strip has measured itself.
     static let stripCardWidth: CGFloat = 300
+
+    /// How far a frame drawn around cards — a group's outline, the recent tray — reaches past the
+    /// grid on each side: exactly its own inner padding, so the cards inside sit on the board's
+    /// columns at the board's size. Framed cards used to be laid out again inside the frame's
+    /// padding, which made them narrower than every other card and put their edges off the
+    /// columns above and below. The frame gives way instead, into the board's margin.
+    static let wrapInset: CGFloat = 12
+
+    /// A card's width in the grid at this content width — what the adaptive columns work out,
+    /// for a row that is not a grid (the recent tray scrolls sideways).
+    static func cardWidth(in width: CGFloat) -> CGFloat {
+        let n = max(1, Int((width + spacing) / (minCard + spacing)))
+        return min(maxCard, (width - CGFloat(n - 1) * spacing) / CGFloat(n))
+    }
 }
 
 /// A zone's heading: an optional mark, a name, a count. Sentence case — the all-caps labels these
@@ -1046,6 +1062,8 @@ struct ProjectTag: View {
 /// board itself off screen.
 struct RecentStrip: View {
     @EnvironmentObject var state: AppState
+    /// The row's width inside the tray, which is the board grid's width (see `BoardGrid.wrapInset`).
+    @State private var rowWidth: CGFloat = 0
 
     private static let limit = 6
 
@@ -1066,24 +1084,29 @@ struct RecentStrip: View {
         if state.showRecentStrip && !recent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 ZoneHeader(icon: "clock.arrow.circlepath", title: L(.zoneRecent), count: recent.count)
-                    .padding(.horizontal, 4)
                 ScrollView(.horizontal, showsIndicators: false) {
+                    // Cards at the grid's width and spacing, so the first row of them lands on the
+                    // board's columns; the rest scroll.
                     HStack(alignment: .top, spacing: BoardGrid.spacing) {
                         ForEach(recent) { t in
                             VStack(alignment: .leading, spacing: 6) {
                                 ProjectTag(terminal: t)
                                 TerminalCardView(terminal: t)
                             }
-                            .frame(width: BoardGrid.stripCardWidth)
+                            .frame(width: rowWidth > 0 ? BoardGrid.cardWidth(in: rowWidth) : BoardGrid.stripCardWidth)
                         }
                     }
                     // A focus ring that a tight clip would cut.
                     .padding(.vertical, 2)
                 }
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { g in Color.clear.preference(key: TrayWidthKey.self, value: g.size.width) })
+            .onPreferenceChange(TrayWidthKey.self) { rowWidth = $0 }
+            .padding(BoardGrid.wrapInset)
             .background(Theme.surfaceContainerLow)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sheet))
+            .padding(.horizontal, -BoardGrid.wrapInset)
         }
     }
 }
@@ -1526,7 +1549,7 @@ struct ClusterContainer: View {
                 ForEach(members) { t in TerminalCardView(terminal: t) }
             }
         }
-        .padding(12)
+        .padding(BoardGrid.wrapInset)
         // An outline and nothing else: the group is a frame around cards, not a coloured block.
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sheet)
             .strokeBorder(highlighted ? Theme.primary : Theme.outlineVariant, lineWidth: highlighted ? 2 : 1))
@@ -1538,6 +1561,8 @@ struct ClusterContainer: View {
             Color.clear.preference(key: ClusterFramesKey.self,
                                    value: [clusterId: [g.frame(in: .named("fleet"))]])
         })
+        // Out into the margin by its padding, so its cards are the board's cards (BoardGrid.wrapInset).
+        .padding(.horizontal, -BoardGrid.wrapInset)
     }
 
     private func clusterButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
@@ -1581,6 +1606,11 @@ struct EmptyState: View {
 // MARK: - Session-tree drag plumbing
 
 /// The fleet board's frame in the "fleet" space — the standalone drop target for tree nodes.
+private struct TrayWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct WindowWidthKey: PreferenceKey {
     static var defaultValue: Double = 0
     static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
