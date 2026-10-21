@@ -100,6 +100,11 @@ final class AppState: ObservableObject {
     /// When each terminal's last run ended by going back to idle. Kept only in memory: it drives the
     /// few seconds a card that just finished stays tinted, and after a relaunch nothing is fresh.
     @Published var runEndedAt: [UUID: Date] = [:]
+    /// When an agent CLI was last started in each terminal, and the command line that started it,
+    /// from the shell's report. Only rollouts written since then — or the one it was told to resume
+    /// — can be that agent's (see `transcriptPath(for:)`). Memory only: after a relaunch the agents'
+    /// files already exist and are found the usual way.
+    var agentStarted: [UUID: (at: Date, command: String)] = [:]
     /// How long a change counts as fresh: a run that started this recently draws in the strong
     /// primary tone, one that ended this recently in the tertiary container, then both settle.
     /// Terminals start and stop on their own (hooks, auto-recover, scheduled pings), and a
@@ -549,7 +554,8 @@ final class AppState: ObservableObject {
             $0.agentKind == .codex && $0.status != .closed && $0.status != .needsYou
         }.map { t in
             (id: t.id, cwd: t.cwd, hook: hookSessionPath(for: t.id), stored: t.transcriptPath,
-             home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) })
+             home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) },
+             started: agentStarted[t.id].map { ($0.at.addingTimeInterval(-2), $0.command) })
         }
         guard !targets.isEmpty else { return }
         let claimed = Set(terminals.compactMap { $0.transcriptPath })
@@ -557,10 +563,12 @@ final class AppState: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var verdicts: [(UUID, Bool)] = []
             for t in targets {
+                let fallback = [t.hook, t.stored].compactMap { $0 }
+                    .first { p in t.started.map { Self.continues(p, since: $0.0, command: $0.1) } ?? true }
                 let path = CodexSession.currentRollout(cwd: t.cwd,
                                                        excluding: claimed.subtracting([t.stored].compactMap { $0 }),
-                                                       home: t.home)
-                    ?? t.hook ?? t.stored
+                                                       home: t.home, since: t.started?.0)
+                    ?? fallback
                 guard let path, let working = CodexSession.isWorking(rollout: path) else { continue }
                 verdicts.append((t.id, working))
             }
@@ -1464,6 +1472,7 @@ final class AppState: ObservableObject {
         tokenSeries[id] = nil
         lastParsedTranscriptSize[id] = nil
         lastTokenRefreshAt[id] = nil
+        agentStarted[id] = nil
         pruneClusters()
         save()
     }
@@ -2178,9 +2187,12 @@ final class AppState: ObservableObject {
             // that it is a Codex terminal at all — and so the only thing that starts its status poll.
             // Not for Claude: its hooks say which CLI ran which conversation, and a command line only
             // says what was typed — `claude update` in an `sp-claude` card would relabel the card.
-            if let c = ev.command, let home = AgentHome.launched(by: c), home.kind == .codex {
-                terminals[idx].agentKind = .codex
-                terminals[idx].subPool = home.viaSubPool
+            if let c = ev.command, let home = AgentHome.launched(by: c) {
+                agentStarted[uid] = (Date(), c)
+                if home.kind == .codex {
+                    terminals[idx].agentKind = .codex
+                    terminals[idx].subPool = home.viaSubPool
+                }
             }
             // A plain (non-claude) command ran at the zsh prompt → back to "shell", show the command.
             // `claude` still reports itself so the *act of starting an agent* is audited, but it must
@@ -2486,7 +2498,10 @@ final class AppState: ObservableObject {
     /// transcript and the screen and encoding the answer are done off it (`ConversationSpec`).
     func conversationSpec(_ id: UUID) -> ConversationSpec {
         let t = terminals.first(where: { $0.id == id })
+        // A Claude that has started but not been spoken to yet reads as an empty chat — its own
+        // session, with nothing in it — rather than as a shell.
         let path = transcriptPath(for: id)
+            ?? (t?.status.isAgent == true ? reportedSessionPath(for: id) : nil)
         return ConversationSpec(path: path, cwd: t?.cwd ?? "", ownPrompt: t?.lastPrompt ?? "",
                                 status: t?.status.rawValue, shared: path.map(terminalsSharing) ?? 0,
                                 tmuxPath: remote.tmuxPath, tmuxSession: RemoteServer.sessionName(for: id))
@@ -2520,14 +2535,31 @@ final class AppState: ObservableObject {
         // correct — and when hooks ARE working both answers are the same file anyway.
         if t.agentKind == .codex {
             let claimed = Set(terminals.filter { $0.id != id }.compactMap { $0.transcriptPath })
+            // Two seconds of slack: the shell reports the command as it starts, and Codex can
+            // touch its rollout within the same second.
+            let started = agentStarted[id]
+            let since = started?.at.addingTimeInterval(-2)
             if let live = CodexSession.currentRollout(cwd: t.cwd, excluding: claimed,
-                                                      home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) }) {
+                                                      home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) },
+                                                      since: since) {
                 return live
+            }
+            // Started, and has written nothing since: a conversation with nothing in it yet. The
+            // pointer and the card still name the one that ran here before — this card's, but not
+            // what it is doing now — so they count only if that one went on after the start, or is
+            // the one the command resumed (a reopen types `codex resume <id>`).
+            if let started, let since {
+                return [hookSessionPath(for: id), t.transcriptPath].compactMap { $0 }
+                    .first { Self.continues($0, since: since, command: started.command) }
             }
         }
         // The pointer hook.sh writes for this terminal wins for Claude: it is rewritten on every
         // hook event, so it survives a missed event or a `--resume` that switched sessions.
         if let live = hookSessionPath(for: id) { return live }
+        // It names a session whose file does not exist yet: Claude has started and nothing has
+        // been said, so there is no conversation — and above all not someone else's. Guessing past
+        // this point handed a fresh card the newest unclaimed transcript in its folder.
+        if reportedSessionPath(for: id) != nil { return nil }
         if let tp = t.transcriptPath, FileManager.default.fileExists(atPath: tp) { return tp }
         // A plain shell has no conversation at all — never guess one for it, or it would inherit
         // some unrelated session from the same project.
@@ -2568,6 +2600,24 @@ final class AppState: ObservableObject {
         let path = AgentHome.canonical(reported)
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return AgentHome.isCodex(path) ? CodexTree.mainLineRollout(of: path) : path
+    }
+
+    /// Is `rollout` what a Codex started at `since` by `command` is writing: touched since, or the
+    /// thread the command resumed?
+    nonisolated static func continues(_ rollout: String, since: Date, command: String) -> Bool {
+        if (CodexSession.modified(rollout) ?? .distantPast) >= since { return true }
+        let sid = CodexTree.sessionId(fromRollout: rollout)
+        return !sid.isEmpty && command.contains(sid)
+    }
+
+    /// The Claude session this terminal's hook last named, whether or not its file exists yet —
+    /// Claude creates it with the first message, well after SessionStart reports it.
+    func reportedSessionPath(for id: UUID) -> String? {
+        guard let data = try? Data(contentsOf: FV.sessionPointer(for: id)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reported = obj["transcript_path"] as? String else { return nil }
+        let path = AgentHome.canonical(reported)
+        return AgentHome.isCodex(path) ? nil : path
     }
 
     /// How many terminals point at the same transcript. >1 means the conversation genuinely belongs
