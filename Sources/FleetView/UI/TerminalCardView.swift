@@ -284,12 +284,39 @@ struct TerminalCardView: View {
                     .foregroundColor(fgSecondary)
                     .help(L(.tokensHelp(terminal.newTokens)))
             }
+            triggerChip
             Spacer(minLength: 4)
             controls
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
         }
         .frame(height: 28)
+    }
+
+    /// Something will make this agent act on its own later — a schedule, or background work that
+    /// wakes it. Shown always, not on hover: a card that looks idle but has a cron behind it is
+    /// exactly what this is for. The alarm when anything is timed; an hourglass for work that ends
+    /// on its own schedule. A click opens the panel (see TriggersPanel).
+    @ViewBuilder private var triggerChip: some View {
+        let all = state.triggers(for: terminal)
+        if !all.isEmpty {
+            let timed = all.filter(\.isTimed).count
+            let open = state.triggersPanelTerminalId == terminal.id
+            HStack(spacing: 3) {
+                Image(systemName: timed > 0 ? "alarm" : "hourglass").font(.system(size: 10, weight: .semibold))
+                Text("\(all.count)").font(.fvLabelSmall).monospacedDigit()
+            }
+            .foregroundColor(open ? (container?.bg ?? Theme.onPrimary) : (container?.fg ?? Theme.primary))
+            .padding(.horizontal, 6).frame(height: 18)
+            .background(Capsule().fill(open ? (container?.fg ?? Theme.primary) : Color.clear))
+            .overlay(Capsule().strokeBorder(container?.fg.opacity(0.5) ?? Theme.primary.opacity(0.6), lineWidth: 1))
+            .contentShape(Capsule())
+            // High priority for the same reason as the id chip: the card's own tap (raise) wants
+            // this click too.
+            .highPriorityGesture(TapGesture().onEnded { state.toggleTriggers(terminal.id) })
+            .fixedSize()
+            .help(L(.trigChipHelp(timed, all.count - timed)))
+        }
     }
 
     private var controls: some View {
@@ -330,6 +357,7 @@ struct TerminalCardView: View {
             if state.treePanelTerminalId == terminal.id { state.closeSessionTree() }
             else { state.openSessionTree(terminal.id) }
         }
+        Button(L(.cardTriggers)) { state.openTriggers(terminal.id) }
         Button(L(.cardDuplicateFork)) { state.duplicateTerminal(terminal.id) }
         Button(L(.cardDuplicateBlank)) { state.duplicateTerminal(terminal.id, blank: true) }
         Button(done ? L(.cardUnmark) : L(.cardMark)) { state.toggleSubtaskDone(terminal.id) }

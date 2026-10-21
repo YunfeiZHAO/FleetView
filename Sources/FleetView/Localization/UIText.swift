@@ -338,6 +338,48 @@ enum UIText {
     case searchProjectSummary(Int, Int)
     case searchProjectClosedHint
     case searchProjectOpenHint
+    case cardTriggers
+    case trigChipHelp(Int, Int)
+    case trigTitle
+    case trigGone
+    case trigAgentAsking
+    case trigNoAgent
+    case trigSectionScheduled
+    case trigSectionBackground
+    case trigSectionLaunchd
+    case trigEveryMinutes(Int)
+    case trigHourly(String)
+    case trigDaily(String)
+    case trigWeekdays(String)
+    case trigOnce(String)
+    case trigInterval(String)
+    case trigNext(String)
+    case trigNextAbout(String)
+    case trigCreated(String)
+    case trigFired(Int, String)
+    case trigNeverFired
+    case trigExpires(String)
+    case trigWakeup
+    case trigRecurring
+    case trigOneShot
+    case trigDeleteHelp
+    case trigStopHelp
+    case trigConfirmAgent
+    case trigConfirmLaunchd
+    case trigConfirm
+    case trigConfirmStop
+    case trigCancelling
+    case trigRemoving
+    case trigReportedAt(String)
+    case trigNeverReported
+    case trigNotRunning
+    case trigCodexNote
+    case trigNone
+    case trigNoneDetail
+    case trigShowAll
+    case trigShowLess
+    case trigReason(String)
+    case trigCopied
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,

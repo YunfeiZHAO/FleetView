@@ -19,6 +19,7 @@ enum AppStartup {
         state.web.app = state
         state.web.start()            // web dashboard (mirror of this window) on the LAN
         state.startPanelWatch()      // hot-load the agent-authored top panel (no relaunch needed)
+        state.startTriggerWatch()    // last-reported crons/background work, and LaunchAgents naming cards
         // Warm the conversation-search index in the background. The first build reads every
         // transcript on disk (~15 s); every refresh after that is incremental and near-free, so
         // doing it at launch means ⌘K is instant instead of waiting on a cold index.

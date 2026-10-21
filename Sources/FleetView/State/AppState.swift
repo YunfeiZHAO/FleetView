@@ -85,6 +85,16 @@ final class AppState: ObservableObject {
     @Published var treePanelTerminalId: UUID?
     @Published var treePanelWidth: Double = 460
 
+    // MARK: - Triggers (see AppState+Triggers)
+
+    /// What each terminal's agent last said it has scheduled or left running, from its Stop hook.
+    @Published var triggerReports: [UUID: TriggerReport] = [:]
+    /// LaunchAgents that name a terminal, from the last look at ~/Library/LaunchAgents.
+    @Published var launchdTriggers: [UUID: [AgentTrigger]] = [:]
+    /// Cancellations sent to an agent and not yet carried out, by `terminal/trigger key`.
+    @Published var triggerCancels: [String: Date] = [:]
+    @Published var triggersPanelTerminalId: UUID?
+
     // MARK: - Fresh changes
 
     /// When each terminal's last run ended by going back to idle. Kept only in memory: it drives the
@@ -228,6 +238,7 @@ final class AppState: ObservableObject {
 
     /// Open the tree panel for a terminal's current session (project-dir scoped, treeflow-style).
     func openSessionTree(_ id: UUID) {
+        triggersPanelTerminalId = nil           // one panel on the right at a time
         treePanelTerminalId = id
         guard let path = transcriptPath(for: id) else {
             treeModel.showEmpty(L(.treeNoAgent))
@@ -1292,6 +1303,10 @@ final class AppState: ObservableObject {
             // and only what is left — the removals — lands under this intent.
             closeAllTerminals(reason: reason)
             FV.log("board cleared (\(reason)): \(projects.count) project(s), \(terminals.count) terminal(s)")
+            retireLaunchdJobs(for: terminals.map(\.id))
+            triggerReports.removeAll()
+            saveTriggerReports()
+            closeTriggers()
             terminals.removeAll()
             projects.removeAll()
             clusters.removeAll()
@@ -1438,7 +1453,10 @@ final class AppState: ObservableObject {
         // Archive before anything is torn down — `transcriptPath(for:)` needs the terminal to still
         // be in `terminals`, and after this line the session id is unrecoverable.
         if let t = terminals.first(where: { $0.id == id }) { archive(t) }
+        retireLaunchdJobs(for: [id])
         if treePanelTerminalId == id { closeSessionTree() }
+        if triggersPanelTerminalId == id { closeTriggers() }
+        forgetReportedTriggers(id)
         controllers[id]?.closeWindow()
         controllers[id] = nil
         remote.stop(id)                 // kill this terminal's web server + tmux session
@@ -2130,6 +2148,7 @@ final class AppState: ObservableObject {
             enterStatus(.needsYou, at: idx)
         case "Stop":
             enterStatus(.idle, at: idx)
+            noteReportedTriggers(ev, terminal: uid)
         case "Notification":
             // The Notification hook fires for BOTH permission requests and idle "waiting for input".
             // Only a permission/approval request is a genuine "needs you"; idle just means returned.
@@ -2146,6 +2165,8 @@ final class AppState: ObservableObject {
             if terminals[idx].status != .working && terminals[idx].status != .needsYou {
                 enterStatus(.idle, at: idx)
             }
+            // A new process holds none of the old one's crons or background work.
+            if ev.source == "startup" || ev.source == "resume" { forgetReportedTriggers(uid) }
             if ev.source == "startup" {
                 terminals[idx].lastPrompt = ""                    // brand-new session, no prompt yet
             } else if let tp = ev.transcriptPath {
@@ -2394,6 +2415,19 @@ final class AppState: ObservableObject {
             }
             else if let d = query["del"], let nid = UUID(uuidString: d) { removeNote(nid) }
             return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
+        case "/trigger/cancel":
+            // `key` is what `/triggers` listed; `wakeup` is what it worked out from the transcript,
+            // passed back so this answer does not have to read the transcript on the main actor.
+            guard let s = query["id"], let id = UUID(uuidString: s), let key = query["key"] else {
+                return ("400 Bad Request", "application/json", Data(#"{"error":"bad id"}"#.utf8))
+            }
+            guard let trig = triggers(for: id).first(where: { $0.key == key }) else {
+                return ("404 Not Found", "application/json", Self.errorJSON(L(.trigGone)))
+            }
+            if let why = cancelTrigger(trig, on: id, wakeup: query["wakeup"] == "1") {
+                return ("409 Conflict", "application/json", Self.errorJSON(why))
+            }
+            return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
         case "/favicon.ico":
             // Answer once instead of 404-ing forever: browsers ask unprompted and keep retrying.
             return ("204 No Content", "image/x-icon", Data())
@@ -2588,7 +2622,8 @@ final class AppState: ObservableObject {
         // openable (reattach from the web) — not one has-session call per terminal.
         let live = remote.available ? remote.liveSessions() : []
         let terms = terminals.map { t in
-            WebSnapshot.Term(id: t.id.uuidString, name: t.name, projectId: t.projectId.uuidString,
+            let trig = triggers(for: t)
+            return WebSnapshot.Term(id: t.id.uuidString, name: t.name, projectId: t.projectId.uuidString,
                              clusterId: t.clusterId?.uuidString, status: t.status.rawValue,
                              statusLabel: t.status.apiLabel, agent: t.agentKind.label,
                              prompt: t.lastPrompt, tokens: t.newTokens,
@@ -2606,7 +2641,9 @@ final class AppState: ObservableObject {
                                  : -1,
                              cwd: t.cwd,
                              transcript: t.transcriptPath,
-                             window: windowState(t.id).rawValue)
+                             window: windowState(t.id).rawValue,
+                             trig: trig.isEmpty ? nil : trig.count,
+                             trigTimed: trig.isEmpty ? nil : trig.filter(\.isTimed).count)
         }
         return WebSnapshot(
             projects: projects.map { .init(id: $0.id.uuidString, name: $0.name, path: $0.path) },
@@ -2773,7 +2810,7 @@ final class AppState: ObservableObject {
     /// `removeTerminal` has already stopped this one.
     private func handleWindowClosed(_ id: UUID) {
         let wasTracked = controllers.removeValue(forKey: id) != nil
-        if wasTracked && !isQuitting { remote.stop(id) }
+        if wasTracked && !isQuitting { remote.stop(id); forgetReportedTriggers(id) }
         hiddenFrames[id] = nil
         if let idx = terminals.firstIndex(where: { $0.id == id }) {
             if !isQuitting { terminals[idx].windowHidden = nil }   // a closed card is not a hidden one

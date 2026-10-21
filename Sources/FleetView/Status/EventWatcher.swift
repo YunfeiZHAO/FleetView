@@ -38,6 +38,11 @@ final class EventWatcher {
         /// `claude` reports its own command line so that starting an agent is audited, but its
         /// status is owned by its hooks — this flag keeps the card from being dragged to "shell".
         let quiet: Bool
+
+        /// Stop: what the session has scheduled and what it left running (see AgentTrigger). nil
+        /// when the payload does not say, which is not the same as saying "nothing".
+        let crons: [AgentTrigger]?
+        let background: [AgentTrigger]?
     }
 
     private let dir: URL
@@ -100,7 +105,9 @@ final class EventWatcher {
                            durationMs: p["duration_ms"].flatMap { $0 as? Int ?? Int("\($0)") },
                            tty: p["tty"] as? String,
                            pid: p["pid"].flatMap { $0 as? Int ?? Int("\($0)") },
-                           quiet: (p["quiet"] as? String).map { !$0.isEmpty } ?? false)
+                           quiet: (p["quiet"] as? String).map { !$0.isEmpty } ?? false,
+                           crons: AgentTrigger.crons(fromStop: p),
+                           background: AgentTrigger.background(fromStop: p))
             onEvent?(ev)
         }
     }

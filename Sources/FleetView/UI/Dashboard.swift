@@ -82,6 +82,13 @@ struct DashboardView: View {
                 SessionTreePanel(model: state.treeModel)
                     .frame(width: columns.tree)
                     .transition(.move(edge: .trailing))
+            } else if let id = state.triggersPanelTerminalId {
+                // Beside the board rather than over it, and the board stays live: the panel is
+                // read alongside the cards, and a click on another card's chip switches to it.
+                Rectangle().fill(Theme.outlineVariant).frame(width: 1)
+                TriggersPanel(terminalId: id)
+                    .frame(width: TriggersPanel.width)
+                    .transition(.move(edge: .trailing))
             }
         }
         .background(GeometryReader { g in
@@ -89,6 +96,7 @@ struct DashboardView: View {
         })
         .onPreferenceChange(WindowWidthKey.self) { windowWidth = $0 }
         .animation(.easeOut(duration: 0.22), value: state.treePanelTerminalId != nil)
+        .animation(.easeOut(duration: 0.22), value: state.triggersPanelTerminalId != nil)
         .background(Theme.bg)
         .frame(minWidth: 960, minHeight: 580)
         .overlay { treeInspector }     // interactive: text selection + scrolling

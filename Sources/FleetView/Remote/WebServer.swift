@@ -23,6 +23,10 @@ struct WebSnapshot: Codable {
         let cwd: String
         let transcript: String?   // agent conversation-history file (Claude/Codex), if a hook reported it
         let window: String        // its desktop window: "open", "hidden" (agent running unseen), "none"
+        /// How many triggers it has, and how many of them are timed (see AgentTrigger) — the chip.
+        /// Left out when there are none, so a board without any is byte-for-byte what it was.
+        let trig: Int?
+        let trigTimed: Int?
     }
     struct Proj: Codable { let id: String; let name: String; let path: String }
     struct Clust: Codable { let id: String; let name: String }
@@ -210,6 +214,7 @@ final class WebServer {
         if path == "/read" { handleRead(conn, params, scope); return }
         if path == "/conversation" { handleConversation(conn, params, scope); return }  // parsing; off it
         if path == "/capture" { handleCapture(conn, params, scope); return }            // tmux; off it
+        if path == "/triggers" { handleTriggers(conn, params, scope); return }          // transcript; off it
 
         DispatchQueue.main.async { [weak self] in
             guard let self, let app = self.app else {
@@ -312,6 +317,27 @@ final class WebServer {
             DispatchQueue.global(qos: .userInitiated).async {
                 answer("200 OK", spec.respond(limit: limit))
             }
+        }
+    }
+
+    /// GET /triggers?id= — what will make a terminal's agent act on its own (see AgentTrigger),
+    /// with what its transcript adds: whole prompts, fire counts, which one-shots are /loop wakeups.
+    private func handleTriggers(_ conn: NWConnection, _ query: [String: String], _ scope: WebAudit.Scope) {
+        func answer(_ status: String, _ body: Data) {
+            WebAudit.shared.finish(scope, status: status, bytes: body.count, query: query)
+            send(conn, status: status, type: "application/json", body: body, setCookie: scope.setCookie)
+        }
+        guard let s = query["id"], let id = UUID(uuidString: s) else {
+            answer("400 Bad Request", Data(#"{"error":"bad id"}"#.utf8)); return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let app = self.app else {
+                self?.send(conn, status: "503 Service Unavailable", type: "text/plain", body: Data()); return
+            }
+            guard let spec = MainActor.assumeIsolated({ app.triggersSpec(id) }) else {
+                answer("404 Not Found", Data(#"{"error":"no such terminal"}"#.utf8)); return
+            }
+            DispatchQueue.global(qos: .userInitiated).async { answer("200 OK", spec.respond()) }
         }
     }
 
