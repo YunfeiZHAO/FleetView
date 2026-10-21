@@ -1191,6 +1191,7 @@ const I18N={
     'net.toastOff':'连不上 Mac，正在重试','net.toastOffLast':'连不上 Mac，正在重试（上次：{route}）',
     'net.latency':'延迟 {ms} ms','net.latencyRange':'延迟 {ms} ms（最近 {n} 次 {lo}–{hi} ms）',
     'net.node':'本设备：{node}','net.refreshed':'看板 {s} 秒前刷新',
+    'toast.attachedTo':'文件已附加到「{name}」的输入框',
     'trig.title':'触发器','trig.chip':'{n} 个触发器 · 点击查看',
     'trig.secCron':'定时任务','trig.secBg':'后台任务 · 结束或有动静时唤醒 agent','trig.secLaunchd':'launchd 定时',
     'trig.every':'每 {n} 分钟','trig.hourly':'每小时 {m}','trig.daily':'每天 {t}','trig.weekdays':'工作日 {t}',
@@ -1294,6 +1295,7 @@ const I18N={
     'net.toastOff':'Can’t reach the Mac — retrying','net.toastOffLast':'Can’t reach the Mac — retrying (last: {route})',
     'net.latency':'Latency {ms} ms','net.latencyRange':'Latency {ms} ms (last {n}: {lo}–{hi} ms)',
     'net.node':'This device: {node}','net.refreshed':'Board refreshed {s}s ago',
+    'toast.attachedTo':'Attached to {name}’s message box',
     'trig.title':'Triggers','trig.chip':{one:'1 trigger · tap to see',other:'{n} triggers · tap to see'},
     'trig.secCron':'Scheduled','trig.secBg':'Background work · wakes the agent when it reports','trig.secLaunchd':'launchd jobs',
     'trig.every':'every {n} min','trig.hourly':'hourly at {m}','trig.daily':'daily at {t}','trig.weekdays':'weekdays at {t}',
@@ -1345,6 +1347,8 @@ function applyI18n(root){
 applyI18n(document);
 
 let curUrl='',curId='',state=null,dragging=false,curView='chat',chatTimer=null,termLoaded=false,curInfo={},sentAt=0,stickBottom=false,flyNext=false;
+/* The position a conversation is to open at, until it has been put there (see goTo). */
+let pendingPos=null, settle=null, chatTouched=0, liveSeen=false;
 
 /* ---------- icons and status shapes ----------
    Line icons are Lucide's geometry (the library the design names for the web side), inlined so the
@@ -1560,14 +1564,79 @@ function cachePut(id,j){
    the first live payload rather than being restored stale. */
 function showCached(c){
   const el=document.getElementById('chat');
-  el.dataset.sig=''; el.scrollTop=0;
-  sentGhost=null; stickBottom=true; flyNext=true;
+  el.dataset.sig='';
+  sentGhost=null; stickBottom=false; flyNext=true;     // where it lands is pendingPos's to say
   curInfo=Object.assign({},c.info,{status:'',pendingTool:'',pendingText:''});
   document.getElementById('stickyq').classList.remove('on');
   document.getElementById('perm').classList.remove('on');
   renderChat(c.messages,c.note);
   renderInfo(curInfo);
 }
+/* ---------- each card keeps its own place and its own unsent text ----------
+   One composer and one scroll used to serve every card. A draft typed for one terminal was still
+   in the box when you opened another — and Send would have given it to that one. And a
+   conversation reopened from this device's cache was scrolled to its end while the overlay was
+   still hidden, which a browser may ignore: it then opened wherever the cached list began, which
+   is 150 messages back, the middle of the conversation. Now each card reopens where you left it:
+   at the latest message if that is where you were, else at the message you were reading. */
+const POS_KEY='fv_pos', DRAFT_KEY='fv_draft', PER_CARD_MAX=60;
+function cardMap(key){ try{ return JSON.parse(localStorage.getItem(key)||'{}')||{}; }catch(e){ return {}; } }
+function cardPut(key,id,val){
+  if(!id)return;
+  const m=cardMap(key);
+  if(val==null) delete m[id]; else m[id]=Object.assign({t:Date.now()},val);
+  for(const x of Object.keys(m).sort((a,b)=>(m[b].t||0)-(m[a].t||0)).slice(PER_CARD_MAX)) delete m[x];
+  try{ localStorage.setItem(key,JSON.stringify(m)); }catch(e){}
+}
+/* Where the chat is being read: its end, or the message at the top of the view and how far down
+   it sits. A message rather than a pixel offset, because the list is a window onto the last 150
+   messages that slides as new ones arrive — an offset would point at something else next time. */
+function readingAt(el){
+  if(el.scrollHeight-el.scrollTop-el.clientHeight<120) return {bottom:true};
+  const top=el.getBoundingClientRect().top;
+  for(const n of el.querySelectorAll('.msg[data-k]')){
+    const r=n.getBoundingClientRect();
+    if(r.bottom>top) return {k:n.dataset.k,off:r.top-top};
+  }
+  return {bottom:true};
+}
+/* Put the view back there. False when that message is not in the list on screen. */
+function goTo(el,at){
+  if(!at||at.bottom){ el.scrollTop=el.scrollHeight; return true; }
+  const n=el.querySelector('.msg[data-k="'+at.k+'"]');      // msgKey is [a-z0-9]: safe in a selector
+  if(!n) return false;
+  el.scrollTop+=n.getBoundingClientRect().top-el.getBoundingClientRect().top-at.off;
+  return true;
+}
+/* Arrived at: hold it there for a moment, while late layout (fonts, the viewport settling, the
+   header's height) moves things under it — unless you have started scrolling yourself. */
+function settleAt(el,at){
+  const since=performance.now();
+  settle={at,since};
+  for(const ms of [0,120,400,1000]) setTimeout(()=>{
+    if(settle&&settle.since===since&&chatTouched<since&&curId) goTo(el,at);
+  },ms);
+}
+function savePos(){
+  const el=document.getElementById('chat');
+  if(!curId||pendingPos||!el.querySelector('.msg')) return;   // nothing of its own on screen yet
+  cardPut(POS_KEY,curId,readingAt(el));
+}
+function saveDraft(){
+  if(!curId)return;
+  const v=document.getElementById('inputtext').value;
+  cardPut(DRAFT_KEY,curId,v?{v}:null);
+}
+function loadDraft(id){
+  const ta=document.getElementById('inputtext');
+  ta.value=(cardMap(DRAFT_KEY)[id]||{}).v||'';
+  autoGrow(ta); syncSendBtn();
+}
+['wheel','touchstart','keydown','mousedown'].forEach(ev=>
+  document.getElementById('chat').addEventListener(ev,()=>{ chatTouched=performance.now(); },{passive:true}));
+window.addEventListener('pagehide',()=>{ savePos(); saveDraft(); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden){ savePos(); saveDraft(); } });
+
 /* Where the board was when you opened a terminal, so closing one puts you back there instead of at
    the top of the list — on a phone, three projects up.
    The offset has to be taken *before* the lock: `body.locked` is `position:fixed`, which collapses
@@ -1600,12 +1669,16 @@ function unlockBoard(id){
   if(r.top<8||r.bottom>window.innerHeight-8) card.scrollIntoView({block:'center'});
 }
 function openTerm(id,name){
+  if(curId&&curId!==id){ savePos(); saveDraft(); }          // leaving one card for another
   curId=id;curUrl='';termLoaded=false;chatFails=0;termGone=false;
+  // Shown before anything is drawn into it: a pane that is not laid out cannot be scrolled.
+  document.getElementById('term').classList.add('show');
+  pendingPos=cardMap(POS_KEY)[id]||{bottom:true}; settle=null; liveSeen=false;
   const cached=cacheGet(id);
   if(cached&&cached.messages&&cached.messages.length) showCached(cached); else showSkeleton();
+  loadDraft(id);
   document.getElementById('termname').textContent=name;
   document.getElementById('termframe').src='about:blank';
-  document.getElementById('term').classList.add('show');
   closeDrawer(); showTermHead();            // every conversation opens with its header and no drawer
   lockBoard();                              // stop the page scrolling behind the overlay
   syncViewport();
@@ -1686,6 +1759,7 @@ swipeBack('term','chat','pre.code,.mbody,#presets,#keys,#inputbar,#drawer,#tabs'
    long-press to copy, a code preview scrolls sideways, and a PDF is an iframe that pans itself. */
 swipeBack('fb','fbbody','#fbpath,#fbcrumbs,pre,iframe,textarea,.fbtools,table',()=>fbClose());
 function closeTerm(){
+  savePos(); saveDraft();
   closeDrawer(); showTermHead();
   document.getElementById('stickyq').classList.remove('on');
   document.getElementById('term').classList.remove('show');
@@ -1693,7 +1767,7 @@ function closeTerm(){
   syncViewport();                          // drop the keyboard-era height/offset
   document.getElementById('termframe').src='about:blank';
   document.getElementById('termerr').classList.remove('on');
-  curId='';termLoaded=false;stopChatPoll();
+  curId='';termLoaded=false;stopChatPoll();pendingPos=null;settle=null;
   beaconSelect('','');
   termSyncHash();
 }
@@ -1821,7 +1895,22 @@ async function loadChat(){
     // A plain shell has no conversation — show its scrollback instead, which is the thing you
     // actually want to read remotely (and unlike the terminal mirror, this scrolls on touch).
     if(curInfo.shell) await renderShell();
-    else { renderChat(j.messages||[],j.note); cachePut(want,j); }
+    else {
+      renderChat(j.messages||[],j.note); cachePut(want,j);
+      // The first live list is the last word on where to open. If what you were reading is not in
+      // it — it has scrolled out of the last 150 since — the latest is the next best place: the
+      // cached copy may have found it, but holding on to a message that is about to vanish would
+      // leave you at whatever the list now starts with.
+      if(!liveSeen&&(j.messages||[]).length){
+        liveSeen=true;
+        const el=document.getElementById('chat'), at=pendingPos||(settle&&settle.at);
+        const untouched=!settle||chatTouched<settle.since;
+        if(at&&!at.bottom&&untouched&&!el.querySelector('.msg[data-k="'+at.k+'"]')){
+          goTo(el,{bottom:true}); settleAt(el,{bottom:true});
+        }
+        pendingPos=null;
+      }
+    }
     renderInfo(curInfo);
     renderPerm(curInfo);
     syncSendBtn();
@@ -2022,8 +2111,10 @@ function syncSendBtn(){
   btn.dataset.stop=stop?'1':'';
 }
 function jumpLatest(){ const el=document.getElementById('chat'); el.scrollTop=el.scrollHeight; }
+let posSaveT=0;
 document.getElementById('chat').addEventListener('scroll',()=>{
   const el=document.getElementById('chat');
+  clearTimeout(posSaveT); posSaveT=setTimeout(savePos,300);
   document.getElementById('jump').classList.toggle('on', el.scrollHeight-el.scrollTop-el.clientHeight>300);
   updateStickyPrompt();
 });
@@ -2259,7 +2350,7 @@ function msgHTML(m){
       (m.ok===false?'<span style="color:var(--red)" title="'+tr('chat.failed')+'">'+ic('x','s16')+'</span>':'')+'</div>'+
       (det?'<div class="mbody">'+det+'</div>':'')+'</div>';
   }
-  return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'">'+
+  return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'" data-k="'+msgKey(m)+'">'+
     '<span class="cp" data-copy="1">'+tr('chat.copy')+'</span>'+
     (m.sub?'<div class="tag">'+tr('chat.subagent')+'</div>':'')+
     (m.ts?'<span class="when">'+hhmm(m.ts)+'</span>':'')+
@@ -2287,6 +2378,8 @@ function renderChat(msgs,note){
             ':'+(st.status||'')+':'+(st.pendingText||'');
   if(el.dataset.sig===sig)return;      // unchanged → don't rebuild at all
   const nearBottom=stickBottom||el.scrollHeight-el.scrollTop-el.clientHeight<120;
+  // Read before the rebuild: the message you are on, to hold it still while the window slides.
+  const reading=pendingPos||nearBottom?null:readingAt(el);
   // Remember which cards the user expanded and restore them after the rebuild — otherwise reading a
   // long tool output is impossible. Keyed by content, not position: messages get appended and old
   // ones drop off the front, so any index-based anchor drifts.
@@ -2304,7 +2397,11 @@ function renderChat(msgs,note){
     for(let i=from;i<n;i++){ all[i].classList.add('fly');
       all[i].style.animationDelay=((i-from)*20)+'ms'; }
   }
-  if(nearBottom){el.scrollTop=el.scrollHeight;stickBottom=false;}
+  if(pendingPos){
+    if(goTo(el,pendingPos)){ settleAt(el,pendingPos); pendingPos=null; }
+  }else if(nearBottom) el.scrollTop=el.scrollHeight;
+  else if(reading) goTo(el,reading);
+  stickBottom=false;
   updateStickyPrompt();
 }
 async function key(k){if(!curId)return;try{await fetch('/key?id='+curId+'&k='+encodeURIComponent(k));}catch(e){}}
@@ -2344,7 +2441,7 @@ function usePreset(id){
   const at=ta.value.length; ta.setSelectionRange(at,at);
   closeDrawer();
   autoGrow(ta); ta.focus();
-  syncSendBtn();
+  syncSendBtn(); saveDraft();
 }
 async function addNote(){const c=prompt(tr('notes.addPrompt'));
   if(c&&c.trim()){await fetch('/note?add='+encodeURIComponent(c.trim()));await refreshState();renderPresets();}}
@@ -2600,7 +2697,8 @@ async function sendText(){
      message interrupted the turn instead of sending — so it took two taps. */
   if(!t){ key(document.getElementById('sendbtn').dataset.stop?'Escape':'Enter'); return; }
   closeDrawer();
-  ta.value='';autoGrow(ta);
+  const owner=curId;
+  ta.value='';autoGrow(ta);saveDraft();pendingPos=null;
   showSent(t);                       // don't wait a round trip to acknowledge the send
   stickBottom=true; jumpLatest();    // follow your own message down, wherever you were reading
   markSent();                       // the hook is a beat behind; don't sit on 'idle' meanwhile
@@ -2614,8 +2712,12 @@ async function sendText(){
     const r=await (await req).json();
     if(r&&r.submit==='stuck'){ sentAt=0; renderInfo(curInfo);
       toast(tr('toast.stuck'),5000); }
-  }catch(e){ ta.value=t; autoGrow(ta); sentAt=0; renderInfo(curInfo);
-             if(sentGhost){ sentGhost.node.remove(); sentGhost=null; } }
+  }catch(e){
+    // Back to the card it was written for, which may no longer be the one on screen.
+    if(curId===owner){ ta.value=t; autoGrow(ta); saveDraft(); sentAt=0; renderInfo(curInfo);
+                       if(sentGhost){ sentGhost.node.remove(); sentGhost=null; } }
+    else cardPut(DRAFT_KEY,owner,{v:t});
+  }
 }
 /* ---------- files an agent sent (the outbox) ----------
    The mirror of the attach button: `fleetview-send` drops a file in ~/.fleetview/outbox and it
@@ -2826,6 +2928,7 @@ function uploadOne(f,label){
 async function attachFiles(files){
   const list=[...files];
   if(!list.length)return;
+  const owner=curId;                 // an upload outlasts a switch to another card
   const btn=document.getElementById('imgbtn');
   // The attach control is a tile now; only its label changes, or the icon would be wiped with it.
   const lab=btn.querySelector('.tl')||btn;
@@ -2848,7 +2951,13 @@ async function attachFiles(files){
   uprogHide();
   btn.disabled=false;
   if(lab.textContent==='…') lab.textContent=was;
-  if(paths.length) insertAtCursor(document.getElementById('inputtext'), paths.join(' ')+' ');
+  if(!paths.length) return;
+  const text=paths.join(' ')+' ';
+  if(curId===owner){ insertAtCursor(document.getElementById('inputtext'),text); saveDraft(); return; }
+  const d=(cardMap(DRAFT_KEY)[owner]||{}).v||'';
+  cardPut(DRAFT_KEY,owner,{v:d+(d&&!/\s$/.test(d)?' ':'')+text});
+  const term=((state&&state.terminals)||[]).find(x=>x.id===owner);
+  toast(tr('toast.attachedTo',{name:term?term.name:owner.slice(0,8)}),2400);
 }
 /* Land the path where the cursor is, so a caption typed around it survives. */
 function insertAtCursor(ta,text){
@@ -2940,7 +3049,7 @@ function markSent(){ sentAt=performance.now(); curInfo.status='working'; renderI
 document.getElementById('inputtext').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}
 });
-document.getElementById('inputtext').addEventListener('input',e=>{autoGrow(e.target);syncSendBtn();});
+document.getElementById('inputtext').addEventListener('input',e=>{autoGrow(e.target);syncSendBtn();saveDraft();});
 
 /* ---------- project file browser ----------
    The project's own directory, walked from the phone. What it is for: an agent cites a file, and
