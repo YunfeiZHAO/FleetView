@@ -1078,10 +1078,8 @@ final class AppState: ObservableObject {
     nonisolated static func codexCommand(transcript path: String, termCwd: String,
                                          verb: String, pinnedCwd: String? = nil,
                                          subPool: Bool? = nil) -> String? {
-        let base = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        let parts = base.split(separator: "-")
-        guard parts.count >= 5 else { return nil }
-        let sid = parts.suffix(5).joined(separator: "-")
+        // A revert's segment is named `…-<thread>_<rollout>.jsonl`; the thread is what resumes.
+        let sid = CodexTree.sessionId(fromRollout: path)
         guard UUID(uuidString: sid) != nil else { return nil }
         // The rollout says where the session ran, which is the right answer everywhere except
         // after a deliberate move — there the card has been told it belongs somewhere else, and
@@ -2511,7 +2509,11 @@ final class AppState: ObservableObject {
     /// agent kind. nil if no agent session has been captured yet (nothing to fork a query from).
     func askSpec(_ id: UUID) -> AskSpec? {
         guard let t = terminals.first(where: { $0.id == id }), let path = transcriptPath(for: id) else { return nil }
-        let sid = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        // A Claude transcript is named for its session; a Codex rollout only carries the thread id
+        // inside `rollout-<ts>-<id>[_<rollout>].jsonl`, and the whole stem is no id Codex knows.
+        let sid = AgentHome.isCodex(path)
+            ? CodexTree.sessionId(fromRollout: path)
+            : ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         guard !sid.isEmpty else { return nil }
         return AskSpec(sessionId: sid, cwd: t.cwd, agent: t.agentKind.rawValue,
                        command: AgentHome.resuming(path, kind: t.agentKind, subPool: t.subPool).command)
@@ -2925,7 +2927,10 @@ extension AppState {
         let ids = Set(hits.map(\.sid))
         if ids.isEmpty { return .missing }
         if ids.count > 1 { return .ambiguous(ids.sorted()) }
-        return .found(path: hits[0].path, session: hits[0].sid)
+        // A reverted Codex thread is several files under one id; the newest name is the one it
+        // continues in (the first holds what the revert threw away). Claude hits are one file.
+        let pick = hits.max { ($0.path as NSString).lastPathComponent < ($1.path as NSString).lastPathComponent }!
+        return .found(path: pick.path, session: pick.sid)
     }
 
     /// The folder a Claude conversation ran in, as `--resume` will need it: the recorded cwd when it

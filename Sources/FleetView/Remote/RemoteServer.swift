@@ -12,7 +12,7 @@ struct TmuxSpec {
 
 /// What `ask` needs to run a forked, context-aware side query for a terminal's agent.
 struct AskSpec: Sendable {
-    let sessionId: String   // the agent session (transcript filename without .jsonl)
+    let sessionId: String   // the agent session: Claude's transcript name, Codex's thread id
     let cwd: String
     let agent: String       // "claude" / "codex" / ""
     let command: String     // the CLI to run it with: "claude", "sp-claude", "codex", "sp-codex"
@@ -243,8 +243,12 @@ final class RemoteServer {
         // `spec.command` is one of AgentHome's four names, never text from a request, so it is safe
         // to put in the line itself. An `sp-claude` session has to be asked through `sp-claude`:
         // plain `claude` would answer from whatever account ~/.claude is logged into, if any.
+        // Codex's counterpart is `exec fork`: `exec resume` would continue the live thread itself
+        // and write the question into the conversation the terminal is in the middle of. And
+        // `--ephemeral`, or the fork's rollout — same cwd, newest — becomes what the card is
+        // attributed to (`CodexSession.currentRollout`) until the real thread writes again.
         let tool = spec.agent == "codex"
-            ? spec.command + #" exec resume "$FV_SID" "$FV_Q""#
+            ? spec.command + #" exec fork --ephemeral "$FV_SID" "$FV_Q""#
             : spec.command + #" -p --resume "$FV_SID" --fork-session "$FV_Q""#
         let p = Process()
         p.executableURL = URL(fileURLWithPath: FV.userShell)

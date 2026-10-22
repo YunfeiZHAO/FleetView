@@ -16,6 +16,11 @@ struct SlimRecord {
     let uuid: String
     let parent: String?
     let isPrompt: Bool        // a real user prompt (treeflow `_is_user_prompt`)
+    /// Opens a turn, typed or not (treeflow `_starts_turn`): where a fork's copy of the target's
+    /// reply stops reading forward. Wider than `isPrompt` on purpose — a notice or a scheduled
+    /// `/loop` check is no node, but it is the next turn, and a fork that ran on through it would
+    /// resume after every check that followed instead of on the target's own answer.
+    let startsTurn: Bool
     let isAssistant: Bool
     let sidechain: Bool
     let ts: String            // ISO8601 — lexicographic order == chronological order
@@ -209,6 +214,7 @@ enum SessionTreeBuilder {
 
         var records: [SlimRecord] = []
         var leaf: String?
+        var lastMessage: String?    // where Claude lands when the leaf is pinned to nothing
         guard let handle = try? FileHandle(forReadingFrom: url) else { return ([], nil, size) }
         defer { try? handle.close() }
 
@@ -219,18 +225,28 @@ enum SessionTreeBuilder {
                 let type = obj["type"] as? String
                 if type == "last-prompt", let l = obj["leafUuid"] as? String { leaf = l; return }
                 guard let uuid = obj["uuid"] as? String else { return }
+                if (obj["isSidechain"] as? Bool) != true { lastMessage = uuid }
                 let msg = obj["message"] as? [String: Any]
                 let content = msg?["content"]
                 let isUser = type == "user"
                 let isAssistant = type == "assistant"
                 var isPrompt = false
+                var startsTurn = false
                 var text = ""
-                if isUser {
-                    isPrompt = isUserPrompt(content)
-                    if isPrompt {
-                        text = clip(userText(content), promptCap)
-                        if isMetaPrompt(text) { isPrompt = false; text = "" }
-                    }
+                if isUser, isUserPrompt(content) {
+                    text = clip(userText(content), promptCap)
+                    startsTurn = !isMetaPrompt(text)
+                    // Written into the user role without anyone typing it: the caveat before a
+                    // local command, image placeholders and auto-continuations are `isMeta`;
+                    // background-task and fork notices and scheduled `/loop` checks are
+                    // `promptSource: "system"` (older builds mark a notice only by its wrapper). As
+                    // nodes they made branches out of bookkeeping — a `/fork` grew two children
+                    // that were its own notices.
+                    let injected = (obj["isMeta"] as? Bool) == true
+                        || (obj["promptSource"] as? String) == "system"
+                        || text.hasPrefix("<task-notification")
+                    isPrompt = startsTurn && !injected
+                    if !isPrompt { text = "" }
                 } else if isAssistant {
                     text = clip(userText(content), answerCap)   // same extraction: text blocks joined
                 }
@@ -243,6 +259,7 @@ enum SessionTreeBuilder {
                 records.append(SlimRecord(uuid: uuid,
                                           parent: obj["parentUuid"] as? String,
                                           isPrompt: isPrompt,
+                                          startsTurn: startsTurn,
                                           isAssistant: isAssistant,
                                           sidechain: (obj["isSidechain"] as? Bool) ?? false,
                                           ts: (obj["timestamp"] as? String) ?? "",
@@ -270,6 +287,10 @@ enum SessionTreeBuilder {
             if !more { break }
         }
         if !carry.isEmpty { take(carry) }    // a last line with no newline after it
+        // After a rewind (2.1.302) Claude pins the leaf to the all-zero uuid, meaning "none": its
+        // loader finds no such message and lands on the last one in the file. Kept as-is, the
+        // session resolved to no node and its real landing point lost its native mark.
+        if leaf == unpinnedLeaf { leaf = lastMessage }
 
         cacheLock.lock()
         cache[url.path] = FileCache(size: size, mtime: mtime, records: records, leaf: leaf, used: Date())
@@ -277,6 +298,9 @@ enum SessionTreeBuilder {
         scheduleSweep()
         return (records, leaf, size)
     }
+
+    /// The leaf Claude pins after a rewind, meaning "none" (see `parseFile`).
+    private static let unpinnedLeaf = "00000000-0000-0000-0000-000000000000"
 
     /// treeflow `_is_user_prompt`: a user record whose content has NO tool_result block and
     /// carries real text.

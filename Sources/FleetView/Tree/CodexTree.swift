@@ -14,17 +14,41 @@ import Foundation
 /// the point it actually forked without anything having had to record where that was — and two
 /// sessions that merely *begin* alike stay merged only for as long as they really are alike.
 ///
-/// Nodes are ADDRESSED the way treeflow addresses them — `<session-id>:<n>`, n counting user
+/// Paginated rollouts (0.147+) stopped copying. A fork's file holds only what came after the fork
+/// and names the rest with `history_base` — the parent rollout and the byte where its share ends —
+/// and Esc Esc (`thread/revert`, 0.155+) does the same within ONE thread: a new file
+/// `rollout-<ts>-<thread>_<rollout>.jsonl` continuing the old one up to the reverted turn, the old
+/// file left whole. Read alone, such a file is a conversation that starts mid-air: a fork came out
+/// as a root of its own, and a revert's segment, which shares its thread id, numbered its first
+/// turn `<thread>:0` and overwrote the original's first turn — drawing a lineage that never
+/// happened. So a rollout's turns are read through its base chain (`history`), which hashes the
+/// referenced prefix exactly as a copied one would, and the chain hash still does the stitching.
+///
+/// Nodes are ADDRESSED the way treeflow addresses them — `<rollout-id>:<n>`, n counting user
 /// prompts in file order — because that address is what opens a node (see `SearchOpen.planCodex`,
-/// and `SearchIndex`, which numbers its hits identically). Identity dedupes; the address names. A
-/// shared turn takes the address of the earliest session holding it, so a fork points at the
-/// original rather than at its own copy.
+/// and `SearchIndex`, which numbers its hits identically). The rollout id is the thread id for every
+/// file but a revert's segment, which is how addresses written before segments existed stay valid.
+/// Identity dedupes; the address names. A shared turn takes the address of the earliest rollout
+/// holding it, so a fork points at the original rather than at its own copy.
 enum CodexTree {
+
+    /// Where a rollout's history continues from: the rollout holding the earlier turns, and the
+    /// byte in it where they stop. Written by a fork and by Esc Esc (`thread/revert`) since Codex's
+    /// rollouts became paginated — the file then holds only what came after that point.
+    struct HistoryBase {
+        let rollout: String
+        let endByte: Int?
+    }
 
     /// A rollout's head record, which is fixed for the life of the file.
     struct Meta {
         let path: String
         let sid: String
+        /// The rollout's own id. The thread id, except in a revert's segment
+        /// (`rollout-<ts>-<thread>_<rollout>.jsonl`): one thread then owns several files, and a
+        /// node is addressed by the file it is in, not by the thread.
+        let rolloutId: String
+        let base: HistoryBase?
         let cwd: String
         let started: String       // ISO8601 from the head record; also the sort key
         let forkedFrom: String?
@@ -117,7 +141,12 @@ enum CodexTree {
         let spawn = (subagent as? [String: Any])?["thread_spawn"] as? [String: Any]
         let parent = (payload["parent_thread_id"] as? String)
             ?? (spawn?["parent_thread_id"] as? String)
-        return Meta(path: path, sid: sid, cwd: cwd,
+        let hb = payload["history_base"] as? [String: Any]
+        let base = (hb?["thread_id"] as? String).map {
+            HistoryBase(rollout: $0, endByte: hb?["end_byte_offset"] as? Int)
+        }
+        return Meta(path: path, sid: sid, rolloutId: rolloutId(fromRollout: path), base: base,
+                    cwd: cwd,
                     started: (payload["timestamp"] as? String)
                         ?? (obj["timestamp"] as? String) ?? "",
                     forkedFrom: payload["forked_from_id"] as? String,
@@ -144,34 +173,74 @@ enum CodexTree {
         var seen: Set<String> = []
         while let m = meta(cur), m.isWorker {
             guard let up = m.parentThread, seen.insert(cur).inserted,
-                  let next = rolloutPath(ofThread: up, near: cur) else { return nil }
+                  let next = rolloutPath(ofThread: up) else { return nil }
             cur = next
         }
         return cur
     }
 
-    private static var threadPaths: [String: String] = [:]
+    private static var threadPaths: [String: (path: String, at: Date)] = [:]
     private static var threadMisses: [String: Date] = [:]
 
-    /// The rollout whose filename carries thread `id`. Its own day directory is tried first — a
-    /// worker is almost always spawned the day its parent is busy — and only then the whole tree.
-    /// A miss is remembered for a minute, so a parent that was deleted does not cost a full walk on
-    /// every poll.
-    static func rolloutPath(ofThread id: String, near sibling: String) -> String? {
+    /// The rollout thread `id` currently writes to. Usually the one file named for it; after an
+    /// Esc Esc the thread has several (`-<id>.jsonl`, then `-<id>_<rollout>.jsonl` per revert) and
+    /// Codex continues in the newest name, so that is the answer here too — the original still
+    /// holds the turns the revert threw away and reads as the thread standing still.
+    ///
+    /// A segment can land in a later day directory than the file it continues, so the whole tree is
+    /// walked (names only) rather than the sibling's day first. Hits are remembered for a minute,
+    /// not for good: a revert while FleetView runs adds a newer file. A miss is remembered for a
+    /// minute too, so a parent that was deleted does not cost a walk on every poll.
+    static func rolloutPath(ofThread id: String) -> String? {
         lock.lock()
-        if let hit = threadPaths[id] { lock.unlock(); return hit }
+        if let hit = threadPaths[id], Date().timeIntervalSince(hit.at) < 60 { lock.unlock(); return hit.path }
         if let at = threadMisses[id], Date().timeIntervalSince(at) < 60 { lock.unlock(); return nil }
         lock.unlock()
 
-        let suffix = "-\(id).jsonl"
-        let dir = (sibling as NSString).deletingLastPathComponent
-        let near = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
-            .first { $0.hasSuffix(suffix) }.map { (dir as NSString).appendingPathComponent($0) }
-        let found = near ?? rolloutPaths(roots: CodexSession.sessionRoots).first { $0.hasSuffix(suffix) }
+        let own = "-\(id).jsonl", segment = "-\(id)_"
+        let found = rolloutPaths(roots: CodexSession.sessionRoots)
+            .filter { p in
+                let name = (p as NSString).lastPathComponent
+                return name.hasSuffix(own) || name.contains(segment)
+            }
+            .max { ($0 as NSString).lastPathComponent < ($1 as NSString).lastPathComponent }
 
         lock.lock()
-        if let found { threadPaths[id] = found } else { threadMisses[id] = Date() }
+        if let found { threadPaths[id] = (found, Date()) } else { threadMisses[id] = Date() }
         lock.unlock()
+        return found
+    }
+
+    private static var rolloutFiles: [String: String] = [:]
+
+    /// The file of rollout `id` — what a `history_base` names, and the first half of a node address.
+    /// Looked for under `archived_sessions` as well, as Codex does: archiving a thread moves its
+    /// files there and a fork of it still reads its history from them.
+    static func rolloutPath(ofRollout id: String, roots: [URL]) -> String? {
+        lock.lock()
+        let hit = rolloutFiles[id]
+        lock.unlock()
+        if let hit, FileManager.default.fileExists(atPath: hit) { return hit }
+
+        let own = "-\(id).jsonl", segment = "_\(id).jsonl"
+        let matches: (String) -> Bool = { p in
+            let name = (p as NSString).lastPathComponent
+            return name.hasPrefix("rollout-") && (name.hasSuffix(own) || name.hasSuffix(segment))
+        }
+        var found = rolloutPaths(roots: roots).first(where: matches)
+        if found == nil {
+            let fm = FileManager.default
+            for root in roots {
+                let archived = root.deletingLastPathComponent().appendingPathComponent("archived_sessions")
+                guard let walk = fm.enumerator(atPath: archived.path) else { continue }
+                while let rel = walk.nextObject() as? String {
+                    let p = archived.appendingPathComponent(rel).path
+                    if matches(p) { found = p; break }
+                }
+                if found != nil { break }
+            }
+        }
+        if let found { lock.lock(); rolloutFiles[id] = found; lock.unlock() }
         return found
     }
 
@@ -216,19 +285,33 @@ enum CodexTree {
         return buf.count >= 1_048_576 ? buf : nil
     }
 
-    /// `rollout-2026-07-19T02-14-32-<uuid>.jsonl` → `<uuid>`. Same rule as SearchIndex's, so the
-    /// two agree on what a session is called even when the head record is unreadable.
-    static func sessionId(fromRollout path: String) -> String {
+    /// `rollout-2026-07-19T02-14-32-<uuid>.jsonl` → `<uuid>`, and a revert's segment
+    /// `rollout-…-<thread>_<rollout>.jsonl` → `<thread>`. SearchIndex asks this too, so the two
+    /// agree on what a session is called even when the head record is unreadable.
+    ///
+    /// Taking the last five dash groups, as this used to, turned a segment's name into
+    /// `<last group of thread>_<rollout>` — not a uuid, so the card's resume command came out nil
+    /// and reopening a Codex card after one Esc Esc did nothing at all.
+    static func sessionId(fromRollout path: String) -> String { rolloutIds(path).thread }
+
+    /// The id of the file itself: the part after `_` in a revert's segment, else the thread id.
+    static func rolloutId(fromRollout path: String) -> String { rolloutIds(path).rollout }
+
+    private static func rolloutIds(_ path: String) -> (thread: String, rollout: String) {
         let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        let parts = name.split(separator: "-")
-        guard parts.count >= 5 else { return name }
-        return parts.suffix(5).joined(separator: "-")
+        let halves = name.split(separator: "_", maxSplits: 1).map(String.init)
+        let parts = (halves.first ?? name).split(separator: "-")
+        guard parts.count >= 5 else { return (name, name) }
+        let thread = parts.suffix(5).joined(separator: "-")
+        return (thread, halves.count == 2 ? halves[1] : thread)
     }
 
     // MARK: - Turns
 
     struct Turn {
         let n: Int            // treeflow's prompt index within this rollout
+        /// Where the prompt's line starts in its file — what a `history_base` cuts on.
+        let byte: Int
         let text: String
         var answer: String
         let ts: String
@@ -315,7 +398,7 @@ enum CodexTree {
                         guard isRealUserText(raw) else { continue }
                         defer { n += 1 }
                         guard let t = cleanPrompt(raw) else { continue }
-                        out.append(Turn(n: n, text: clip(t, SessionTreeBuilder.promptCap),
+                        out.append(Turn(n: n, byte: lo, text: clip(t, SessionTreeBuilder.promptCap),
                                         answer: "", ts: ts, compactedBefore: compactionPending))
                         compactionPending = false
                     case "assistant":
@@ -406,27 +489,32 @@ enum CodexTree {
     /// It is also *more correct*: two conversations that merely open with the same prompt ("继续")
     /// would otherwise hash alike and be drawn as one tree that branched, which is a lie.
     ///
-    /// So `forked_from_id` decides WHICH sessions belong together — it is Codex's own record of a
-    /// fork — and the content chain decides WHERE they diverge, which is the part Codex does not
-    /// write down.
+    /// So `forked_from_id` and `history_base` decide WHICH sessions belong together — they are
+    /// Codex's own record of a fork — and the content chain decides WHERE they diverge, which a
+    /// copied fork never wrote down. Every file of a thread comes along: after a revert the thread
+    /// is several files, and the one bound is the newest while the turns before it are in the oldest.
     static func family(of sid: String?, among metas: [Meta]) -> [Meta] {
         guard let start = sid ?? metas.last?.sid else { return [] }
-        var byId: [String: Meta] = [:]
-        var children: [String: [String]] = [:]
-        for m in metas {
-            byId[m.sid] = m
-            if let f = m.forkedFrom { children[f, default: []].append(m.sid) }
+        // Threads, linked both ways by a fork and by a history_base. A thread's own files — the
+        // segments a revert leaves — need no link: they share its id.
+        let threads = Set(metas.map(\.sid))
+        var thread: [String: String] = [:]       // rollout id → thread id
+        for m in metas { thread[m.rolloutId] = m.sid }
+        var links: [String: [String]] = [:]
+        func link(_ a: String, _ b: String) {
+            guard a != b, threads.contains(a), threads.contains(b) else { return }
+            links[a, default: []].append(b)
+            links[b, default: []].append(a)
         }
-        guard byId[start] != nil else { return [] }
+        for m in metas {
+            if let f = m.forkedFrom { link(m.sid, f) }
+            if let b = m.base, let owner = thread[b.rollout] { link(m.sid, owner) }
+        }
+        guard threads.contains(start) else { return [] }
         var seen: Set<String> = [start]
         var queue = [start]
         while let s = queue.popLast() {
-            if let up = byId[s]?.forkedFrom, byId[up] != nil, seen.insert(up).inserted {
-                queue.append(up)
-            }
-            for down in children[s] ?? [] where seen.insert(down).inserted {
-                queue.append(down)
-            }
+            for t in links[s] ?? [] where seen.insert(t).inserted { queue.append(t) }
         }
         return metas.filter { seen.contains($0.sid) }   // keeps the oldest-first order
     }
@@ -454,17 +542,26 @@ enum CodexTree {
         guard !metas.isEmpty else { return tree }
 
         var canonical: [UInt64: String] = [:]      // chain hash → the address that owns that turn
+        var lastTurn: [String: String] = [:]       // rollout id → the turn its history ends on
+        var current: [String: Meta] = [:]          // thread id → the rollout it continues in
         for m in metas {
+            // Oldest first, so the newest of a thread's files is the one left standing: Codex
+            // resumes a reverted thread from its newest file.
+            current[m.sid] = m
             var chain: UInt64 = 0xcbf29ce484222325
             var parent: String?
-            var leaf: String?
-            for t in turns(of: m.path) {
+            for (owner, t) in history(of: m, roots: roots) {
                 chain = fold(chain, t.text)
                 let addr: String
-                if let owner = canonical[chain] {
-                    addr = owner                    // this turn is a copy of one we already have
+                if let owned = canonical[chain] {
+                    addr = owned                    // a copy of a turn we already have, or a base's
+                } else if tree.nodes["\(owner.rolloutId):\(t.n)"] != nil {
+                    // The same physical turn under another chain. Rebuilding it would drop its
+                    // children; one family is built with one seed, so this is only a guard.
+                    addr = "\(owner.rolloutId):\(t.n)"
+                    canonical[chain] = addr
                 } else {
-                    addr = "\(m.sid):\(t.n)"
+                    addr = "\(owner.rolloutId):\(t.n)"
                     canonical[chain] = addr
                     tree.nodes[addr] = TreeTurn(uuid: addr, parent: parent, text: t.text, ts: t.ts)
                     tree.nodes[addr]?.compactedBefore = t.compactedBefore
@@ -475,19 +572,48 @@ enum CodexTree {
                     tree.nodes[addr]?.answer = t.answer
                 }
                 parent = addr
-                leaf = addr
             }
-            guard let leaf else { continue }
-            tree.sessionLeaf[m.sid] = leaf
-            tree.leafNodeBySession[m.sid] = leaf
-            // `codex resume <sid>` continues a session at its end, so its last turn is reachable
-            // with no fork at all — the same meaning `nativeSessionId` has on the Claude side.
-            if tree.nodes[leaf]?.nativeSessionId == nil { tree.nodes[leaf]?.nativeSessionId = m.sid }
+            if let parent { lastTurn[m.rolloutId] = parent }
+        }
+        // `codex resume <sid>` continues a thread at the end of its current file's history, so that
+        // turn is reachable with no fork at all — the same meaning `nativeSessionId` has on the
+        // Claude side. What a revert left behind is not: the thread no longer resumes into it.
+        for (sid, m) in current.sorted(by: { $0.key < $1.key }) {
+            guard let leaf = lastTurn[m.rolloutId] else { continue }
+            tree.sessionLeaf[sid] = leaf
+            tree.leafNodeBySession[sid] = leaf
+            if tree.nodes[leaf]?.nativeSessionId == nil { tree.nodes[leaf]?.nativeSessionId = sid }
         }
         guard !tree.nodes.isEmpty else { return tree }
 
         SessionTreeBuilder.finish(&tree, boundSessionId: bound)
         return tree
+    }
+
+    /// Every turn in a rollout's history, oldest first, each with the rollout that holds it: the
+    /// `history_base` chain, every base cut where the reference says, then the rollout's own turns.
+    ///
+    /// A base is looked up wherever it is filed — under another cwd (a fork into a new worktree
+    /// records the new folder) or archived — because the history is the fork's whatever folder the
+    /// parent ran in. One that cannot be found ends the chain: the rest still reads.
+    static func history(of m: Meta, roots: [URL]) -> [(Meta, Turn)] {
+        var chain: [(Meta, Int?)] = []            // newest first: the rollout, and where to cut it
+        var cur: Meta? = m
+        var cut: Int?
+        var seen: Set<String> = []
+        while let c = cur, seen.insert(c.rolloutId).inserted {
+            chain.append((c, cut))
+            guard let b = c.base,
+                  let p = rolloutPath(ofRollout: b.rollout, roots: roots),
+                  let up = meta(p) else { break }
+            cut = b.endByte
+            cur = up
+        }
+        var out: [(Meta, Turn)] = []
+        for (c, cut) in chain.reversed() {
+            for t in turns(of: c.path) where cut.map({ t.byte < $0 }) ?? true { out.append((c, t)) }
+        }
+        return out
     }
 
     /// FNV-1a, folded turn by turn. Not a security boundary — it only has to make "the same

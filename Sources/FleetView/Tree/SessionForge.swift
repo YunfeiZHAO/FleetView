@@ -88,7 +88,8 @@ enum SessionForge {
         backChain.reverse()
 
         // Forward chain: the target's own reply events (assistant/tool records), BFS stopping at
-        // the next user prompt — without this the fork would resume with the prompt unanswered.
+        // the next turn — without this the fork would resume with the prompt unanswered. A turn
+        // nobody typed (a notice, a scheduled check) still ends it: see `SlimRecord.startsTurn`.
         var childrenIndex: [String: [String]] = [:]
         for (u, r) in slim {
             if let p = r.parent { childrenIndex[p, default: []].append(u) }
@@ -99,7 +100,7 @@ enum SessionForge {
         while !queue.isEmpty {
             let u = queue.removeFirst()
             for child in childrenIndex[u] ?? [] where !visited.contains(child) {
-                guard let r = slim[child], !r.isPrompt else { continue }
+                guard let r = slim[child], !r.startsTurn else { continue }
                 visited.insert(child)
                 forward.append(child)
                 queue.append(child)

@@ -184,8 +184,9 @@ enum SearchOpen {
     static func planCodexNode(node: String, cwd: String, label: String,
                               subPool: Bool? = nil) throws -> Plan {
         guard let tool = treeflowPath() else { throw OpenError.treeflowMissing }
-        let thread = String(node.split(separator: ":").first ?? "")
-        let rollout = CodexTree.rolloutPath(ofThread: thread, near: "")
+        // The address names the file the turn is in — a revert's segment has an id of its own.
+        let rolloutId = String(node.split(separator: ":").first ?? "")
+        let rollout = CodexTree.rolloutPath(ofRollout: rolloutId, roots: CodexSession.sessionRoots)
         let home = AgentHome.resuming(rollout, kind: .codex, subPool: subPool)
         var env: [String: String] = [:]
         if home.viaSubPool,
