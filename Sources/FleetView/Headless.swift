@@ -53,6 +53,9 @@ enum AppStartup {
         state.saveNow()          // saves are debounced now; this is the one that must not be missed
         state.web.stop()
         state.remote.stopAll()
+        // Only waits when a terminal was closed in the last few seconds — Close All just above, or a
+        // card closed right before quitting — and was not gone yet (see ProcessReaper).
+        state.remote.waitForReaping()
         AppAudit.shared.stop(reason: "quit")   // flushes the buffer before the process goes away
     }
 }

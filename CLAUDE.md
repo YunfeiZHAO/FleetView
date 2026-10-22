@@ -15,6 +15,7 @@ operational files from being swept into a commit by whoever runs `git add -A` ne
 | `Sources/FleetViewAudit/` | the audit engine — Foundation only, deliberately no SwiftUI/AppKit/AppState |
 | `Tests/FleetViewAuditTests/` | `swift run FleetViewAuditTests` (not `swift test` — see Package.swift) |
 | `docs/design/` | design notes, dated |
+| `docs/问题与修复/` | incident records, dated: symptom, root cause, fix, how it was verified (index in its README) |
 | `scripts/`, `examples/` | **ignored by default** — see below |
 | `~/.fleetview/` | all runtime state: `state.json`, `archive.json` (removed cards), `triggers.json` (agents' last-reported crons), logs, `ui/panel.html`, `sessions/`, `search.db` |
 
@@ -74,7 +75,11 @@ directory outside the repo when you have one.
   setting is the one exception, and it deliberately does not apply to the update handoff.
 - **Closing a terminal destroys its session.** Closing the window, Close All Terminals and Remove
   Terminal all kill the tmux session — a card that says "closed" means the agent behind it is
-  stopped. Clicking a closed card reopens it and types `--resume` for the session it last had
+  stopped. The kill is only a hangup, and an agent can survive one (a Claude under `sp-claude` spun
+  for 46 hours that way), so `ProcessReaper` writes the pane's processes down before the kill and
+  SIGTERM/SIGKILLs whatever is left after it — sparing anything that calls itself a daemon, which
+  agents start on purpose to outlive them; see
+  [`docs/问题与修复/2026-10-22-agent-outlives-closed-card.md`](docs/问题与修复/2026-10-22-agent-outlives-closed-card.md). Clicking a closed card reopens it and types `--resume` for the session it last had
   (`AppState.reopenTerminal`), which is what keeps that recoverable. `project-manager restore
   <session-id>` does the same from a session id, for a removed card too (`restoreConversation`).
   The only things that reattach to a still-live session are `reconnectLiveTerminals()` on launch
