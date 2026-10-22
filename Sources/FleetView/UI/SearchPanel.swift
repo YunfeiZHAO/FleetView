@@ -223,7 +223,9 @@ struct SearchPanel: View {
             switch item {
             case .project(let p): projectRow(p, on: on)
             case .fleet(let f): fleetRow(f, on: on)
-            case .hit(let h, let g): hitRow(h, group: g, on: on)
+            case .hit(let h, let g):
+                if let card = g.card { cardRow(card, hit: h, on: on) }
+                else { hitRow(h, on: on) }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -281,7 +283,7 @@ struct SearchPanel: View {
         }
     }
 
-    private func hitRow(_ hit: SearchIndex.Hit, group: SearchModel.Group, on: Bool) -> some View {
+    private func hitRow(_ hit: SearchIndex.Hit, on: Bool) -> some View {
         let isPrompt = hit.role == .user
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: isPrompt ? "person" : "sparkles")
@@ -295,18 +297,46 @@ struct SearchPanel: View {
                 Text(highlighted(snippet(hit.body), base: on ? Theme.onSecondaryContainer : Theme.onSurface))
                     .font(.fvBody).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // No project here: messages are listed only where the list folds, under their
+                // project's row.
                 HStack(spacing: 6) {
                     AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 10)
-                    // The project is the row above when the list folds; say it only where it doesn't.
-                    if let title = group.title ?? (model.folds ? nil : projectName(group.project)) {
-                        Text(title).lineLimit(1)
-                        Text("·")
-                    }
                     Text(shortDate(hit.ts))
                 }
                 .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             }
         }
+    }
+
+    /// A removed card, drawn as the card it was: its name, then what it was last asked. The
+    /// conversation is the right side's job. Drawn as the conversation's last message instead, the
+    /// list read as a project's history with no cards in it — the names were a grey line under
+    /// each message, and the name is what you came looking for.
+    private func cardRow(_ card: TerminalArchive, hit: SearchIndex.Hit, on: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 13)
+                .frame(width: 24, height: 24)
+                .background(on ? Theme.surfaceContainerHigh : Theme.surfaceContainerHighest)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(highlighted(card.name, base: on ? Theme.onSecondaryContainer : Theme.onSurface))
+                        .font(.fvTitleSmall).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(shortDate(hit.ts)).font(.fvLabelSmall).monospacedDigit()
+                }
+                // The prompt as the card showed it, behind its "›". A card that never recorded one
+                // falls back to where its conversation ended.
+                HStack(alignment: .top, spacing: 6) {
+                    if !card.lastPrompt.isEmpty { Text("›").font(.fvMonoBody) }
+                    Text(highlighted(snippet(card.lastPrompt.isEmpty ? hit.body : card.lastPrompt),
+                                     base: Theme.onSurfaceVariant))
+                        .font(.fvBodySmall).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
     }
 
     private func message(_ text: String, icon: String, tint: Color) -> some View {
@@ -327,8 +357,8 @@ struct SearchPanel: View {
         switch selected {
         case .project(let p)?:
             projectDetail(p)
-        case .hit(let hit, _)?:
-            conversation(hit)
+        case .hit(let hit, let g)?:
+            conversation(hit, card: g.card)
         case .fleet(let f)?:
             fleetDetail(f)
         case nil:
@@ -337,11 +367,14 @@ struct SearchPanel: View {
     }
 
     /// The conversation around the hit, read from the index. Nothing is written until it is opened.
-    @ViewBuilder private func conversation(_ hit: SearchIndex.Hit) -> some View {
+    /// Headed by the removed card it belonged to when there is one — the list's project row already
+    /// says the project.
+    @ViewBuilder private func conversation(_ hit: SearchIndex.Hit, card: TerminalArchive?) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 13)
-                Text(projectName(hit.project)).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                Text(card?.name ?? projectName(hit.project)).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                    .lineLimit(1)
                 Text(shortDate(hit.ts)).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
                 if let p = model.preview, p.id == hit.id {

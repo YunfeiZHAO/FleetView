@@ -127,8 +127,35 @@ enum Snapshot {
                     shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                           to: "\(dir)/search-history-open-\(suffix).png")
                 }
+                let found = m.groups
                 state.searchOpen = false
                 m.reset()
+                // The same conversations as removed cards of the first project, opened the way its
+                // archive button opens them, with the newest card selected.
+                if let home = state.projects.first {
+                    let names = ["FleetView-4", "search panel", "deploy 212", "perf pass", "web fold"]
+                    state.terminalArchive = zip(found, names).enumerated().map { i, pair in
+                        TerminalArchive(id: UUID(), projectId: home.id, projectPath: home.path,
+                                        name: pair.1, cwd: home.path, sessionId: nil,
+                                        transcriptPath: pair.0.id,
+                                        lastPrompt: pair.0.hits.first { $0.role == .user }?.body ?? "",
+                                        removedAt: Date().addingTimeInterval(Double(-3600 * i)))
+                    }
+                    state.openArchive(projectId: home.id)
+                    let deadline = Date().addingTimeInterval(10)
+                    while m.projectGroups.isEmpty, Date() < deadline {
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    }
+                    if let hit = m.projectGroups.flatMap(\.sessions).flatMap(\.hits).max(by: { $0.ts < $1.ts }) {
+                        m.selectedKey = "h:\(hit.id)"
+                        m.showPreview(hit)
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                    }
+                    shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                          to: "\(dir)/search-archive-\(suffix).png")
+                    state.closeSearch()
+                    state.terminalArchive = []
+                }
             }
         }
         exit(0)

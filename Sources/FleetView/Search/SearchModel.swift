@@ -62,10 +62,9 @@ final class SearchModel: ObservableObject {
         let session: String
         let when: String
         var hits: [SearchIndex.Hit]
-        /// What to call this group in the header. Normally the project name says enough; in archive
-        /// mode every row is the same project, and the thing that tells them apart is the name the
-        /// card had.
-        var title: String? = nil
+        /// The removed card this transcript last lived in — archive mode only. There every row is
+        /// the same project, and what tells them apart is the card: its name and its last prompt.
+        var card: TerminalArchive? = nil
     }
 
     /// The level above a session. Answers "how many projects matched, and which one do I want" —
@@ -205,7 +204,8 @@ final class SearchModel: ObservableObject {
     /// wrong: inside the board's ScrollView a plain gesture loses to the scroll.
     ///
     /// The hit is the transcript's last node, which is what resuming a whole conversation means
-    /// when what you are holding is a file rather than a search result.
+    /// when what you are holding is a file rather than a search result. It is not what the row
+    /// shows: the list draws the card the group carries, and the hit is what the right side reads.
     private func runArchiveSearch(_ q: String) {
         guard let app else { groups = []; projectGroups = []; total = 0; return }
         let rows = archiveProject.map { app.archived(inProject: $0) } ?? app.terminalArchive
@@ -219,15 +219,15 @@ final class SearchModel: ObservableObject {
         // removing that card archives a second row pointing at the same file. Left alone, the same
         // path is looked up twice and yields two hits with the *same* rowid — `group` merges them
         // into one session holding duplicate ids, and a ForEach over duplicate ids is undefined.
-        // The name would also have been decided by whichever row happened to be last.
+        // The card shown would also have been decided by whichever row happened to be last.
         //
         // (Two cards merely sharing a *name* need none of this: their ids and transcripts differ,
         // so they are two rows that happen to read alike, which is what they are.)
-        var names: [String: String] = [:]
+        var cards: [String: TerminalArchive] = [:]
         var paths: [String] = []
         for r in matched.sorted(by: { $0.removedAt > $1.removedAt }) {
-            guard let p = r.transcriptPath, names[p] == nil else { continue }
-            names[p] = r.name
+            guard let p = r.transcriptPath, cards[p] == nil else { continue }
+            cards[p] = r
             paths.append(p)
         }
         failure = nil
@@ -236,9 +236,9 @@ final class SearchModel: ObservableObject {
             let hits = paths.compactMap { SearchIndex.lastHit(path: $0) }
             // Built immutably: a `var` mutated inside a detached task is an error under Swift 6.
             let sessions = Self.group(hits).map { g -> Group in
-                var titled = g
-                titled.title = names[g.id]
-                return titled
+                var carded = g
+                carded.card = cards[g.id]
+                return carded
             }
             let ms = Date().timeIntervalSince(started) * 1000
             await MainActor.run { [weak self] in
