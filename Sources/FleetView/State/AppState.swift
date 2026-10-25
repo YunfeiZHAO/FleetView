@@ -473,6 +473,23 @@ final class AppState: ObservableObject {
     }
 
     /// Type a command into a terminal's shell after a delay (used by fork/duplicate flows).
+    /// Put text into a terminal's input without pressing Return — the file window's "reference in
+    /// card". Through tmux when the terminal runs under it, so a hidden card takes it too; typed into
+    /// the window otherwise. Audited: it is typing into someone's session.
+    func insertText(_ id: UUID, _ text: String, why: String) {
+        let name = terminals.first { $0.id == id }?.name ?? id.uuidString
+        audited(AuditIntent("terminal.\(why)", event: "fleetview.terminal.text_inserted", categories: ["process"],
+                            target: auditTarget(terminal: id), data: ["chars": .int(text.count)],
+                            message: "put a file reference into \(name)'s input")) {
+            if remote.tmuxPath != nil {
+                remote.sendText(id, text: text, enter: false)
+            } else {
+                controllers[id]?.type(text)
+            }
+            markActivity(id)
+        }
+    }
+
     func typeIntoTerminal(_ id: UUID, _ command: String, after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.controllers[id]?.type(command + "\r")

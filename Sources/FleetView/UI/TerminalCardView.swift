@@ -358,6 +358,9 @@ struct TerminalCardView: View {
             else { state.openSessionTree(terminal.id) }
         }
         Button(L(.cardTriggers)) { state.openTriggers(terminal.id) }
+        Button(L(.cardOpenFiles)) {
+            FileWindows.shared.open(projectId: terminal.projectId, app: state, reveal: terminal.cwd)
+        }
         Button(L(.cardDuplicateFork)) { state.duplicateTerminal(terminal.id) }
         Button(L(.cardDuplicateBlank)) { state.duplicateTerminal(terminal.id, blank: true) }
         Button(done ? L(.cardUnmark) : L(.cardMark)) { state.toggleSubtaskDone(terminal.id) }

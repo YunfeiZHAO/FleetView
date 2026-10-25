@@ -408,6 +408,9 @@ function stash() {
 }
 
 function display(which) {
+  // A view that was hidden measured nothing; line heights and the gutter are only right once it
+  // measures again while visible.
+  if (which === "cm" && host.cm.style.display === "none") requestAnimationFrame(() => view.requestMeasure());
   host.cm.style.display = which === "cm" ? "" : "none";
   host.preview.style.display = which === "preview" ? "" : "none";
   host.info.style.display = which === "info" ? "" : "none";
@@ -905,7 +908,7 @@ const api = {
   /** ⌘S from the window when the editor itself does not have focus. */
   saveActive() { if (active) save(active); return true; },
   stats() {
-    return [...docs.values()].map(d => ({tab: d.id, chars: d.state ? d.state.doc.length : 0, dirty: d.dirty}));
+    return [...docs.values()].map(d => ({tab: d.id, path: d.meta.path, chars: d.state ? d.state.doc.length : 0, dirty: d.dirty}));
   },
 };
 window.fv = api;
@@ -917,6 +920,7 @@ function setTheme(colors, fontSize) {
     root.setProperty("--" + k, v);
   }
   if (fontSize) root.setProperty("--fs", fontSize + "px");
+  if (view) view.requestMeasure();
 }
 
 // ---------------------------------------------------------------- page wiring
@@ -955,6 +959,8 @@ function boot() {
     if (el) el.scrollIntoView({block: "start"});
   });
   host.preview.addEventListener("scroll", () => requestAnimationFrame(spy), {passive: true});
+  // A window that was covered or minimised gets no animation frames; measure again when it shows.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && view) view.requestMeasure(); });
 
   // Keys that mean something to the window, when the editor itself does not have focus.
   document.addEventListener("keydown", e => {

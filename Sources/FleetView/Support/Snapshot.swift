@@ -28,6 +28,7 @@ enum Snapshot {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        if let root = ProcessInfo.processInfo.environment["FV_SNAPSHOT_FILES"] { FileSnapshot.run(root: root, into: dir) }
 
         let state = AppState()
         fill(state)

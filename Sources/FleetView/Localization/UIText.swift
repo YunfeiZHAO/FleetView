@@ -380,6 +380,65 @@ enum UIText {
     case trigShowLess
     case trigReason(String)
     case trigCopied
+    case projFiles
+    case cardOpenFiles
+    case filesWindowTitle(String)
+    case filesNoEditor
+    case filesMissing
+    case filesBinaryDetail(String)
+    case filesNotUTF8(String)
+    case filesOpenDefault
+    case filesReveal
+    case filesOpen
+    case filesLargeTitle(String, String)
+    case filesLargeBody
+    case filesOutside
+    case filesUnsavedOne(String)
+    case filesUnsavedMany(Int)
+    case filesUnsavedBody
+    case filesUnsavedQuit
+    case filesUnsavedUpdate
+    case filesSaveAll
+    case filesDontSave
+    case filesCopied
+    case filesReferenced(String)
+    case filesEmpty
+    case filesShowIgnored
+    case filesCopyPath
+    case filesCopyRelative
+    case filesReference
+    case filesReferenceNone
+    case filesPreviewTabHelp
+    case filesPreview
+    case filesSource
+    case filesWrap
+    case filesGotoLine
+    case filesDiskChanged
+    case filesDeleted
+    case filesSaveFailed(String)
+    case filesRecovered(String)
+    case filesRecoveredOld
+    case filesCrashRestored
+    case filesUseDisk
+    case filesCompare
+    case filesOverwrite
+    case filesCloseTab
+    case filesRestore
+    case filesDiscard
+    case filesCursor(Int, Int)
+    case filesLines(Int)
+    case filesReadOnly(String)
+    case filesDiffStats(Int, Int, Int)
+    case filesPlainText
+    case filesROMixed
+    case filesRONotWritable
+    case filesMarkModified
+    case filesMarkAdded
+    case filesMarkDeleted
+    case filesMarkRenamed
+    case filesMarkUntracked
+    case filesMarkConflicted
+    case updUnsavedCancelled
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,

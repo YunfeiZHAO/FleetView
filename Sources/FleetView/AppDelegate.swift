@@ -30,6 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Closing the dashboard while terminal windows remain keeps the app alive.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Unsaved edits in a file window are asked about before quitting. The self-updater has asked
+    /// already, before it started the swap that is waiting for this process to go.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !SelfUpdate.isHandingOff, FileWindows.shared.hasUnsaved else { return .terminateNow }
+        FileWindows.shared.settleUnsaved(reason: L(.filesUnsavedQuit)) { go in
+            NSApp.reply(toApplicationShouldTerminate: go)
+        }
+        return .terminateLater
+    }
+
     // Tear down web servers and the FleetView tmux server so nothing is left listening after quit.
     func applicationWillTerminate(_ notification: Notification) {
         AppStartup.stop(state)

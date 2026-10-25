@@ -99,7 +99,17 @@ enum SelfUpdate {
                     do {
                         let staged = try stage(zip: zip, expecting: release.version)
                         await MainActor.run {
-                            handOff(staged: staged, target: target, updates: updates, job: job)
+                            // Before swap.sh exists: it waits only 30 s for this process to quit, and
+                            // a question asked after it starts would let the update give up silently.
+                            // Unsaved edits in a file window are asked about now; staying keeps the
+                            // staged app, so trying again later starts from here.
+                            FileWindows.shared.settleUnsaved(reason: L(.filesUnsavedUpdate)) { go in
+                                if go {
+                                    handOff(staged: staged, target: target, updates: updates, job: job)
+                                } else {
+                                    fail(L(.updUnsavedCancelled), job: job, updates: updates)
+                                }
+                            }
                         }
                     } catch {
                         await MainActor.run {
