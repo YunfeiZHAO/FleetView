@@ -13,6 +13,8 @@ operational files from being swept into a commit by whoever runs `git add -A` ne
 |---|---|
 | `Sources/FleetView/` | the app (SwiftUI, AppKit, the embedded HTTP server, the web page) |
 | `Sources/FleetViewAudit/` | the audit engine — Foundation only, deliberately no SwiftUI/AppKit/AppState |
+| `Sources/FleetViewFiles/` | the file window's logic: exact text round-trips, saving, read-only git — Foundation only |
+| `Editor/` | the file window's editor page (CodeMirror); `Editor/build.sh` rebuilds `Editor/dist/`, which is committed |
 | `Tests/FleetViewAuditTests/` | `swift run FleetViewAuditTests` (not `swift test` — see Package.swift) |
 | `docs/design/` | design notes, dated |
 | `docs/问题与修复/` | incident records, dated: symptom, root cause, fix, how it was verified (index in its README) |

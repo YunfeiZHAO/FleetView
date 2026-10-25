@@ -202,6 +202,47 @@ let suites: [(String, [Test])] = [
         ("redaction is reported", RedactionTests.testRedactionIsReported),
         ("redaction is idempotent", RedactionTests.testRedactionIsIdempotent),
     ]),
+
+    suite("File window — text survives a round trip", FileTextTests.self, [
+        ("LF round-trips unchanged", FileTextTests.testLFRoundTripsUnchanged),
+        ("CRLF is LF inside and CRLF on disk", FileTextTests.testCRLFIsLFInsideAndCRLFOnDisk),
+        ("a BOM is stripped and restored", FileTextTests.testBOMIsStrippedAndRestored),
+        ("mixed line endings are read-only", FileTextTests.testMixedLineEndingsAreReadOnly),
+        ("invalid UTF-8 has no text", FileTextTests.testInvalidUTF8HasNoText),
+        ("binary is a NUL in the first 8 KB", FileTextTests.testBinaryIsANulInTheFirst8K),
+        ("long lines are noticed", FileTextTests.testLongLines),
+    ]),
+
+    suite("File window — saving changes nothing else", FileSaveTests.self, [
+        ("saves when the base matches", FileSaveTests.testSavesWhenTheBaseMatches),
+        ("a changed file is a conflict and is left alone", FileSaveTests.testAChangedFileIsAConflictAndIsLeftAlone),
+        ("force overwrites", FileSaveTests.testForceOverwrites),
+        ("permissions survive", FileSaveTests.testPermissionsSurvive),
+        ("a symlink stays a symlink", FileSaveTests.testASymlinkStaysASymlink),
+        ("a hard link is written in place", FileSaveTests.testAHardLinkIsWrittenInPlace),
+        ("extended attributes survive", FileSaveTests.testExtendedAttributesSurvive),
+        ("nothing is left beside the file", FileSaveTests.testNothingIsLeftBesideTheFile),
+        ("the modification time moves", FileSaveTests.testTheModificationTimeMoves),
+        ("a missing file fails", FileSaveTests.testAMissingFileFails),
+    ]),
+
+    suite("File window — git, read-only", GitReaderTests.self, [
+        ("status parses every kind of record", GitReaderTests.testStatusParsesEveryKindOfRecord),
+        ("grep output parses", GitReaderTests.testGrepOutputParses),
+        ("reading never touches the index", GitReaderTests.testReadingNeverTouchesTheIndex),
+        ("HEAD is read as it would be checked out", GitReaderTests.testHeadIsReadAsItWouldBeCheckedOut),
+        ("check-ignore", GitReaderTests.testCheckIgnore),
+    ]),
+
+    suite("File window — quick open and authorship", FuzzyMatchTests.self, [
+        ("prefers the file name", FuzzyMatchTests.testPrefersTheFileName),
+        ("all letters in order", FuzzyMatchTests.testAllLettersInOrder),
+    ]),
+
+    suite("File window — which files a tool call writes", EditedPathsTests.self, [
+        ("Claude tools", EditedPathsTests.testClaudeTools),
+        ("Codex patch headers", EditedPathsTests.testCodexPatchHeaders),
+    ]),
 ]
 
 exit(TestRunner.run(suites))

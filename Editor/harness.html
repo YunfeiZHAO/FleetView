@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FleetView editor page — harness</title>
+<!-- The editor page outside the app: a fake bridge stands in for Swift and serves a few files from
+     memory, so the page can be clicked through in any browser (and driven headless). Build first:
+     ./build.sh — then open this file. Every message the page sends is listed under `window.sent`. -->
+<link rel="stylesheet" href="dist/editor.css">
+<style>
+  body { display: grid; grid-template-rows: auto 1fr; }
+  #bar { position: fixed; left: 0; right: 0; top: 0; height: 34px; z-index: 9; display: flex; gap: 6px; align-items: center;
+    padding: 0 10px; background: #000; font: 12px -apple-system, sans-serif; }
+  #bar button { padding: 3px 9px; }
+  #cm, #preview, #info, #compare { top: 34px !important; }
+</style>
+<script>
+const FILES = {
+  "/repo/Sources/App/Store.swift": {
+    head: `import Foundation
+
+/// Keeps the board on disk.
+struct Store {
+    let url: URL
+
+    func load() throws -> Board {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(Board.self, from: data)
+    }
+}
+`,
+    disk: `import Foundation
+
+/// Keeps the board on disk, one file for everything.
+struct Store {
+    let url: URL
+    var lastSaved: Date? = nil   // when the board last reached the disk
+
+    func load() throws -> Board {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(Board.self, from: data)
+    }
+}
+`},
+  "/repo/README.md": {
+    head: null,
+    disk: `# Sample project
+
+A short paragraph with \`inline code\`, a [link to the store](Sources/App/Store.swift) and an
+[external one](https://example.com).
+
+## Install
+
+\`\`\`bash
+brew install tmux ttyd
+./scripts/package_app.sh --install
+\`\`\`
+
+## Layout
+
+| folder | what |
+|---|---|
+| Sources/ | the app |
+| docs/ | notes |
+
+- one
+- two
+  - nested
+- three
+
+> A quote.
+
+### Details
+
+More text.
+`},
+};
+const TABS = {};
+window.sent = [];
+window.fvBridge = {
+  post(msg) {
+    window.sent.push(msg);
+    if (msg.type === "save" || msg.type === "saveMerged") {
+      const f = FILES[TABS[msg.tab]];
+      if (window.conflictNext) { window.conflictNext = false; return Promise.resolve({conflict: true}); }
+      f.disk = msg.text;
+      return Promise.resolve({ok: true});
+    }
+    return Promise.resolve(null);
+  },
+  async fetchText(url) {
+    const m = /^fvfile:\/\/app\/(doc|head|disk)\/(.+)$/.exec(url);
+    if (!m) return {ok: false, status: 404, text: "", headers: {}};
+    const f = FILES[TABS[decodeURIComponent(m[2])]];
+    const text = m[1] === "head" ? f.head : f.disk;
+    if (text == null) return {ok: false, status: 404, text: "", headers: {}};
+    return {ok: true, status: 200, text, headers: f.readOnly ? {"x-fv-readonly": "mixed-eol"} : {}};
+  },
+};
+window.openTab = (tab, path, lang, extra = {}) => { TABS[tab] = path; return fv.open(tab, {path, lang, ...extra}); };
+</script>
+<script src="dist/editor.js"></script>
+</head>
+<body>
+<div id="bar">
+  <button onclick="openTab('a','/repo/Sources/App/Store.swift','swift')">Store.swift</button>
+  <button onclick="openTab('b','/repo/README.md','markdown',{mode:'preview'})">README (preview)</button>
+  <button onclick="fv.setMode(Object.keys(TABS).pop()==='b'?'b':'a','source')">source</button>
+  <button onclick="FILES['/repo/Sources/App/Store.swift'].disk += '\n// appended by an agent\n'; fv.reload('a')">agent edit</button>
+  <button onclick="fv.compare('a')">compare</button>
+</div>
+<div id="cm"></div>
+<div id="preview" style="display:none"><article id="article" class="md"></article><nav id="toc" class="toc"></nav></div>
+<div id="info"></div>
+<div id="compare" style="display:none">
+  <div class="cmpbar"><span id="compareText"></span><span class="sp"></span><button id="compareCancel"></button><button id="compareSave" class="pri"></button></div>
+  <div id="compareBody"></div>
+</div>
+<script>fv.init({lang: "zh", colors: {}});</script>
+</body>
+</html>
