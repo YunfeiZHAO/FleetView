@@ -94,6 +94,15 @@ directory outside the repo when you have one.
   `CodexHookInstaller.stripFence` must only ever remove our own `[[hooks.*]]` tables. Stripping the
   whole fence untrusted every hook on each launch and Codex stopped reporting without a word — see
   [`docs/design/2026-10-01-codex-worker-hooks.md`](docs/design/2026-10-01-codex-worker-hooks.md).
+- **The file window (📁 in a project's header) never takes git's index lock, and never writes a
+  file with `Data.write(.atomic)`.** Agents commit in the same repositories all day; porcelain
+  `git diff` rewrites `.git/index` even with `--no-optional-locks` (measured), and an agent's commit
+  then fails on `index.lock`. Git goes through `GitReader` — read-only commands only — and saves go
+  through `FileSave`, which keeps symlinks, hard links, modes and xattrs and refuses to overwrite a
+  file an agent changed since it was opened. The web `/save` uses it too. See
+  [`docs/design/2026-10-26-file-browser-editor.md`](docs/design/2026-10-26-file-browser-editor.md).
+  The editor page is `Editor/` (CodeMirror); change it there and run `Editor/build.sh`. To look at
+  the window without launching the app: `FV_SNAPSHOT_FILES=<folder> FleetView --snapshot <dir>`.
 - Two agent backends, two transcript formats: Claude
   `~/.claude/projects/<slug>/…` (branches via `parentUuid`), Codex
   `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (branches via `forked_from_id`). Anything that

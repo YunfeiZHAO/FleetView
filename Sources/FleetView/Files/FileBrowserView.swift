@@ -241,7 +241,7 @@ struct SearchPane: View {
             }
         }
         .onAppear { focused = true }
-        .onChange(of: model.searchCaseSensitive) { _ in model.runSearch() }
+        .onChange(of: model.searchCaseSensitive) { model.runSearch() }
     }
 
     private var summary: String {
@@ -287,7 +287,7 @@ struct QuickOpenPanel: View {
                     }
                     .padding(.vertical, 4)
                 }
-                .onChange(of: model.quickSelection) { i in
+                .onChange(of: model.quickSelection) { _, i in
                     if model.quickResults.indices.contains(i) { proxy.scrollTo(model.quickResults[i].path) }
                 }
             }
@@ -316,7 +316,7 @@ struct FileTree: View {
                 }
                 .padding(.vertical, 4)
             }
-            .onChange(of: model.revealTarget) { target in
+            .onChange(of: model.revealTarget) { _, target in
                 guard let target else { return }
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .center) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.revealTarget = nil }
