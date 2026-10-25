@@ -90,9 +90,20 @@ missing. Nothing trims whitespace.
 **Disk changes while you edit.** A file nobody is editing is reloaded when it changes on disk, keeping
 the scroll position, and the reload is an undoable edit — so an agent's `git checkout -- file` over
 something you just saved is one ⌘Z away. A file with unsaved edits is never reloaded: a banner says the
-disk changed and offers *Use disk version*, *Compare* and *Keep mine*. Unsaved text is mirrored to
-`~/.fleetview/editor-recovery/` a second after typing stops, so a crashed web view or a forced quit
-does not take it; quitting, closing the window and the self-update handoff all ask first.
+disk changed and offers *Use disk version*, *Compare* and *Overwrite*. Unsaved text is mirrored to
+`~/.fleetview/editor-recovery/` a second after typing stops (15 s above 2 MB, 60 s above 20 MB), so a
+crashed web view or a forced quit does not take it; quitting, closing the window and the self-update
+handoff all ask first.
+
+**Which version a save is checked against.** Swift keeps, per tab, the version (SHA-256) the editor
+holds; a save is refused as a conflict when the disk is not that version. The page reads a file two
+ways: `doc/` for a first read — nothing else is in the tab, so the version moves at once — and `disk/`
+for a reload, *Use disk version* and *Compare*, which move nothing: the page answers `applied` with the
+version it took, and only then is it the base. A reload whose read is overtaken by typing stops and
+shows the banner instead. *Overwrite* replaces the version the banner was about, and a merge from
+*Compare* the version its left side showed — a write by an agent after either is a conflict again, not
+lost. Restored edits (from a crash or an earlier session) keep the version they were made against, so
+a save over a newer disk version is a conflict too. Saves of one tab run one at a time.
 
 **Who changed it.** Claude's `PreToolUse` hook already forwards every tool call's input; `Write`,
 `Edit`, `MultiEdit` and `NotebookEdit` name the file. Codex's `apply_patch` names files in its
@@ -116,6 +127,26 @@ stream per window, directory-level, 0.5 s latency, with `.git/objects`, `.build`
 similar excluded; a vnode source per open tab for exact change, rename and delete; git status driven by
 those events with a 1.5 s trailing debounce and a minimum interval that grows with how long the last
 one took; window state in its own model object, never in `AppState`.
+
+## Review, 2026-10-26
+
+Three reviews of the finished implementation (races, resource cost, UI). What they changed, besides
+the save protocol above:
+
+- Only regular files are opened, read, served or watched — opening a FIFO blocks. A file whose bytes
+  would not come back unchanged (two BOMs) is read-only, and so is one a reload finds read-only.
+- The web's `/save` refuses hard-linked files (`allowInPlace: false`): a link inside a project would
+  otherwise let the LAN write the file's other name.
+- "Open with default app" is not offered for programs, scripts and bundles, where it means *run*.
+- "Reference in card" quotes for its reader and refuses a path with a control character.
+- Cost: a tab out of sight is only marked and checked when shown; a listing out of sight is dropped;
+  each folder is read at most once a second and `check-ignore` is skipped when its names did not
+  change; HEAD is compared as files before `rev-parse`; `status` takes the project as a pathspec; the
+  file index is fetched once at a time; typing redraws only the status bar.
+
+One claim did not reproduce: that `copyfile(ACL|XATTR)` fails on a temp file already `fchmod`ed to
+0444. On macOS 26 / APFS it returns 0 and the mode stays 0444; a test (`a read-only mode survives`)
+now holds that.
 
 ## Architecture
 

@@ -28,8 +28,6 @@ public enum FileText {
         case notWritable = "not-writable"
         /// Decoding and encoding again would not give back the same bytes (two BOMs, say).
         case notRoundTrip = "not-round-trip"
-        /// A link inside the project to a file outside it: shown, not written through.
-        case outsideProject = "outside-project"
     }
 
     /// A NUL in the first 8 KB is how git decides a file is binary, and what `/read` refuses.
