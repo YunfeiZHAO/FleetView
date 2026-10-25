@@ -1,4 +1,5 @@
 import FleetViewAudit
+import FleetViewFiles
 import Foundation
 import Network
 
@@ -752,19 +753,20 @@ final class WebServer {
             if !forced, query["base"] != was {
                 answer("409 Conflict", ["error": "changed", "version": was], facts: facts); return
             }
-            // Atomic, so a reader never sees half a file — but a rename makes a new file, which would
-            // come back with default permissions, so the old ones are put back on it.
-            let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
-            do {
-                try body.write(to: url, options: .atomic)
-                if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms],
-                                                                      ofItemAtPath: url.path) }
-            } catch {
-                FV.log("save failed: \(url.path): \(error.localizedDescription)")
-                answer("500 Internal Server Error", ["error": "could not write it"], facts: facts); return
+            // The desktop file window's save: checked against `base` again at the moment of writing,
+            // written beside the project rather than in it, swapped in with the file's mode, ACL and
+            // extended attributes, and undone if an agent wrote in between (see FileSave). It replaced
+            // `Data.write(.atomic)`, which left its temporary file in the project mid-write.
+            switch FileSave.save(body, to: url.path, base: forced ? nil : was, force: forced) {
+            case .saved:
+                FV.log("save: \(body.count) bytes → \(url.path)")
+                answer("200 OK", ["version": now, "bytes": body.count], facts: facts)
+            case .conflict(let current):
+                answer("409 Conflict", ["error": "changed", "version": current ?? was], facts: facts)
+            case .failed(let why):
+                FV.log("save failed: \(url.path): \(why)")
+                answer("500 Internal Server Error", ["error": "could not write it"], facts: facts)
             }
-            FV.log("save: \(body.count) bytes → \(url.path)")
-            answer("200 OK", ["version": now, "bytes": body.count], facts: facts)
         }
     }
 

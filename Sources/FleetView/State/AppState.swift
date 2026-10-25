@@ -2083,6 +2083,7 @@ final class AppState: ObservableObject {
         // conversation's session_id but the WORKER's rollout as transcript_path. Only that
         // rollout's head tells them apart; hook.sh cannot, and neither can the session id.
         let worker = ev.transcriptPath.map(CodexTree.isWorkerRollout) ?? false
+        if !ev.writtenPaths.isEmpty { FileEdits.shared.note(ev.writtenPaths, terminal: terminals[idx]) }
         // Everything this hook provokes is the agent's (or the shell's) doing, not the user's at the
         // keyboard — declaring it once here attributes the whole cascade correctly.
         AuditContext.with(hookActor(ev, terminal: terminals[idx])) {

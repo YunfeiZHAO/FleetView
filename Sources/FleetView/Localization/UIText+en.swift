@@ -447,6 +447,8 @@ extension UIText {
         case .filesForward: return "Forward"
         case .filesSearchSummary(let m, let f): return "\(m) matches in \(f) files"
         case .filesFilterCount(let n): return "\(n) files"
+        case .filesRecent: return "Recently changed"
+        case .filesChangedBy(let n): return "\(n) just changed this file; reloaded"
         }
     }
 }

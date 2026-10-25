@@ -114,7 +114,12 @@ struct FileSidebar: View {
                     .padding(.horizontal, 12).padding(.bottom, 6)
                 }
                 Divider().overlay(Theme.outlineVariant)
-                if model.filter.isEmpty { FileTree(model: model) } else { FilterResults(model: model) }
+                if model.filter.isEmpty {
+                    if !model.recent.isEmpty { RecentSection(model: model) }
+                    FileTree(model: model)
+                } else {
+                    FilterResults(model: model)
+                }
             } else {
                 SearchPane(model: model)
             }
@@ -716,6 +721,53 @@ struct FileStatusBar: View {
         case .renamed: return L(.filesMarkRenamed)
         case .untracked: return L(.filesMarkUntracked)
         case .conflicted: return L(.filesMarkConflicted)
+        }
+    }
+}
+
+/// The files that changed lately, above the tree.
+struct RecentSection: View {
+    @ObservedObject var model: FileBrowserModel
+    @State private var open = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text(L(.filesRecent)).font(.fvLabelSmall)
+                    Spacer()
+                }
+                .foregroundColor(Theme.outline).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
+            if open {
+                ForEach(model.recent) { r in
+                    HStack(spacing: 6) {
+                        FileIcon(name: r.path, isDir: false)
+                        Text((r.path as NSString).lastPathComponent).font(.system(size: 12.5)).foregroundColor(Theme.text).lineLimit(1)
+                        Text((r.path as NSString).deletingLastPathComponent).font(.fvLabelSmall).foregroundColor(Theme.outline)
+                            .lineLimit(1).truncationMode(.head)
+                        Spacer(minLength: 4)
+                        if let by = r.by {
+                            Text(by).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                                .foregroundColor(Theme.onPrimaryContainer)
+                                .padding(.horizontal, 6).frame(height: 16)
+                                .background(Theme.primaryContainer).clipShape(Capsule())
+                        }
+                        TimelineView(.periodic(from: r.at, by: 30)) { ctx in
+                            Text(RelativeTime.compact(r.at, now: ctx.date)).font(.fvLabelSmall).foregroundColor(Theme.outline)
+                        }
+                    }
+                    .padding(.horizontal, 12).frame(height: 23)
+                    .background(model.active?.path == r.path ? Theme.secondaryContainer : Color.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.open(r.path) }
+                    .help(r.path)
+                }
+            }
+            Divider().overlay(Theme.outlineVariant).padding(.top, 4)
         }
     }
 }

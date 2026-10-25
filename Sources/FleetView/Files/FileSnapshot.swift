@@ -13,6 +13,7 @@ import WebKit
 /// `FV_SNAPSHOT_EXPAND`: folders to open in the tree. `FV_SNAPSHOT_JS`: script run in the page after
 /// the files are open — how a test types into the editor. `FV_SNAPSHOT_FILTER`, `FV_SNAPSHOT_SEARCH`,
 /// `FV_SNAPSHOT_QUICK`: a name filter, a search in files, or quick open with that text.
+/// `FV_SNAPSHOT_EDITED`: `path=Card,…`, writes an agent's hook would have reported.
 @MainActor
 enum FileSnapshot {
     static func run(root: String, into dir: String) -> Never {
@@ -48,6 +49,13 @@ enum FileSnapshot {
         window.contentView = host
         model.window = window
         model.start()
+        // `path=Card name,…`: what an agent's hook would have recorded, for the recently-changed list.
+        for pair in (env["FV_SNAPSHOT_EDITED"] ?? "").split(separator: ",") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2 else { continue }
+            let t = TerminalSession(projectId: project.id, name: kv[1], cwd: project.path)
+            FileEdits.shared.note([model.absolute(kv[0])], terminal: t)
+        }
         spin(8) { model.editor.ready && !model.rows.isEmpty }
         for d in expand { model.toggle(d); spin(0.4) }
         for f in open { model.open(f, pin: true); spin(1.2) }
@@ -79,7 +87,7 @@ enum FileSnapshot {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         // What the page reported, for a test to read: the tabs and their state.
         let tabs = model.tabs.map { "\($0.path) dirty=\($0.dirty) mode=\($0.mode.rawValue) ro=\($0.readOnly ?? "-")" }
-        print("files snapshot \(path): rows=\(model.rows.count) marks=\(model.marks.count) repo=\(model.repo != nil) tabs=\(tabs) banners=\(model.banners) status=\(model.status) quick=\(model.quickResults.prefix(4).map(\.path))")
+        print("files snapshot \(path): rows=\(model.rows.count) marks=\(model.marks.count) repo=\(model.repo != nil) tabs=\(tabs) banners=\(model.banners) status=\(model.status) quick=\(model.quickResults.prefix(4).map(\.path)) recent=\(model.recent.map { "\($0.path):\($0.by ?? "-")" })")
         model.stop()
         window.contentView = nil
     }

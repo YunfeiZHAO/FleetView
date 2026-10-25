@@ -455,6 +455,8 @@ enum UIText {
     case filesForward
     case filesSearchSummary(Int, Int)
     case filesFilterCount(Int)
+    case filesRecent
+    case filesChangedBy(String)
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,

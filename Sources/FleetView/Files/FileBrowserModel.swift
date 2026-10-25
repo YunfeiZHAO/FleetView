@@ -118,6 +118,19 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     var navigating = false
     var recentOpened: [String] = []
 
+    // Recently changed files (FileBrowserModel+Recent).
+    struct Recent: Identifiable, Equatable {
+        let path: String        // relative to the project root
+        let at: Date
+        let by: String?         // the card whose agent wrote it, when its hook said so
+        var id: String { path }
+    }
+    @Published var recent: [Recent] = []
+    let openedAt = Date()
+    var observedChanges: [String: Date] = [:]
+    var recentTimer: DispatchWorkItem?
+    var editsObserver: NSObjectProtocol?
+
     private var listings: [String: [Entry]] = [:]
     private var ignoredNames: [String: Set<String>] = [:]
     private var loading: Set<String> = []
@@ -128,7 +141,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     private var watcher: ProjectWatcher?
     /// The project's path inside its repository ("" when the project is the repository).
     private(set) var rootInRepo = ""
-    private var untrackedDirs: Set<String> = []
+    private(set) var untrackedDirs: Set<String> = []
     /// Staged renames: new path → the path HEAD has it under.
     private(set) var renames: [String: String] = [:]
     private(set) var headCommit: String?
@@ -183,10 +196,20 @@ final class FileBrowserModel: ObservableObject, EditorHost {
                 requestStatus(after: 0)
             }
             startWatching()
+            refreshRecent()
+        }
+        editsObserver = NotificationCenter.default.addObserver(forName: .fileEditsNoted, object: nil, queue: .main) { [weak self] n in
+            MainActor.assumeIsolated {
+                guard let self, let paths = n.object as? [String],
+                      paths.contains(where: { $0.hasPrefix(self.root + "/") }) else { return }
+                self.refreshRecent(after: 1.5)          // the write lands a moment after the hook
+            }
         }
     }
 
     func stop() {
+        if let o = editsObserver { NotificationCenter.default.removeObserver(o) }
+        recentTimer?.cancel()
         watcher?.stop()
         watcher = nil
         for w in watches.values { w.cancel() }
@@ -323,6 +346,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
             || pendingDirs.contains { d in !untrackedDirs.contains { d == $0 || d.hasPrefix($0 + "/") } }
         if worthStatus { requestStatus() }
         if pendingIndex || pendingRescan || !pendingDirs.isEmpty { fileIndexStale = true }
+        if !pendingDirs.isEmpty { observe(pendingDirs) }
         pendingDirs.removeAll()
         pendingIndex = false; pendingHead = false; pendingRescan = false
     }
@@ -396,6 +420,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         if dirs != dirtyDirs { dirtyDirs = dirs }
         untrackedDirs = untracked
         renames = moved
+        refreshRecent()
     }
 
     /// What HEAD points at, read from the file rather than by running git.
@@ -982,6 +1007,9 @@ final class FileBrowserModel: ObservableObject, EditorHost {
             banners[id] = .diskChanged
         } else if id == activeTab && visible {
             editor.call("reload", [id])
+            if let e = FileEdits.shared.latest(for: abs), Date().timeIntervalSince(e.at) < 120 {
+                showToast(L(.filesChangedBy(e.terminalName)))
+            }
         } else {
             docs[id]?.stale = true
         }

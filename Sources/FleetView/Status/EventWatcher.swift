@@ -1,4 +1,5 @@
 import FleetViewAudit
+import FleetViewFiles
 import Foundation
 
 /// Watches ~/.fleetview/events for hook event files dropped by hook.sh (atomic writes),
@@ -28,6 +29,9 @@ final class EventWatcher {
         /// Decided at parse time: `tool_input` is a `[String: Any]` and so not `Sendable`, and this
         /// is the only question anyone asks of it.
         let writesPanel: Bool
+        /// Files this tool call is about to write (absolute), for the file window's "who changed it".
+        /// Read at parse time for the same reason as `writesPanel`.
+        let writtenPaths: [String]
 
         /// ShellCommand pairing: a command reports itself when it starts and again when it ends.
         let cmdId: String?
@@ -100,6 +104,10 @@ final class EventWatcher {
                                tool: p["tool_name"] as? String,
                                input: p["tool_input"] as? [String: Any],
                                panelPath: FV.panelHTML.path),
+                           writtenPaths: event == "PreToolUse"
+                               ? EditedPaths.paths(tool: p["tool_name"] as? String, input: p["tool_input"] as? [String: Any],
+                                                   cwd: p["cwd"] as? String)
+                               : [],
                            cmdId: p["cmd_id"] as? String,
                            exitCode: p["exit_code"].flatMap { $0 as? Int ?? Int("\($0)") },
                            durationMs: p["duration_ms"].flatMap { $0 as? Int ?? Int("\($0)") },
