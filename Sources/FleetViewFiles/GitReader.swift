@@ -150,6 +150,17 @@ public final class GitReader: @unchecked Sendable {
         return GrepResult.parse(r.out, maxHits: maxHits, truncated: r.truncated)
     }
 
+    /// `git grep` over named files whatever git thinks of them (`--no-index`): the untracked files a
+    /// project's file list opened up. Paths are relative to the top level.
+    public func grepFiles(_ query: String, _ files: [String], in repo: Repo, caseSensitive: Bool,
+                          maxHits: Int, cancel: CancelToken? = nil) -> GrepResult {
+        var args = ["grep", "--no-index", "-n", "-I", "-z", "--no-color", "-F"]
+        if !caseSensitive { args.append("-i") }
+        args += ["-e", query, "--"] + files
+        let r = run(args, in: repo.toplevel, timeout: 15, limit: 2 << 20, cancel: cancel)
+        return GrepResult.parse(r.out, maxHits: maxHits, truncated: r.truncated)
+    }
+
     static func splitNUL(_ data: Data) -> [String] {
         data.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
     }
@@ -216,6 +227,11 @@ public struct GrepResult: Equatable, Sendable {
     public let hits: [GrepHit]
     /// More matched than are listed.
     public let truncated: Bool
+
+    public init(hits: [GrepHit], truncated: Bool) {
+        self.hits = hits
+        self.truncated = truncated
+    }
 
     /// `path\0line\0text\n`, as `git grep -n -z` prints it (and `grep -rnZ` close enough).
     public static func parse(_ data: Data, maxHits: Int, truncated: Bool) -> GrepResult {

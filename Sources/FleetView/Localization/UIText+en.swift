@@ -431,6 +431,22 @@ extension UIText {
         case .filesMarkUntracked: return "Untracked"
         case .filesMarkConflicted: return "Conflicted"
         case .updUnsavedCancelled: return "Not installed: there are unsaved files."
+        case .filesTabFiles: return "Files"
+        case .filesTabSearch: return "Search"
+        case .filesFilterPlaceholder: return "Filter by name"
+        case .filesSearchPlaceholder: return "Search in files, then Return"
+        case .filesSearchCase: return "Match case"
+        case .filesSearchHint: return "Searches files git tracks; skips what .gitignore excludes"
+        case .filesSearching: return "Searching…"
+        case .filesSearchNone: return "No matches"
+        case .filesSearchTruncated: return "too many; only some are listed"
+        case .filesQuickOpenPlaceholder: return "Go to file by name"
+        case .filesQuickOpenRecent: return "Recently opened and changed"
+        case .filesQuickOpen: return "Go to File"
+        case .filesBack: return "Back"
+        case .filesForward: return "Forward"
+        case .filesSearchSummary(let m, let f): return "\(m) matches in \(f) files"
+        case .filesFilterCount(let n): return "\(n) files"
         }
     }
 }

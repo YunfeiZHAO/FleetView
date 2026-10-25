@@ -431,6 +431,22 @@ extension UIText {
         case .filesMarkUntracked: return "未跟踪"
         case .filesMarkConflicted: return "有冲突"
         case .updUnsavedCancelled: return "有没保存的文件，这次没有安装更新。"
+        case .filesTabFiles: return "文件"
+        case .filesTabSearch: return "搜索"
+        case .filesFilterPlaceholder: return "按文件名筛选"
+        case .filesSearchPlaceholder: return "在文件里搜索，回车开始"
+        case .filesSearchCase: return "区分大小写"
+        case .filesSearchHint: return "只搜 git 跟踪的文件，跳过 .gitignore 里的东西"
+        case .filesSearching: return "搜索中…"
+        case .filesSearchNone: return "没有找到"
+        case .filesSearchTruncated: return "太多了，只列出一部分"
+        case .filesQuickOpenPlaceholder: return "按文件名跳转"
+        case .filesQuickOpenRecent: return "最近打开和有改动的"
+        case .filesQuickOpen: return "跳转到文件"
+        case .filesBack: return "后退"
+        case .filesForward: return "前进"
+        case .filesSearchSummary(let m, let f): return "在 \(f) 个文件里找到 \(m) 处"
+        case .filesFilterCount(let n): return "\(n) 个文件"
         }
     }
 }

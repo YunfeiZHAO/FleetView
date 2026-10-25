@@ -74,6 +74,12 @@ public enum FuzzyMatch {
         public let score: Double
         /// Matched character offsets into `path`, for bolding.
         public let positions: [Int]
+
+        public init(path: String, score: Double, positions: [Int]) {
+            self.path = path
+            self.score = score
+            self.positions = positions
+        }
     }
 
     public static func match(_ query: String, _ path: String) -> Match? {

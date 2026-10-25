@@ -33,6 +33,9 @@ struct FileBrowserView: View {
             }
         }
         .overlay { FileShortcuts(model: model) }
+        .overlay(alignment: .top) {
+            if model.quickOpen { QuickOpenPanel(model: model).padding(.top, 48) }
+        }
     }
 
     private var emptyState: some View {
@@ -95,17 +98,203 @@ struct FileSidebar: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
-            if model.repo != nil {
-                Toggle(isOn: $model.showIgnored) {
-                    Text(L(.filesShowIgnored)).font(.fvBodySmall).foregroundColor(Theme.subtext)
-                }
-                .toggleStyle(.checkbox).controlSize(.small)
-                .padding(.horizontal, 12).padding(.bottom, 6)
+            Picker("", selection: $model.sideMode) {
+                Text(L(.filesTabFiles)).tag(FileBrowserModel.SideMode.tree)
+                Text(L(.filesTabSearch)).tag(FileBrowserModel.SideMode.search)
             }
-            Divider().overlay(Theme.outlineVariant)
-            FileTree(model: model)
+            .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+            .padding(.horizontal, 10).padding(.bottom, 6)
+            if model.sideMode == .tree {
+                SidebarField(text: $model.filter, placeholder: L(.filesFilterPlaceholder), icon: "line.3.horizontal.decrease")
+                if model.repo != nil && model.filter.isEmpty {
+                    Toggle(isOn: $model.showIgnored) {
+                        Text(L(.filesShowIgnored)).font(.fvBodySmall).foregroundColor(Theme.subtext)
+                    }
+                    .toggleStyle(.checkbox).controlSize(.small)
+                    .padding(.horizontal, 12).padding(.bottom, 6)
+                }
+                Divider().overlay(Theme.outlineVariant)
+                if model.filter.isEmpty { FileTree(model: model) } else { FilterResults(model: model) }
+            } else {
+                SearchPane(model: model)
+            }
         }
         .background(Theme.panel)
+    }
+}
+
+struct SidebarField: View {
+    @Binding var text: String
+    let placeholder: String
+    let icon: String
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11)).foregroundColor(Theme.outline)
+            TextField(placeholder, text: $text).textFieldStyle(.plain).font(.fvBodySmall).onSubmit(onSubmit)
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(Theme.outline) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8).frame(height: 26)
+        .background(Theme.bg).clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.outlineVariant))
+        .padding(.horizontal, 10).padding(.bottom, 6)
+    }
+}
+
+struct FilterResults: View {
+    @ObservedObject var model: FileBrowserModel
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                Text(L(.filesFilterCount(model.filterResults.count))).font(.fvLabelSmall).foregroundColor(Theme.outline)
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                ForEach(model.filterResults, id: \.self) { p in
+                    PathRow(path: p, selected: model.active?.path == p)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.open(p.hasSuffix("/") ? String(p.dropLast()) : p) }
+                        .contextMenu { FileContextMenu(model: model, rel: p, isDir: p.hasSuffix("/")) }
+                }
+            }
+        }
+    }
+}
+
+/// A file as name and folder, the folder dimmed.
+struct PathRow: View {
+    let path: String
+    var selected = false
+    var bold: Set<Int> = []
+
+    var body: some View {
+        let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
+        let cut = trimmed.lastIndex(of: "/").map { trimmed.index(after: $0) } ?? trimmed.startIndex
+        let nameStart = trimmed.distance(from: trimmed.startIndex, to: cut)
+        HStack(spacing: 6) {
+            FileIcon(name: trimmed, isDir: path.hasSuffix("/"))
+            Self.marked(String(trimmed[cut...]), offset: nameStart, bold: bold).font(.system(size: 12.5)).foregroundColor(Theme.text).lineLimit(1)
+            Self.marked(String(trimmed[..<cut]), offset: 0, bold: bold).font(.fvLabelSmall).foregroundColor(Theme.outline)
+                .lineLimit(1).truncationMode(.head)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).frame(height: 24)
+        .background(selected ? Theme.secondaryContainer : Color.clear)
+    }
+
+    /// `text` with the characters at `bold` (offsets into the whole path) in the accent colour.
+    static func marked(_ text: String, offset: Int, bold: Set<Int>) -> Text {
+        guard !bold.isEmpty else { return Text(text) }
+        var out = Text("")
+        for (i, ch) in text.enumerated() {
+            let t = Text(String(ch))
+            out = out + (bold.contains(offset + i) ? t.foregroundColor(Theme.primary).bold() : t)
+        }
+        return out
+    }
+}
+
+struct SearchPane: View {
+    @ObservedObject var model: FileBrowserModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundColor(Theme.outline)
+                TextField(L(.filesSearchPlaceholder), text: $model.searchQuery).textFieldStyle(.plain).font(.fvBodySmall)
+                    .focused($focused).onSubmit { model.runSearch() }
+                Toggle(isOn: $model.searchCaseSensitive) { Text("Aa").font(.fvLabelSmall) }
+                    .toggleStyle(.button).controlSize(.mini).help(L(.filesSearchCase))
+            }
+            .padding(.horizontal, 8).frame(height: 26)
+            .background(Theme.bg).clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.outlineVariant))
+            .padding(.horizontal, 10).padding(.bottom, 6)
+            Text(summary).font(.fvLabelSmall).foregroundColor(Theme.outline).padding(.horizontal, 12).padding(.bottom, 4)
+            Divider().overlay(Theme.outlineVariant)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.searchResults) { g in
+                        PathRow(path: g.path).contentShape(Rectangle())
+                            .onTapGesture { if let h = g.hits.first { model.openHit(h) } }
+                        ForEach(Array(g.hits.prefix(20).enumerated()), id: \.offset) { _, h in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("\(h.line)").font(.fvMono).foregroundColor(Theme.outline).frame(minWidth: 28, alignment: .trailing)
+                                Text(h.text).font(.fvMono).foregroundColor(Theme.subtext).lineLimit(1)
+                            }
+                            .padding(.leading, 18).padding(.trailing, 10).frame(height: 20)
+                            .contentShape(Rectangle())
+                            .onTapGesture { model.openHit(h) }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .onAppear { focused = true }
+        .onChange(of: model.searchCaseSensitive) { _ in model.runSearch() }
+    }
+
+    private var summary: String {
+        switch model.searchState {
+        case .idle: return L(.filesSearchHint)
+        case .running: return L(.filesSearching)
+        case .done(let m, let f, let cut):
+            if m == 0 { return L(.filesSearchNone) }
+            return L(.filesSearchSummary(m, f)) + (cut ? " · " + L(.filesSearchTruncated) : "")
+        }
+    }
+}
+
+struct QuickOpenPanel: View {
+    @ObservedObject var model: FileBrowserModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Theme.outline)
+                TextField(L(.filesQuickOpenPlaceholder), text: $model.quickQuery)
+                    .textFieldStyle(.plain).font(.system(size: 14)).focused($focused)
+                    .onSubmit { model.quickPick() }
+                    .onKeyPress(.downArrow) { model.quickMove(1); return .handled }
+                    .onKeyPress(.upArrow) { model.quickMove(-1); return .handled }
+                    .onKeyPress(.escape) { model.quickOpen = false; return .handled }
+            }
+            .padding(.horizontal, 12).frame(height: 40)
+            Divider().overlay(Theme.outlineVariant)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if model.quickQuery.isEmpty && !model.quickResults.isEmpty {
+                            Text(L(.filesQuickOpenRecent)).font(.fvLabelSmall).foregroundColor(Theme.outline)
+                                .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
+                        }
+                        ForEach(Array(model.quickResults.enumerated()), id: \.element.path) { i, m in
+                            PathRow(path: m.path, selected: i == model.quickSelection, bold: Set(m.positions))
+                                .contentShape(Rectangle())
+                                .onTapGesture { model.quickPick(i) }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onChange(of: model.quickSelection) { i in
+                    if model.quickResults.indices.contains(i) { proxy.scrollTo(model.quickResults[i].path) }
+                }
+            }
+            .frame(maxHeight: 380)
+        }
+        .frame(width: 580)
+        .background(Theme.surfaceContainer)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.outlineVariant))
+        .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+        .onAppear { focused = true }
+        .onExitCommand { model.quickOpen = false }
     }
 }
 
@@ -328,6 +517,12 @@ struct FileToolbar: View {
     var body: some View {
         if let tab = model.active {
             HStack(spacing: 6) {
+                Button { model.goBack() } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.borderless).disabled(!model.canGoBack).help(L(.filesBack) + "  ⌃-")
+                Button { model.goForward() } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.borderless).disabled(!model.canGoForward).help(L(.filesForward) + "  ⌃⇧-")
+                Button { model.showQuickOpen() } label: { Image(systemName: "magnifyingglass") }
+                    .buttonStyle(.borderless).help(L(.filesQuickOpen) + "  ⌘P")
                 breadcrumbs(tab.path)
                 Spacer(minLength: 8)
                 if tab.kind == .text {

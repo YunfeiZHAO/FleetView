@@ -91,6 +91,33 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     @Published var revealTarget: String?
     @Published var toast: String?
 
+    // Finding files (FileBrowserModel+Find).
+    enum SideMode: Hashable { case tree, search }
+    @Published var sideMode: SideMode = .tree
+    @Published var filter = "" { didSet { if filter != oldValue { runFilter() } } }
+    @Published var filterResults: [String] = []
+    @Published var quickOpen = false
+    @Published var quickQuery = "" { didSet { if quickQuery != oldValue { runQuickOpen() } } }
+    @Published var quickResults: [FuzzyMatch.Match] = []
+    @Published var quickSelection = 0
+    @Published var searchQuery = ""
+    @Published var searchCaseSensitive = false
+    @Published var searchResults: [SearchGroup] = []
+    @Published var searchState: SearchState = .idle
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+    var fileIndex: [String]?
+    /// Untracked files small enough to search (relative to the project root).
+    var untrackedFiles: [String]?
+    var fileIndexAt = Date.distantPast
+    var fileIndexStale = true
+    var findGeneration = 0
+    var searchCancel: CancelToken?
+    var backStack: [String] = []
+    var forwardStack: [String] = []
+    var navigating = false
+    var recentOpened: [String] = []
+
     private var listings: [String: [Entry]] = [:]
     private var ignoredNames: [String: Set<String>] = [:]
     private var loading: Set<String> = []
@@ -100,7 +127,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     private var checks: [String: DispatchWorkItem] = [:]
     private var watcher: ProjectWatcher?
     /// The project's path inside its repository ("" when the project is the repository).
-    private var rootInRepo = ""
+    private(set) var rootInRepo = ""
     private var untrackedDirs: Set<String> = []
     /// Staged renames: new path → the path HEAD has it under.
     private(set) var renames: [String: String] = [:]
@@ -295,6 +322,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         let worthStatus = pendingIndex || pendingHead || pendingRescan
             || pendingDirs.contains { d in !untrackedDirs.contains { d == $0 || d.hasPrefix($0 + "/") } }
         if worthStatus { requestStatus() }
+        if pendingIndex || pendingRescan || !pendingDirs.isEmpty { fileIndexStale = true }
         pendingDirs.removeAll()
         pendingIndex = false; pendingHead = false; pendingRescan = false
     }
@@ -800,12 +828,13 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         switch name {
         case "closeTab": closeActive()
         case "save": editor.call("saveActive")
-        default: keyHook?(name)
+        case "quickOpen": showQuickOpen()
+        case "searchFiles": sideMode = .search
+        case "back": goBack()
+        case "forward": goForward()
+        default: break
         }
     }
-
-    /// Phase 4's keys (quick open, search, back and forward) plug in here.
-    var keyHook: ((String) -> Void)?
 
     private func followLink(_ href: String, from: String) {
         if href.hasPrefix("http://") || href.hasPrefix("https://") || href.hasPrefix("mailto:") {
@@ -1017,9 +1046,13 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         showToast(L(.filesCopied))
     }
 
-    /// Phase 5's "recently changed" list hears about every file opened, too.
-    var openedHook: ((String) -> Void)?
-    private func noteOpened(_ rel: String) { openedHook?(rel) }
+    /// A file the user went to: the back/forward history and quick open's "recently opened".
+    private func noteOpened(_ rel: String) {
+        recentOpened.removeAll { $0 == rel }
+        recentOpened.insert(rel, at: 0)
+        if recentOpened.count > 20 { recentOpened.removeLast() }
+        noteVisit(rel)
+    }
 
     // MARK: - Reference in a card
 

@@ -439,6 +439,22 @@ enum UIText {
     case filesMarkUntracked
     case filesMarkConflicted
     case updUnsavedCancelled
+    case filesTabFiles
+    case filesTabSearch
+    case filesFilterPlaceholder
+    case filesSearchPlaceholder
+    case filesSearchCase
+    case filesSearchHint
+    case filesSearching
+    case filesSearchNone
+    case filesSearchTruncated
+    case filesQuickOpenPlaceholder
+    case filesQuickOpenRecent
+    case filesQuickOpen
+    case filesBack
+    case filesForward
+    case filesSearchSummary(Int, Int)
+    case filesFilterCount(Int)
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,
