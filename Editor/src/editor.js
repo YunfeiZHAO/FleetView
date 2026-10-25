@@ -730,6 +730,7 @@ async function reload(id) {
     view.setState(d.state);
     if (d.mode === "preview") renderPreview(d);
     requestAnimationFrame(() => { view.scrollDOM.scrollTop = keep; });
+    reportCursor(d, view.state);         // setState fires no update: the status bar's line count would go stale
   } else {
     d.scroll = keep;
   }
