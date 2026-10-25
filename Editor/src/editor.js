@@ -7,7 +7,7 @@
 // `fetchText(url)` for file contents, which arrive through the `fvfile:` scheme rather than through
 // the message channel, so a 20 MB file is one response and not one serialised argument.
 
-import {EditorState, Compartment, StateEffect, StateField, RangeSetBuilder, Transaction} from "@codemirror/state";
+import {EditorState, Compartment, StateEffect, StateField, RangeSetBuilder, Transaction, Text} from "@codemirror/state";
 import {
   EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection,
   highlightSpecialChars, Decoration, rectangularSelection, crosshairCursor, dropCursor,
@@ -74,7 +74,7 @@ const WORDS = {
       "current match": "当前匹配", "on line": "在行", "replaced $ matches": "替换了 $ 处",
       "replaced match on line $": "替换了第 $ 行的匹配", "folded code": "已折叠", "unfold": "展开",
       "to": "到", "Control character": "控制字符", "Revert this chunk": "还原这一块",
-      "Accept": "接受", "Reject": "拒绝",
+      "Accept": "接受", "Reject": "拒绝", "Fold line": "折叠", "Unfold line": "展开",
     },
   },
   en: {
@@ -337,10 +337,12 @@ function setDirty(d, dirty) {
 }
 
 // Unsaved text is mirrored to Swift once typing pauses, so a crashed page or a forced quit loses at
-// most the last second. Larger documents wait longer: each mirror is a full copy.
+// most the last second. Larger documents wait longer: each mirror is a full copy of the text, through
+// the message channel and onto disk.
 function scheduleSnapshot(d) {
   clearTimeout(d.snapTimer);
-  const wait = (d.id === active ? view.state.doc.length : 0) > 2_000_000 ? 5000 : 1000;
+  const len = (d.id === active ? view.state : d.state).doc.length;
+  const wait = len <= 2_000_000 ? 1000 : len <= 20_000_000 ? 15_000 : 60_000;
   d.snapTimer = setTimeout(() => {
     const doc = d.id === active ? view.state.doc : d.state.doc;
     if (!d.dirty || doc === d.snapped) return;
@@ -351,16 +353,27 @@ function scheduleSnapshot(d) {
 
 // ---------------------------------------------------------------- loading
 
-async function load(d) {
+// One read at a time per tab: `open`, `show` and `restore` can all ask while the first is on its way,
+// and a second state built from a second read would replace whatever was typed into the first.
+function load(d) {
+  if (!d.loading) d.loading = loadNow(d).finally(() => { d.loading = null; });
+  return d.loading;
+}
+
+async function loadNow(d) {
   const r = await bridge.fetchText(appURL("doc/" + encodeURIComponent(d.id)));
-  if (!r.ok) {
-    let info = {kind: "error", title: r.text || String(r.status)};
-    try { info = JSON.parse(r.text); } catch (e) {}
-    d.info = info;
-    return false;
-  }
-  d.meta.readOnly = d.meta.readOnly || !!r.headers["x-fv-readonly"];
-  d.meta.readOnlyReason = r.headers["x-fv-readonly"] || d.meta.readOnlyReason || "";
+  if (!r.ok) { d.info = infoFrom(r); return false; }
+  adopt(d, r);
+  return true;
+}
+
+function infoFrom(r) {
+  try { return JSON.parse(r.text); } catch (e) { return {kind: "error", title: r.text || String(r.status)}; }
+}
+
+/** A fresh editor state for the text in `r`: what the tab now holds, unedited. */
+function adopt(d, r) {
+  readOnlyFrom(d, r);
   d.meta.length = r.text.length;
   d.meta.longLine = hasLongLine(r.text);
   d.tier = tier(r.text.length);
@@ -368,7 +381,25 @@ async function load(d) {
   d.savedDoc = d.state.doc;
   d.dirty = false;
   d.info = null;
-  return true;
+}
+
+/** Whether the file can be edited is the file's to say, every time it is read: a reload can turn a
+ *  clean file into one with mixed line endings. */
+function readOnlyFrom(d, r) {
+  const reason = r.headers["x-fv-readonly"] || "";
+  const was = !!d.meta.readOnly;
+  d.meta.readOnly = !!reason;
+  d.meta.readOnlyReason = reason;
+  if (d.state && was !== d.meta.readOnly) {
+    const effects = readOnlyC.reconfigure(EditorState.readOnly.of(d.meta.readOnly));
+    if (d.id === active) { view.dispatch({effects}); d.state = view.state; } else d.state = d.state.update({effects}).state;
+  }
+}
+
+/** Tell Swift the editor now holds this version of the file: only then is it what a save is checked
+ *  against. */
+function applied(d, r) {
+  post("applied", {tab: d.id, version: r.headers["x-fv-version"] || "", readOnly: d.meta.readOnlyReason || ""});
 }
 
 function hasLongLine(text) {
@@ -403,8 +434,9 @@ function stash() {
   const d = docs.get(active);
   if (!d || !d.state) return;
   d.state = view.state;
-  d.scroll = view.scrollDOM.scrollTop;
-  if (d.mode === "preview") d.previewScroll = host.preview.scrollTop;
+  // A hidden editor reports 0: keep where it was instead.
+  if (host.cm.style.display !== "none") d.scroll = view.scrollDOM.scrollTop;
+  if (d.mode === "preview" && host.preview.style.display !== "none") d.previewScroll = host.preview.scrollTop;
 }
 
 function display(which) {
@@ -426,20 +458,29 @@ function showDoc(d) {
     host.preview.scrollTop = d.previewScroll || 0;
   } else {
     display("cm");
-    requestAnimationFrame(() => { view.scrollDOM.scrollTop = d.scroll || 0; });
+    restoreScroll(d.scroll || 0);
   }
   reportCursor(d, view.state);
+}
+
+// Scroll positions are put back a frame later, once the view has measured. A `goto` in between wins:
+// it bumps the token, and the late restore would otherwise throw its scroll away.
+let scrollToken = 0;
+function restoreScroll(top) {
+  const token = ++scrollToken;
+  requestAnimationFrame(() => { if (token === scrollToken) view.scrollDOM.scrollTop = top; });
 }
 
 // Clean tabs out of sight give their editor state back when there are many of them, or they are
 // large; switching back reads the file again. Dirty tabs keep everything.
 function evict() {
-  const idle = [...docs.values()].filter(d => d.id !== active && d.state && !d.dirty && d.kind === "text");
-  let total = idle.reduce((n, d) => n + d.state.doc.length, 0);
+  const idle = [...docs.values()].filter(d => d.id !== active && d.state && !d.dirty && !d.saving && !d.loading && d.kind === "text");
+  const size = d => d.state.doc.length + (d.head ? d.head.length : 0);
+  let total = idle.reduce((n, d) => n + size(d), 0);
   idle.sort((a, b) => (a.seen || 0) - (b.seen || 0));
   while (idle.length > 8 || (idle.length && total > 50_000_000)) {
     const d = idle.shift();
-    total -= d.state.doc.length;
+    total -= size(d);
     d.state = null; d.savedDoc = null; d.head = null; d.chunks = null; d.preview = null;
   }
 }
@@ -464,17 +505,22 @@ function highlightCode(code, info) {
   return out + escapeHTML(code.slice(pos));
 }
 
+// GitHub's anchors: lower case, punctuation dropped except "-" and "_", spaces to "-". The element id
+// carries a prefix so a heading called "info" or "toc" cannot take the id of the page's own parts.
+const HEADING = "h-";
 function slug(text, seen) {
-  let s = text.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-") || "section";
+  let s = text.toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-") || "section";
   if (seen.has(s)) { let n = 1; while (seen.has(`${s}-${n}`)) n++; s = `${s}-${n}`; }
   seen.add(s);
   return s;
 }
 
-function resolvePath(dir, href) {
+/** A link or image path in a document: relative to the document, or — starting with "/" — to the
+ *  project, as GitHub reads it. */
+function resolvePath(dir, href, root) {
   let p = href;
   try { p = decodeURIComponent(href); } catch (e) {}
-  const parts = (p.startsWith("/") ? p : dir + "/" + p).split("/");
+  const parts = (p.startsWith("/") ? (root || "") + p : dir + "/" + p).split("/");
   const out = [];
   for (const s of parts) { if (!s || s === ".") continue; if (s === "..") out.pop(); else out.push(s); }
   return "/" + out.join("/");
@@ -504,16 +550,16 @@ mdit.renderer.rules.link_open = (tokens, i, opts, env, self) => {
 mdit.renderer.rules.image = (tokens, i, opts, env) => {
   const tok = tokens[i];
   let src = tok.attrGet("src") || "";
-  if (!/^(https?:|data:)/.test(src)) src = rawURL(resolvePath(env.dir, src.split("#")[0]));
+  if (!/^(https?:|data:)/.test(src)) src = rawURL(resolvePath(env.dir, src.split(/[?#]/)[0], env.root));
   const alt = escapeHTML(tok.content || "");
   return `<img src="${escapeHTML(src)}" alt="${alt}">`;
 };
 mdit.renderer.rules.heading_open = (tokens, i, opts, env, self) => {
   const tok = tokens[i];
   const text = tokens[i + 1] ? tokens[i + 1].content : "";
-  const id = slug(text, env.seen);
+  const id = HEADING + slug(text, env.seen);
   tok.attrSet("id", id);
-  if (tok.tag <= "h4") env.toc.push({level: Number(tok.tag[1]), text, id});
+  if (tok.tag <= "h4") env.toc.push({level: Number(tok.tag[1]), text, id, line: tok.map ? tok.map[0] + 1 : 0});
   return self.renderToken(tokens, i, opts);
 };
 
@@ -522,13 +568,19 @@ function renderPreviewSoon(d, wait = 300) {
   previewTimer = setTimeout(() => { if (d.id === active && d.mode === "preview") renderPreview(d); }, wait);
 }
 
-function renderPreview(d) {
+/** The document rendered, for this exact text. */
+function rendered(d) {
   const doc = d.id === active ? view.state.doc : d.state.doc;
   if (!d.preview || d.preview.doc !== doc) {
-    const env = {dir: d.meta.path.slice(0, d.meta.path.lastIndexOf("/")) || "/", toc: [], seen: new Set()};
+    const env = {dir: d.meta.path.slice(0, d.meta.path.lastIndexOf("/")) || "/", root: d.meta.root || "", toc: [], seen: new Set()};
     const html = mdit.render(doc.toString(), env);
     d.preview = {doc, html, toc: env.toc};
   }
+  return d.preview;
+}
+
+function renderPreview(d) {
+  rendered(d);
   const keep = host.preview.scrollTop;
   host.article.innerHTML = d.preview.html || `<p class="empty">${words.noPreview}</p>`;
   host.toc.innerHTML = d.preview.toc.length > 1
@@ -611,14 +663,25 @@ function renderInfo(info) {
 
 // ---------------------------------------------------------------- saving
 
-async function save(id) {
+// One save per tab at a time. ⌘S pressed again while the first is on its way saves again once it is
+// back, with the text as it is then — two saves in flight could land in either order.
+function save(id) {
   const d = docs.get(id);
-  if (!d || !d.state || d.meta.readOnly) return;
-  if (id === active) d.state = view.state;
-  const doc = d.state.doc;
-  if (!d.dirty) return;
-  const reply = await post("save", {tab: id, text: doc.toString()});
-  if (reply && reply.ok) markSaved(d, doc);
+  if (!d || !d.state || d.meta.readOnly) return Promise.resolve();
+  if (d.saving) { d.saveAgain = true; return d.saving; }
+  d.saving = (async () => {
+    try {
+      do {
+        d.saveAgain = false;
+        if (!d.dirty || !d.state || d.meta.readOnly) break;
+        const doc = (id === active ? view.state : d.state).doc;
+        const reply = await post("save", {tab: id, text: doc.toString()});
+        if (!(reply && reply.ok)) break;
+        markSaved(d, doc);
+      } while (d.saveAgain);
+    } finally { d.saving = null; }
+  })();
+  return d.saving;
 }
 
 function markSaved(d, doc) {
@@ -629,41 +692,52 @@ function markSaved(d, doc) {
 
 // ---------------------------------------------------------------- compare and merge
 
-let merge = null;
+let merge = null, mergeTab = null;
 async function compare(id) {
   const d = docs.get(id);
   if (!d || !d.state) return;
   const r = await bridge.fetchText(appURL("disk/" + encodeURIComponent(id)));
-  if (!r.ok) return;
-  if (id === active) d.state = view.state;
+  if (!r.ok || active !== id) return;
+  // The version on the left is what the merged result replaces: saved against it, not over whatever
+  // is there by the time Save is pressed.
+  const base = r.headers["x-fv-version"] || "";
+  d.state = view.state;
   closeCompare();
+  mergeTab = id;
   host.compare.style.display = "";
   host.compareText.textContent = words.compareTitle;
   host.compareSave.textContent = words.saveMerged;
   host.compareCancel.textContent = words.cancel;
-  const support = supportFor(d.meta.lang);
+  const support = d.meta.length > 20_000_000 || d.meta.longLine ? null : supportFor(d.meta.lang);
   const ext = [lineNumbers(), syntaxHighlighting(highlight), theme, support || [], EditorState.phrases.of(words.phrases)];
+  const saveMerged = async () => {
+    if (!merge || mergeTab !== id) return;
+    const text = merge.b.state.doc.toString();
+    const reply = await post("saveMerged", {tab: id, text, base});
+    if (reply && reply.ok) replaceText(d, text, true);
+    // A conflict means the disk moved again: the left side is out of date, and Swift's banner says so.
+    if (reply && (reply.ok || reply.conflict)) closeCompare();
+  };
   merge = new MergeView({
     a: {doc: r.text, extensions: [...ext, EditorState.readOnly.of(true)]},
-    b: {doc: d.state.doc.toString(), extensions: ext},
+    b: {doc: d.state.doc.toString(), extensions: [...ext, history(), keymap.of([
+      {key: "Mod-s", run: () => { saveMerged(); return true; }, preventDefault: true},
+      {key: "Escape", run: () => { closeCompare(); return true; }},
+      ...defaultKeymap, ...historyKeymap,
+    ])]},
     parent: host.compareBody,
     revertControls: "a-to-b",
     highlightChanges: true,
     gutter: true,
   });
-  host.compareSave.onclick = async () => {
-    const text = merge.b.state.doc.toString();
-    const reply = await post("saveMerged", {tab: id, text});
-    if (reply && reply.ok) {
-      replaceText(d, text, true);
-      closeCompare();
-    }
-  };
+  host.compareSave.onclick = saveMerged;
   host.compareCancel.onclick = closeCompare;
+  merge.b.focus();
 }
 
 function closeCompare() {
   if (merge) { merge.destroy(); merge = null; }
+  mergeTab = null;
   host.compare.style.display = "none";
   host.compareBody.innerHTML = "";
 }
@@ -671,7 +745,8 @@ function closeCompare() {
 /** Replace a tab's whole text: the version on disk after a conflict, or a merged result. */
 function replaceText(d, text, clean) {
   if (d.id === active) d.state = view.state;
-  const tr = d.state.update({changes: {from: 0, to: d.state.doc.length, insert: text}, annotations: Transaction.userEvent.of("fv.replace")});
+  const tr = d.state.update({changes: {from: 0, to: d.state.doc.length, insert: text},
+                             annotations: [Transaction.userEvent.of("fv.replace"), ...bigReplace(d.state.doc.length + text.length)]});
   d.state = tr.state;
   if (d.id === active) view.setState(d.state);
   if (clean) { d.savedDoc = d.state.doc; setDirty(d, false); }
@@ -684,28 +759,51 @@ function replaceText(d, text, clean) {
 // ---------------------------------------------------------------- reloading from disk
 
 /** The file changed on disk and the tab has no unsaved edits: bring the new text in as one undoable
- *  edit, keep the view where it was, and light up the lines that changed. */
+ *  edit, keep the view where it was, and light up the lines that changed.
+ *
+ *  Read through `disk/`, which does not move the version Swift saves against; `applied` does, once
+ *  the text is in. Anything typed while the read was on its way stops the reload — the edits stay, and
+ *  Swift shows its banner — rather than being replaced, or kept on top of a version never shown. */
 async function reload(id) {
   const d = docs.get(id);
-  if (!d) return;
-  if (!d.state) { if (id === active) { await load(d); showDoc(d); loadHead(d); } return; }
+  if (!d) return false;
+  if (!d.state) {
+    if (id !== active) return false;           // read when it is shown
+    d.info = null;
+    const ok = await load(d);
+    if (active === id) { showDoc(d); if (ok) loadHead(d); }
+    return ok;
+  }
+  if (d.dirty) { post("reloadSkipped", {tab: id}); return false; }
   if (id === active) d.state = view.state;
-  const r = await bridge.fetchText(appURL("doc/" + encodeURIComponent(id)));
-  if (!r.ok) { try { d.info = JSON.parse(r.text); } catch (e) { d.info = {kind: "error", title: r.text}; } if (id === active) showDoc(d); return; }
-  const old = d.state.doc.toString(), text = r.text;
-  if (old === text) { d.savedDoc = d.state.doc; setDirty(d, false); return; }
+  const before = d.state.doc;
+  const r = await bridge.fetchText(appURL("disk/" + encodeURIComponent(id)));
+  if (docs.get(id) !== d || !d.state) return false;
+  if (id === active) d.state = view.state;
+  if (!r.ok) {
+    // No longer text (it became binary): nothing here can show it. Gone: Swift's banner says so.
+    if (r.status === 415) { d.info = infoFrom(r); if (id === active) showDoc(d); }
+    return false;
+  }
+  if (d.dirty || d.state.doc !== before) { post("reloadSkipped", {tab: id}); return false; }
+  const wasInfo = !!d.info;
+  d.info = null;
+  readOnlyFrom(d, r);
+  const old = before.toString(), text = r.text;
+  if (old === text) { d.savedDoc = d.state.doc; setDirty(d, false); applied(d, r); if (wasInfo && id === active) showDoc(d); return true; }
   let changes, flash = [];
-  if (old.length + text.length <= 4_000_000) {
+  const whole = old.length + text.length > 4_000_000;
+  if (!whole) {
     changes = textDiff(old, text, {scanLimit: 20000, timeout: 150}).map(c => ({from: c.fromA, to: c.toA, insert: text.slice(c.fromB, c.toB)}));
   } else {
     changes = [{from: 0, to: old.length, insert: text}];
   }
-  const keep = id === active ? view.scrollDOM.scrollTop : d.scroll;
-  const tr = d.state.update({changes, annotations: Transaction.userEvent.of("fv.reload")});
+  const keep = id === active && host.cm.style.display !== "none" ? view.scrollDOM.scrollTop : d.scroll;
+  const tr = d.state.update({changes, annotations: [Transaction.userEvent.of("fv.reload"), ...bigReplace(whole ? Infinity : 0)]});
   const doc = tr.state.doc;
   // Which lines to light up comes from a line-aligned diff: the character diff that built the
   // transaction can start an insertion after a line's indentation and so spill into the next line.
-  if (!(changes.length === 1 && changes[0].from === 0 && changes[0].to === old.length)) {
+  if (!whole) {
     for (const c of Chunk.build(d.state.doc, doc, {scanLimit: 20000, timeout: 100})) {
       if (c.fromB < c.toB) flash.push([c.fromB, Math.min(c.endB, doc.length)]);
     }
@@ -727,15 +825,39 @@ async function reload(id) {
   d.tier = tier(text.length);
   d.preview = null;
   if (id === active) {
-    view.setState(d.state);
-    if (d.mode === "preview") renderPreview(d);
-    requestAnimationFrame(() => { view.scrollDOM.scrollTop = keep; });
+    if (wasInfo) showDoc(d);
+    else {
+      view.setState(d.state);
+      if (d.mode === "preview") renderPreview(d); else restoreScroll(keep);
+    }
     reportCursor(d, view.state);         // setState fires no update: the status bar's line count would go stale
   } else {
     d.scroll = keep;
   }
   setDirty(d, false);
+  applied(d, r);
   scheduleDiff(d);
+  return true;
+}
+
+/** A whole-text replacement of a large document is not kept for undo: the history would hold a
+ *  second full copy of the old text for as long as the tab is open. */
+function bigReplace(chars) {
+  return chars > 4_000_000 ? [Transaction.addToHistory.of(false)] : [];
+}
+
+/** Jump to a heading by its anchor (`#section`, from a link in another document). */
+function anchor(d, name) {
+  if (!name || !d.state) return false;
+  let key = name;
+  try { key = decodeURIComponent(name); } catch (e) {}
+  if (d.mode === "preview") {
+    const el = document.getElementById(HEADING + key) || document.getElementById(HEADING + key.toLowerCase());
+    if (el) { el.scrollIntoView({block: "start"}); return true; }
+    return false;
+  }
+  const h = rendered(d).toc.find(h => h.id === HEADING + key || h.id === HEADING + key.toLowerCase());
+  return h && h.line ? api.goto(d.id, h.line) : false;
 }
 
 // ---------------------------------------------------------------- the API Swift calls
@@ -752,9 +874,10 @@ const api = {
   },
   setTheme(colors, fontSize) { setTheme(colors, fontSize); return true; },
 
-  /** A tab: {path, lang, kind: text|image|info, readOnly, readOnlyReason, wrap, mode, info, line}. */
+  /** A tab: {path, root, lang, kind: text|image|info, wrap, mode, info, line, find, anchor}. */
   async open(id, meta) {
     stash();
+    if (mergeTab && mergeTab !== id) closeCompare();
     let d = docs.get(id);
     if (!d) {
       d = {id, meta: {...meta}, kind: meta.kind || "text", mode: meta.mode || "source", wrap: !!meta.wrap, dirty: false};
@@ -772,23 +895,23 @@ const api = {
     } else {
       showDoc(d);
     }
-    if (meta.line) api.goto(id, meta.line);
-    if (meta.find) api.find(meta.find);
+    if (active === id) jump(d, meta);
     evict();
     return {ok: !d.info, readOnly: !!d.meta.readOnly, reason: d.meta.readOnlyReason || ""};
   },
   async show(id) {
     if (!docs.has(id)) return {ok: false};
     stash();
+    if (mergeTab && mergeTab !== id) closeCompare();
     active = id;
     const d = docs.get(id);
     d.seen = Date.now();
     if (d.kind === "text" && !d.state && !d.info) {
       showDoc(d);
-      await load(d);
+      const ok = await load(d);
       if (active !== id) return {ok: true};
       showDoc(d);
-      loadHead(d);
+      if (ok) loadHead(d);
     } else {
       showDoc(d);
     }
@@ -798,6 +921,7 @@ const api = {
   close(id) {
     const d = docs.get(id);
     if (d) { clearTimeout(d.diffTimer); clearTimeout(d.snapTimer); clearTimeout(d.flashTimer); }
+    if (mergeTab === id) closeCompare();
     docs.delete(id);
     if (active === id) active = null;
     return true;
@@ -840,6 +964,7 @@ const api = {
     }
     const doc = view.state.doc;
     const l = doc.line(Math.max(1, Math.min(line, doc.lines)));
+    scrollToken++;                       // a scroll restore still waiting for its frame must not undo this
     view.dispatch({
       selection: {anchor: l.from},
       effects: [EditorView.scrollIntoView(l.from, {y: "center"}), setFlash.of(lineDecos(doc, [[l.from, l.from]], gotoLineDeco))],
@@ -867,12 +992,12 @@ const api = {
     if (active && docs.get(active) && docs.get(active).state) docs.get(active).state = view.state;
     return [...docs.values()].filter(d => d.dirty && d.state).map(d => ({tab: d.id, text: d.state.doc.toString()}));
   },
-  /** Swift saved this exact text for the tab. */
+  /** Swift saved this exact text for the tab. Typing since then stays unsaved — against the text
+   *  that was saved, so undoing back to it reads as clean. */
   markSaved(id, text) {
     const d = docs.get(id);
     if (!d || !d.state) return false;
-    const doc = id === active ? view.state.doc : d.state.doc;
-    if (doc.toString() === text) markSaved(d, doc);
+    markSaved(d, Text.of(text.split("\n")));
     return true;
   },
   /** Throw the edits away and read the file again. */
@@ -890,6 +1015,7 @@ const api = {
     const d = docs.get(id);
     if (!d) return false;
     if (!d.state && !(await load(d))) return false;
+    if (d.meta.readOnly) return false;
     replaceText(d, text, false);
     scheduleSnapshot(d);
     return true;
@@ -898,12 +1024,15 @@ const api = {
   async useDisk(id) {
     const d = docs.get(id);
     if (!d) return false;
-    if (!d.state) { const ok = await load(d); if (id === active) showDoc(d); return ok; }
-    const r = await bridge.fetchText(appURL("doc/" + encodeURIComponent(id)));
-    if (!r.ok) return false;
-    replaceText(d, r.text, true);
+    const r = await bridge.fetchText(appURL("disk/" + encodeURIComponent(id)));
+    if (!r.ok || docs.get(id) !== d) return false;
+    if (!d.state) { adopt(d, r); setDirty(d, false); if (id === active) { showDoc(d); loadHead(d); } }
+    else { readOnlyFrom(d, r); replaceText(d, r.text, true); }
+    applied(d, r);
     return true;
   },
+  /** Land on a line, a search, or a heading's anchor: {line, find, anchor}. */
+  jump(id, where) { const d = docs.get(id); if (d && id === active) jump(d, where || {}); return true; },
   compare,
   /** HEAD moved: fetch the baseline again. */
   headChanged(id) { const d = docs.get(id); if (d && d.state) loadHead(d); return true; },
@@ -915,6 +1044,15 @@ const api = {
   },
 };
 window.fv = api;
+
+/** Where `open`/`show` was asked to land. Find first: in a rendered document it switches to the
+ *  source, and the line has to be found there, not in the rendering it just left. */
+function jump(d, where) {
+  if (!d.state) return;
+  if (where.find) api.find(where.find);
+  if (where.line) api.goto(d.id, where.line);
+  else if (where.anchor) anchor(d, where.anchor);
+}
 
 function setTheme(colors, fontSize) {
   const root = document.documentElement.style;
@@ -948,8 +1086,8 @@ function boot() {
     e.preventDefault();
     const href = a.dataset.href;
     if (href.startsWith("#")) {
-      const el = document.getElementById(decodeURIComponent(href.slice(1)));
-      if (el) el.scrollIntoView({block: "start"});
+      const d = docs.get(active);
+      if (d) anchor(d, href.slice(1));
       return;
     }
     const d = docs.get(active);

@@ -125,6 +125,8 @@ final class FileWatch {
     private var source: DispatchSourceFileSystemObject?
     private let path: String
     private let onChange: () -> Void
+    /// The file the descriptor is on, to tell when the path has a new one.
+    private var armed: (dev: dev_t, ino: ino_t)?
 
     init(path: String, onChange: @escaping () -> Void) {
         self.path = path
@@ -135,8 +137,14 @@ final class FileWatch {
     func arm() {
         source?.cancel()
         source = nil
-        let fd = open(path, O_EVTONLY | O_CLOEXEC)
+        armed = nil
+        // Regular files only: opening a FIFO, even for events, can wait for a writer.
+        var st = stat()
+        guard stat(path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return }
+        let fd = open(path, O_EVTONLY | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else { return }
+        var fst = stat()
+        if fstat(fd, &fst) == 0 { armed = (fst.st_dev, fst.st_ino) }
         let s = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename, .attrib, .revoke, .link],
             queue: .main)
@@ -144,6 +152,13 @@ final class FileWatch {
         s.setCancelHandler { close(fd) }
         s.resume()
         source = s
+    }
+
+    /// Watch the file now under the path, if it is not the one watched.
+    func rearmIfReplaced() {
+        var st = stat()
+        let now = stat(path, &st) == 0 ? (st.st_dev, st.st_ino) : nil
+        if now?.0 != armed?.dev || now?.1 != armed?.ino || source == nil { arm() }
     }
 
     func cancel() {

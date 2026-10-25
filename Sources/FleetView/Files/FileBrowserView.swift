@@ -69,11 +69,17 @@ private struct FileShortcuts: View {
 private struct FileSidebarDivider: View {
     @Binding var width: CGFloat
     @State private var start: CGFloat?
+    /// Pushes and pops must pair: an unpaired pop takes the cursor of whatever pushed before us.
+    @State private var pushed = false
 
     var body: some View {
         Rectangle().fill(Theme.outlineVariant).frame(width: 1)
             .overlay(Color.clear.frame(width: 7).contentShape(Rectangle())
-                .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                .onHover { inside in
+                    if inside && !pushed { NSCursor.resizeLeftRight.push(); pushed = true }
+                    if !inside && pushed { NSCursor.pop(); pushed = false }
+                }
+                .onDisappear { if pushed { NSCursor.pop(); pushed = false } }
                 .gesture(DragGesture(minimumDistance: 1)
                     .onChanged { g in
                         if start == nil { start = width }
@@ -311,7 +317,10 @@ struct FileTree: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.rows) { row in
-                        FileTreeRow(model: model, row: row).id(row.id)
+                        FileTreeRow(model: model, row: row, selected: model.active?.path == row.id,
+                                    mark: model.marks[row.id], expanded: model.expanded.contains(row.id),
+                                    dirtyDir: row.isDir && model.dirtyDirs.contains(row.id))
+                            .id(row.id)
                     }
                 }
                 .padding(.vertical, 4)
@@ -325,20 +334,24 @@ struct FileTree: View {
     }
 }
 
+/// One row of the tree. What it shows comes in as values and the model is held only for its
+/// actions, not observed: a row is drawn again when its own values change, not whenever anything in
+/// the window does.
 struct FileTreeRow: View {
-    @ObservedObject var model: FileBrowserModel
+    let model: FileBrowserModel
     let row: FileBrowserModel.Row
+    let selected: Bool
+    let mark: GitStatus.Mark?
+    let expanded: Bool
+    let dirtyDir: Bool
     @State private var hover = false
-
-    private var selected: Bool { model.active?.path == row.id }
-    private var mark: GitStatus.Mark? { model.marks[row.id] }
 
     var body: some View {
         HStack(spacing: 5) {
             Group {
                 if row.isDir {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
-                        .rotationEffect(.degrees(model.expanded.contains(row.id) ? 90 : 0))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                 } else {
                     Color.clear
                 }
@@ -352,7 +365,7 @@ struct FileTreeRow: View {
             if let mark {
                 Text(mark.rawValue).font(.system(size: 10.5, weight: .bold, design: .monospaced))
                     .foregroundColor(Self.color(mark))
-            } else if row.isDir && model.dirtyDirs.contains(row.id) {
+            } else if dirtyDir {
                 Circle().fill(Theme.warn).frame(width: 5, height: 5)
             }
         }
@@ -362,7 +375,15 @@ struct FileTreeRow: View {
         .opacity(row.ignored ? 0.5 : 1)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .gesture(TapGesture(count: 1).onEnded { model.open(row.id) })
+        .gesture(TapGesture(count: 1).onEnded {
+            if row.isDir {
+                // The second click of a double-click arrives as a click too: it must not close the
+                // folder the first one opened.
+                if (NSApp.currentEvent?.clickCount ?? 1) < 2 { model.toggle(row.id) }
+            } else {
+                model.open(row.id)
+            }
+        })
         .simultaneousGesture(TapGesture(count: 2).onEnded { if !row.isDir { model.open(row.id, pin: true) } })
         .contextMenu { FileContextMenu(model: model, rel: row.id, isDir: row.isDir) }
         .help(row.id)
@@ -431,7 +452,10 @@ struct FileContextMenu: View {
         Button(L(.filesCopyRelative)) { model.copyPath(rel, relativeOnly: true) }
         Button(L(.filesReveal)) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: model.absolute(rel))]) }
         if !isDir {
-            Button(L(.filesOpenDefault)) { NSWorkspace.shared.open(URL(fileURLWithPath: model.absolute(rel))) }
+            // Not for programs and scripts: "open" would run them.
+            if FileBrowserModel.safeToOpen(model.absolute(rel)) {
+                Button(L(.filesOpenDefault)) { NSWorkspace.shared.open(URL(fileURLWithPath: model.absolute(rel))) }
+            }
             Divider()
             ReferenceMenu(model: model, rel: rel)
         }
@@ -443,15 +467,23 @@ struct ReferenceMenu: View {
     let rel: String
 
     var body: some View {
-        Menu(L(.filesReference)) {
-            let targets = model.referenceTargets
-            if targets.isEmpty {
-                Text(L(.filesReferenceNone))
-            } else {
-                ForEach(targets) { t in
-                    Button("\(t.name)  ·  \(t.agentKind == .claude ? "@" : "")\((rel as NSString).lastPathComponent)") {
-                        model.reference(rel, in: t)
-                    }
+        Menu(L(.filesReference)) { ReferenceItems(model: model, rel: rel) }
+    }
+}
+
+/// The project's open terminals, one item each.
+struct ReferenceItems: View {
+    @ObservedObject var model: FileBrowserModel
+    let rel: String
+
+    var body: some View {
+        let targets = model.referenceTargets
+        if targets.isEmpty {
+            Text(L(.filesReferenceNone))
+        } else {
+            ForEach(targets) { t in
+                Button("\(t.name)  ·  \(t.agentKind == .claude ? "@" : "")\((rel as NSString).lastPathComponent)") {
+                    model.reference(rel, in: t)
                 }
             }
         }
@@ -544,7 +576,7 @@ struct FileToolbar: View {
                     }
                 }
                 Menu {
-                    ReferenceMenu(model: model, rel: tab.path)
+                    ReferenceItems(model: model, rel: tab.path)
                 } label: {
                     Label(L(.filesReference), systemImage: "arrow.up.right")
                 }
@@ -645,12 +677,12 @@ struct FileBanner: View {
         case .deleted:
             bannerButton(L(.filesCloseTab)) { model.close(id) }
         case .failed:
-            bannerButton(L(.closeEsc)) { model.dismissBanner(id) }
+            bannerButton(L(.filesGotIt)) { model.dismissBanner(id) }
         case .recovered:
             bannerButton(L(.filesRestore)) { model.restoreRecovered(id) }
             bannerButton(L(.filesDiscard)) { model.discardRecovered(id) }
         case .crashRestored:
-            bannerButton(L(.closeEsc)) { model.dismissBanner(id) }
+            bannerButton(L(.filesGotIt)) { model.dismissBanner(id) }
         }
     }
 
@@ -674,15 +706,12 @@ struct FileStatusBar: View {
                 if tab.kind == .text {
                     Text(Self.langName(model.docLang(tab.id)))
                     if let eol = model.docEOL(tab.id) { Text(eol) }
-                    if model.status.lines > 0 { Text(L(.filesCursor(model.status.line, model.status.col))) }
-                    if model.status.lines > 0 { Text(L(.filesLines(model.status.lines))) }
+                    CursorInfo(bar: model.statusBar)
                     if let reason = tab.readOnly { Text(L(.filesReadOnly(Self.reason(reason)))).foregroundColor(Theme.warn) }
                 }
                 if let size = model.docSize(tab.id) { Text(FileBrowserModel.sizeText(size)) }
                 Spacer(minLength: 0)
-                if model.status.hasDiff && !model.status.noHead {
-                    Text(L(.filesDiffStats(model.status.added, model.status.changed, model.status.deleted)))
-                }
+                DiffInfo(bar: model.statusBar)
                 if let m = model.marks[tab.path] {
                     Text(Self.markName(m)).foregroundColor(FileTreeRow.color(m))
                 }
@@ -709,6 +738,7 @@ struct FileStatusBar: View {
         switch r {
         case FileText.ReadOnly.mixedLineEndings.rawValue: return L(.filesROMixed)
         case FileText.ReadOnly.notWritable.rawValue: return L(.filesRONotWritable)
+        case FileText.ReadOnly.notRoundTrip.rawValue: return L(.filesRONotRoundTrip)
         default: return r
         }
     }
@@ -721,6 +751,28 @@ struct FileStatusBar: View {
         case .renamed: return L(.filesMarkRenamed)
         case .untracked: return L(.filesMarkUntracked)
         case .conflicted: return L(.filesMarkConflicted)
+        }
+    }
+}
+
+/// Line and column: the part of the status bar that changes as the cursor moves.
+private struct CursorInfo: View {
+    @ObservedObject var bar: FileStatusModel
+
+    var body: some View {
+        if bar.status.lines > 0 {
+            Text(L(.filesCursor(bar.status.line, bar.status.col)))
+            Text(L(.filesLines(bar.status.lines)))
+        }
+    }
+}
+
+private struct DiffInfo: View {
+    @ObservedObject var bar: FileStatusModel
+
+    var body: some View {
+        if bar.status.hasDiff && !bar.status.noHead {
+            Text(L(.filesDiffStats(bar.status.added, bar.status.changed, bar.status.deleted)))
         }
     }
 }

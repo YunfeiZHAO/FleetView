@@ -1,4 +1,5 @@
 import AppKit
+import FleetViewFiles
 import SwiftUI
 
 /// The open file windows, one per project.
@@ -21,8 +22,14 @@ final class FileWindows {
         if let existing = controllers[project.id] {
             c = existing
         } else {
+            FileRecovery.pruneOnce()
             c = FileWindowController(project: project, app: app)
-            c.onClose = { [weak self] id in self?.controllers.removeValue(forKey: id) }
+            c.onClose = { [weak self] id in
+                guard let self else { return }
+                self.controllers.removeValue(forKey: id)
+                // HEAD versions are kept for the windows that show them: none left, none kept.
+                if self.controllers.isEmpty { BlobCache.shared.removeAll() }
+            }
             controllers[project.id] = c
         }
         c.show()
@@ -36,6 +43,14 @@ final class FileWindows {
     }
 
     var hasUnsaved: Bool { controllers.values.contains { !$0.model.unsavedTabs.isEmpty } }
+
+    /// ⌘+ / ⌘− / ⌘0 while a file window is in front: its text size, not the terminals'. Returns false
+    /// when the key window is not a file window.
+    func zoom(_ window: NSWindow?, by delta: Int?) -> Bool {
+        guard let window, let c = controllers.values.first(where: { $0.model.window === window }) else { return false }
+        c.model.editor.setFontSize(delta.map { c.model.editor.fontSize + $0 } ?? EditorBridge.defaultFontSize)
+        return true
+    }
 
     /// Before the app goes away (quit, or the self-updater handing off): save, discard or stay.
     /// `done(true)` means it may go.

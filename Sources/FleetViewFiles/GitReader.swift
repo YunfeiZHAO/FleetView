@@ -76,9 +76,12 @@ public final class GitReader: @unchecked Sendable {
 
     /// `git status`, relative to the repository's top level. Never `-uall` (one repository here holds
     /// eight million untracked files: 42–57 s and 284 MB of output) and never `--ignored`.
-    public func status(_ repo: Repo, cancel: CancelToken? = nil) -> [GitStatus.Entry]? {
-        let r = run(["status", "--porcelain=v2", "-z", "--untracked-files=normal", "--ignore-submodules=dirty"],
-                    in: repo.toplevel, timeout: 20, cancel: cancel)
+    ///
+    /// `under`: a project that is a folder inside a larger repository asks about that folder only.
+    public func status(_ repo: Repo, under subdir: String? = nil, cancel: CancelToken? = nil) -> [GitStatus.Entry]? {
+        var args = ["status", "--porcelain=v2", "-z", "--untracked-files=normal", "--ignore-submodules=dirty"]
+        if let subdir, !subdir.isEmpty { args += ["--", subdir] }
+        let r = run(args, in: repo.toplevel, timeout: 20, cancel: cancel)
         guard r.status == 0 else { return nil }
         return GitStatus.parse(r.out)
     }
@@ -375,4 +378,11 @@ public final class BlobCache: @unchecked Sendable {
     }
 
     public var count: Int { lock.lock(); defer { lock.unlock() }; return entries.count }
+
+    public func removeAll() {
+        lock.lock(); defer { lock.unlock() }
+        entries.removeAll()
+        order.removeAll()
+        bytes = 0
+    }
 }

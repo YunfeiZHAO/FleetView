@@ -30,11 +30,23 @@ extension FileBrowserModel {
     /// is opened up when a short walk finishes it (0.3 s, 2 000 files); one that is bigger stays a
     /// single entry, which is what keeps a folder of millions of untracked job outputs from costing
     /// anything.
+    ///
+    /// One fetch at a time: callers arriving meanwhile wait for it. A list that is merely old is
+    /// answered from at once and fetched again behind the answer — typing in quick open must not wait
+    /// on `git ls-files` because an agent committed.
     func withFileIndex(_ then: @escaping ([String]) -> Void) {
-        if let idx = fileIndex, !(fileIndexStale && Date().timeIntervalSince(fileIndexAt) > 30) {
+        if let idx = fileIndex {
             then(idx)
+            if fileIndexStale && Date().timeIntervalSince(fileIndexAt) > 30 { refreshFileIndex(nil) }
             return
         }
+        refreshFileIndex(then)
+    }
+
+    private func refreshFileIndex(_ then: (([String]) -> Void)?) {
+        if let then { fileIndexWaiters.append(then) }
+        guard !fileIndexLoading else { return }
+        fileIndexLoading = true
         let repo = self.repo, root = self.root, prefix = rootInRepo.isEmpty ? "" : rootInRepo + "/"
         Task {
             let (names, untracked) = await onUtility { () -> ([String], [String]) in
@@ -45,11 +57,15 @@ extension FileBrowserModel {
                 var names = (GitReader.shared.trackedFiles(repo) ?? []).compactMap(mine)
                 var untracked: [String] = []
                 var budget = 2_000
+                // 0.3 s per folder, 1.5 s for all of them: a hundred small untracked folders must not
+                // add up to half a minute.
+                let deadline = Date().addingTimeInterval(1.5)
                 for e in (GitReader.shared.untrackedEntries(repo) ?? []) {
                     guard let p = mine(e) else { continue }
                     if !p.hasSuffix("/") { untracked.append(p); continue }
+                    let left = deadline.timeIntervalSinceNow
                     let walk: (files: [String], complete: Bool) =
-                        budget > 0 ? ProjectFiles.walk(root + "/" + p, limit: budget, budget: 0.3) : ([], false)
+                        budget > 0 && left > 0 ? ProjectFiles.walk(root + "/" + p, limit: budget, budget: min(0.3, left)) : ([], false)
                     if walk.complete {
                         untracked += walk.files.map { p + $0 }
                         budget -= walk.files.count
@@ -63,7 +79,10 @@ extension FileBrowserModel {
             self.untrackedFiles = untracked
             self.fileIndexAt = Date()
             self.fileIndexStale = false
-            then(names)
+            self.fileIndexLoading = false
+            let waiting = self.fileIndexWaiters
+            self.fileIndexWaiters.removeAll()
+            waiting.forEach { $0(names) }
         }
     }
 
@@ -210,7 +229,8 @@ extension FileBrowserModel {
     }
 
     private func updateNav() {
-        canGoBack = backStack.count > 1
-        canGoForward = !forwardStack.isEmpty
+        // Assigned only when they change: each assignment redraws the window.
+        if canGoBack != (backStack.count > 1) { canGoBack = backStack.count > 1 }
+        if canGoForward != !forwardStack.isEmpty { canGoForward = !forwardStack.isEmpty }
     }
 }

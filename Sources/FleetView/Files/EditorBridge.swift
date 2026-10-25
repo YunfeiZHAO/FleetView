@@ -58,6 +58,8 @@ final class EditorBridge: NSObject, WKNavigationDelegate {
 
     let webView: WKWebView
     weak var host: EditorHost?
+    static let defaultFontSize = 13
+    private(set) var fontSize = defaultFontSize
     private(set) var ready = false
     private var pending: [() -> Void] = []
     private let scheme = SchemeHandler()
@@ -124,7 +126,12 @@ final class EditorBridge: NSObject, WKNavigationDelegate {
 
     func applyTheme() {
         let appearance = webView.effectiveAppearance
-        call("setTheme", [Self.colors(for: appearance), 13])
+        call("setTheme", [Self.colors(for: appearance), fontSize])
+    }
+
+    func setFontSize(_ size: Int) {
+        fontSize = min(28, max(9, size))
+        applyTheme()
     }
 
     static func colors(for appearance: NSAppearance) -> [String: String] {
@@ -186,7 +193,7 @@ final class EditorBridge: NSObject, WKNavigationDelegate {
             ready = true
             // Before anything queued: the page's own words (outline, search panel) and colours.
             call("init", [["lang": Lang.current == .zh ? "zh" : "en",
-                           "colors": Self.colors(for: webView.effectiveAppearance), "fontSize": 13] as [String: Any]])
+                           "colors": Self.colors(for: webView.effectiveAppearance), "fontSize": fontSize] as [String: Any]])
             let queued = pending
             pending.removeAll()
             queued.forEach { $0() }

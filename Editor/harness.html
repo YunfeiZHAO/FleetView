@@ -83,18 +83,22 @@ window.fvBridge = {
     if (msg.type === "save" || msg.type === "saveMerged") {
       const f = FILES[TABS[msg.tab]];
       if (window.conflictNext) { window.conflictNext = false; return Promise.resolve({conflict: true}); }
-      f.disk = msg.text;
-      return Promise.resolve({ok: true});
+      // `saveDelay`: a slow disk, to see saves queue up behind each other.
+      return new Promise(r => setTimeout(() => { f.disk = msg.text; r({ok: true}); }, window.saveDelay || 0));
     }
     return Promise.resolve(null);
   },
   async fetchText(url) {
     const m = /^fvfile:\/\/app\/(doc|head|disk)\/(.+)$/.exec(url);
     if (!m) return {ok: false, status: 404, text: "", headers: {}};
+    // `fetchDelay`: a slow read, to type while a reload is on its way.
+    if (window.fetchDelay && m[1] !== "head") await new Promise(r => setTimeout(r, window.fetchDelay));
     const f = FILES[TABS[decodeURIComponent(m[2])]];
     const text = m[1] === "head" ? f.head : f.disk;
     if (text == null) return {ok: false, status: 404, text: "", headers: {}};
-    return {ok: true, status: 200, text, headers: f.readOnly ? {"x-fv-readonly": "mixed-eol"} : {}};
+    const headers = {"x-fv-version": "v" + text.length + ":" + text.slice(-8)};
+    if (f.readOnly) headers["x-fv-readonly"] = "mixed-eol";
+    return {ok: true, status: 200, text, headers};
   },
 };
 window.openTab = (tab, path, lang, extra = {}) => { TABS[tab] = path; return fv.open(tab, {path, lang, ...extra}); };

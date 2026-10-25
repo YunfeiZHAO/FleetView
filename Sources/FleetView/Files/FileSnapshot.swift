@@ -14,6 +14,10 @@ import WebKit
 /// the files are open — how a test types into the editor. `FV_SNAPSHOT_FILTER`, `FV_SNAPSHOT_SEARCH`,
 /// `FV_SNAPSHOT_QUICK`: a name filter, a search in files, or quick open with that text.
 /// `FV_SNAPSHOT_EDITED`: `path=Card,…`, writes an agent's hook would have reported.
+/// `FV_SNAPSHOT_STEPS`: after all that, steps separated by `;;` — `js:<script>` in the page,
+/// `sh:<command>` (an agent writing a file), `wait:<seconds>`, or `do:<overwrite|useDisk|save>` on the
+/// tab in front — each followed by a moment for the window to react. How a test drives a reload or
+/// a conflict through the real model.
 @MainActor
 enum FileSnapshot {
     static func run(root: String, into dir: String) -> Never {
@@ -66,6 +70,39 @@ enum FileSnapshot {
             var finished = false
             model.editor.webView.evaluateJavaScript(script) { _, _ in finished = true }
             spin(5) { finished }
+        }
+        for step in (env["FV_SNAPSHOT_STEPS"] ?? "").components(separatedBy: ";;") where !step.isEmpty {
+            let (kind, arg) = step.firstIndex(of: ":").map { (String(step[..<$0]), String(step[step.index(after: $0)...])) } ?? (step, "")
+            switch kind {
+            case "js":
+                var finished = false
+                model.editor.webView.evaluateJavaScript(arg) { r, _ in
+                    if let r, !(r is NSNull) { print("files snapshot js → \(r)") }
+                    finished = true
+                }
+                spin(5) { finished }
+            case "sh":
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/bin/sh")
+                p.arguments = ["-c", arg]
+                p.currentDirectoryURL = URL(fileURLWithPath: project.path)
+                try? p.run()
+                p.waitUntilExit()
+            case "wait":
+                spin(Double(arg) ?? 1)
+            case "do":
+                guard let id = model.activeTab else { break }
+                switch arg {
+                case "overwrite": model.overwrite(id)
+                case "restoreRecovered": model.restoreRecovered(id)
+                case "useDisk": model.useDiskVersion(id)
+                case "save": model.saveTabs(model.unsavedTabs) { ok in print("files snapshot: saveTabs ok=\(ok)") }
+                default: break
+                }
+            default: break
+            }
+            spin(1.5)
+            print("files snapshot step \(kind): tabs=\(model.tabs.map { "\($0.path) dirty=\($0.dirty) ro=\($0.readOnly ?? "-")" }) banners=\(model.banners)")
         }
         spin(2.5)
         host.layoutSubtreeIfNeeded()

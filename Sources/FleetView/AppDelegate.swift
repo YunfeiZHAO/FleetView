@@ -118,9 +118,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    @objc private func terminalFontBigger()  { state.setTerminalFontSize(state.terminalFontSize + 1) }
-    @objc private func terminalFontSmaller() { state.setTerminalFontSize(state.terminalFontSize - 1) }
-    @objc private func terminalFontActual()  { state.setTerminalFontSize(TerminalWindowController.defaultFontSize) }
+    // In front of a file window the same keys size its text instead: changing every terminal's font
+    // from a window that shows none of them would be a surprise.
+    @objc private func terminalFontBigger() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: 1) { return }
+        state.setTerminalFontSize(state.terminalFontSize + 1)
+    }
+    @objc private func terminalFontSmaller() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: -1) { return }
+        state.setTerminalFontSize(state.terminalFontSize - 1)
+    }
+    @objc private func terminalFontActual() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: nil) { return }
+        state.setTerminalFontSize(TerminalWindowController.defaultFontSize)
+    }
 
     @objc private func uninstallHooks() {
         HookInstaller.uninstall()

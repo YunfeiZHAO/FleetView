@@ -8,8 +8,26 @@ import Foundation
 /// time; its author is the card whose write is recorded at that time, and nobody otherwise.
 extension FileBrowserModel {
     /// Look at the files in directories that just changed (a bounded number), for ones modified since
-    /// the window opened.
+    /// the window opened. At most every 3 s: an agent writing into one folder all afternoon is one
+    /// look every 3 s, not one per write.
     func observe(_ dirs: Set<String>) {
+        observePending.formUnion(dirs)
+        if observePending.count > 200 { observePending = Set(observePending.prefix(200)) }
+        guard observeTimer == nil else { return }
+        let wait = max(0, observedAt.addingTimeInterval(3).timeIntervalSinceNow)
+        let t = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.observeTimer = nil
+            self.observedAt = Date()
+            let dirs = self.observePending
+            self.observePending.removeAll()
+            self.observeNow(dirs)
+        }
+        observeTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: t)
+    }
+
+    private func observeNow(_ dirs: Set<String>) {
         let root = self.root, since = openedAt
         let list = Array(dirs.prefix(30))
         Task {
@@ -38,15 +56,19 @@ extension FileBrowserModel {
         }
     }
 
+    /// Rebuild the list soon — and no sooner than 3 s after the last time: each build stats every
+    /// candidate.
     func refreshRecent(after delay: TimeInterval = 0.8) {
         recentTimer?.cancel()
+        let wait = max(delay, recentBuiltAt.addingTimeInterval(3).timeIntervalSinceNow)
         let t = DispatchWorkItem { [weak self] in self?.buildRecent() }
         recentTimer = t
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: t)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: t)
     }
 
     private func buildRecent() {
         guard visible else { return }
+        recentBuiltAt = Date()
         let root = self.root
         var candidates = Set(marks.compactMap { $0.value == .deleted || untrackedDirs.contains($0.key) ? nil : $0.key }.prefix(200))
         candidates.formUnion(observedChanges.keys)

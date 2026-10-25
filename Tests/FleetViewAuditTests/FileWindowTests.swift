@@ -312,3 +312,22 @@ final class EditedPathsTests: XCTestCase {
                        ["/repo/src/a.py", "/abs/new.py"])
     }
 }
+
+final class PathReferenceTests: XCTestCase {
+    func testPlainPaths() {
+        XCTAssertEqual(PathReference.text("Sources/App/main.swift", for: .claude), "@Sources/App/main.swift")
+        XCTAssertEqual(PathReference.text("Sources/App/main.swift", for: .agent), "Sources/App/main.swift")
+        XCTAssertEqual(PathReference.text("Sources/App/main.swift", for: .shell), "Sources/App/main.swift")
+    }
+
+    func testQuoting() {
+        XCTAssertEqual(PathReference.text("docs/my notes.md", for: .claude), "\"docs/my notes.md\"")
+        XCTAssertEqual(PathReference.text("it's $HOME `x`.md", for: .shell), "'it'\\''s $HOME `x`.md'")
+        XCTAssertEqual(PathReference.text("a \"b\".md", for: .agent), "\"a \\\"b\\\".md\"")
+    }
+
+    func testControlCharactersAreRefused() {
+        XCTAssertNil(PathReference.text("evil\nrm -rf ~.md", for: .shell))
+        XCTAssertNil(PathReference.text("tab\there.md", for: .claude))
+    }
+}

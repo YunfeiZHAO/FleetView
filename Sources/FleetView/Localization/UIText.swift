@@ -385,6 +385,10 @@ enum UIText {
     case filesWindowTitle(String)
     case filesNoEditor
     case filesMissing
+    case filesNotRegular
+    case filesReferenceOdd
+    case filesGotIt
+    case filesRONotRoundTrip
     case filesBinaryDetail(String)
     case filesNotUTF8(String)
     case filesOpenDefault

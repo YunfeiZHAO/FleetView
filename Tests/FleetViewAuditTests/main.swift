@@ -229,6 +229,12 @@ let suites: [(String, [Test])] = [
         ("a missing file fails", FileSaveTests.testAMissingFileFails),
     ]),
 
+    suite("File window — a path typed into a card", PathReferenceTests.self, [
+        ("a plain path goes as it is", PathReferenceTests.testPlainPaths),
+        ("a path that needs quotes is quoted for its reader", PathReferenceTests.testQuoting),
+        ("a control character in a path is refused", PathReferenceTests.testControlCharactersAreRefused),
+    ]),
+
     suite("File window — git, read-only", GitReaderTests.self, [
         ("status parses every kind of record", GitReaderTests.testStatusParsesEveryKindOfRecord),
         ("grep output parses", GitReaderTests.testGrepOutputParses),

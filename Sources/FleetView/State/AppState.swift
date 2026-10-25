@@ -472,7 +472,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Type a command into a terminal's shell after a delay (used by fork/duplicate flows).
     /// Put text into a terminal's input without pressing Return — the file window's "reference in
     /// card". Through tmux when the terminal runs under it, so a hidden card takes it too; typed into
     /// the window otherwise. Audited: it is typing into someone's session.
@@ -490,6 +489,7 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Type a command into a terminal's shell after a delay (used by fork/duplicate flows).
     func typeIntoTerminal(_ id: UUID, _ command: String, after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.controllers[id]?.type(command + "\r")
