@@ -184,7 +184,9 @@ final class EditorBridge: NSObject, WKNavigationDelegate {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { reply(nil, nil); return }
         if type == "ready" {
             ready = true
-            applyTheme()
+            // Before anything queued: the page's own words (outline, search panel) and colours.
+            call("init", [["lang": Lang.current == .zh ? "zh" : "en",
+                           "colors": Self.colors(for: webView.effectiveAppearance), "fontSize": 13] as [String: Any]])
             let queued = pending
             pending.removeAll()
             queued.forEach { $0() }

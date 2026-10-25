@@ -745,6 +745,8 @@ const api = {
     words = WORDS[opts.lang] || WORDS.en;
     if (opts.lang === "zh") words.phrases = WORDS.zh.phrases;
     setTheme(opts.colors || {}, opts.fontSize);
+    // Tabs opened before this (none, normally) keep the phrases they were made with.
+    if (view) view.dispatch({effects: phraseC.reconfigure(EditorState.phrases.of(words.phrases))});
     return true;
   },
   setTheme(colors, fontSize) { setTheme(colors, fontSize); return true; },

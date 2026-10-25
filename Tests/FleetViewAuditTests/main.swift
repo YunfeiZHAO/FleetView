@@ -234,6 +234,11 @@ let suites: [(String, [Test])] = [
         ("check-ignore", GitReaderTests.testCheckIgnore),
     ]),
 
+    suite("File window — HEAD blobs are cached within a budget", BlobCacheTests.self, [
+        ("evicts the oldest past the budget", BlobCacheTests.testEvictsOldestPastTheBudget),
+        ("a huge blob is not cached", BlobCacheTests.testAHugeBlobIsNotCached),
+    ]),
+
     suite("File window — quick open and authorship", FuzzyMatchTests.self, [
         ("prefers the file name", FuzzyMatchTests.testPrefersTheFileName),
         ("all letters in order", FuzzyMatchTests.testAllLettersInOrder),

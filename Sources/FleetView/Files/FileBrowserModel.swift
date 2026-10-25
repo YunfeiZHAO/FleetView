@@ -677,8 +677,26 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         }
     }
 
-    /// Phase 3 answers this with the file as HEAD has it.
-    func serveHead(_ id: String) async -> EditorBridge.Response { .notFound }
+    /// The file as HEAD has it, LF-only like the editor's text, for the tint of changed lines.
+    /// 404 — no tint — for a file HEAD does not have (new, untracked, no commits yet) and for files
+    /// above 20 MB, where the page does not diff anyway.
+    func serveHead(_ id: String) async -> EditorBridge.Response {
+        guard let doc = docs[id], repo != nil, doc.size <= 20_000_000 else { return .notFound }
+        var target = doc.abs
+        // A rename staged in the index: HEAD has the file under its old name.
+        if let rel = relative(doc.abs), let old = renames[rel] { target = absolute(old) }
+        let file = target
+        let data: Data? = await onUtility {
+            guard let blob = GitReader.shared.headBlob(file: file) else { return nil }
+            if let hit = BlobCache.shared.get(blob.oid) { return hit }
+            guard let d = GitReader.shared.checkedOut(oid: blob.oid, path: blob.path, near: file) else { return nil }
+            BlobCache.shared.put(blob.oid, d)
+            return d
+        }
+        // Decoded the same way as the working file, so line endings never count as a change.
+        guard let data, let text = FileText.decode(data) else { return .notFound }
+        return EditorBridge.Response(status: 200, mime: "text/plain; charset=utf-8", data: Data(text.text.utf8))
+    }
 
     private func serveRaw(_ path: String) async -> EditorBridge.Response {
         // Images in a rendered document, and image tabs: only from inside the project.

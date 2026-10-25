@@ -323,3 +323,40 @@ public enum Subprocess {
         var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
     }
 }
+
+/// HEAD's version of files, by blob id, up to a byte budget — so switching tabs, reopening a file
+/// or every window on one repository does not run git again for content git cannot have changed.
+/// A blob id names its content, so nothing here is ever stale; it is only evicted.
+public final class BlobCache: @unchecked Sendable {
+    public static let shared = BlobCache(limit: 64 << 20)
+
+    private let lock = NSLock()
+    private let limit: Int
+    private var entries: [String: Data] = [:]
+    private var order: [String] = []
+    private var bytes = 0
+
+    public init(limit: Int) { self.limit = limit }
+
+    public func get(_ oid: String) -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        guard let d = entries[oid] else { return nil }
+        if let i = order.firstIndex(of: oid) { order.remove(at: i); order.append(oid) }
+        return d
+    }
+
+    public func put(_ oid: String, _ data: Data) {
+        guard data.count <= limit / 4 else { return }      // one huge file must not empty the cache
+        lock.lock(); defer { lock.unlock() }
+        if entries[oid] != nil { return }
+        entries[oid] = data
+        order.append(oid)
+        bytes += data.count
+        while bytes > limit, let first = order.first {
+            order.removeFirst()
+            bytes -= entries.removeValue(forKey: first)?.count ?? 0
+        }
+    }
+
+    public var count: Int { lock.lock(); defer { lock.unlock() }; return entries.count }
+}

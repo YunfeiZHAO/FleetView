@@ -240,6 +240,24 @@ final class GitReaderTests: FileTestCase {
     }
 }
 
+final class BlobCacheTests: XCTestCase {
+    func testEvictsOldestPastTheBudget() {
+        let c = BlobCache(limit: 100)
+        c.put("a", Data(count: 20)); c.put("b", Data(count: 20)); c.put("c", Data(count: 20))
+        _ = c.get("a")                                  // a is now the most recent
+        c.put("d", Data(count: 20)); c.put("e", Data(count: 20)); c.put("f", Data(count: 20))
+        XCTAssertNotNil(c.get("a"))
+        XCTAssertNil(c.get("b"), "the least recently used goes first")
+        XCTAssertEqual(c.count, 5)
+    }
+
+    func testAHugeBlobIsNotCached() {
+        let c = BlobCache(limit: 100)
+        c.put("big", Data(count: 60))
+        XCTAssertNil(c.get("big"))
+    }
+}
+
 final class FuzzyMatchTests: XCTestCase {
     func testPrefersTheFileName() {
         let paths = ["Sources/FleetView/Remote/WebDashboardPage.swift", "Sources/FleetView/State/AppState+Workspace.swift",
