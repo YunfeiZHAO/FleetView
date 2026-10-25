@@ -45,12 +45,14 @@ final class ProjectWatcher {
         guard let s = FSEventStreamCreate(nil, ProjectWatcher.callback, &ctx, paths as CFArray,
                                           FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5, flags) else { return }
         // Up to eight paths the stream does not report at all; the rest are dropped in the callback.
-        var excluded: [String] = []
-        for name in [".git/objects", ".git/logs", "node_modules", ".build", ".venv", "build", "DerivedData"] {
+        // In order of how much a build or an install writes there, so the eight that exist are the
+        // eight that matter.
+        var excluded: [String] = gitDirs.map { $0 + "/objects" }
+        for name in [".git/objects", "node_modules", ".build", "DerivedData", "target", "build", "dist",
+                     ".next", ".venv", ".git/logs"] {
             let p = root + "/" + name
             if FileManager.default.fileExists(atPath: p) { excluded.append(p) }
         }
-        for g in gitDirs { excluded.append(g + "/objects") }
         FSEventStreamSetExclusionPaths(s, Array(excluded.prefix(8)) as CFArray)
         FSEventStreamSetDispatchQueue(s, queue)
         FSEventStreamStart(s)
@@ -61,6 +63,9 @@ final class ProjectWatcher {
         guard let s = stream else { return }
         FSEventStreamStop(s)
         FSEventStreamInvalidate(s)
+        // The context holds `self` unretained: wait out a callback already running on the queue, or
+        // it would finish against a freed object. (The callback only hops to main asynchronously.)
+        queue.sync {}
         FSEventStreamRelease(s)
         stream = nil
     }

@@ -45,7 +45,12 @@ public enum FileSave {
     }
 
     /// Write `bytes` to `path`, provided the file on disk is still `base` (unless `force`).
-    public static func save(_ bytes: Data, to path: String, base: String?, force: Bool) -> Outcome {
+    ///
+    /// `allowInPlace: false` refuses the cases that would be written in place — a hard-linked file
+    /// above all, whose other name can be anywhere. The web's /save passes it: a link made inside a
+    /// project to a file outside it must not let the LAN write that file.
+    public static func save(_ bytes: Data, to path: String, base: String?, force: Bool,
+                            allowInPlace: Bool = true) -> Outcome {
         let real = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var st0 = stat()
         guard lstat(real, &st0) == 0 else { return .failed("no such file") }
@@ -67,6 +72,7 @@ public enum FileSave {
 
         let dir = (real as NSString).deletingLastPathComponent
         let inPlace = st0.st_nlink > 1 || st0.st_uid != getuid() || access(dir, W_OK) != 0
+        if inPlace && !allowInPlace { return .failed("hard-linked or not replaceable here") }
         if !inPlace {
             switch swapWrite(bytes, real: real, st0: st0, checked: currentVersion, force: force) {
             case .done(let fp): return .saved(version: FileText.version(bytes), fingerprint: fp)
@@ -74,6 +80,7 @@ public enum FileSave {
             case .failed(let why): return .failed(why)
             case .fallBack: break
             }
+            if !allowInPlace { return .failed("could not replace it") }
         }
         return inPlaceWrite(bytes, real: real, st0: st0, checked: currentVersion, force: force)
     }
@@ -86,7 +93,9 @@ public enum FileSave {
         // the project.
         guard let tmpDir = try? fm.url(for: .itemReplacementDirectory, in: .userDomainMask,
                                        appropriateFor: URL(fileURLWithPath: real), create: true) else { return .fallBack }
-        defer { try? fm.removeItem(at: tmpDir) }
+        // Removed afterwards — unless it ends up holding the only copy of an agent's write.
+        var keepTmp = false
+        defer { if !keepTmp { try? fm.removeItem(at: tmpDir) } }
         let tmp = tmpDir.appendingPathComponent((real as NSString).lastPathComponent).path
 
         let fd = open(tmp, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
@@ -123,7 +132,11 @@ public enum FileSave {
         // `tmp` now holds what was at `real` an instant ago. If that is not what was checked, an agent
         // wrote in between: put its version back.
         if !force, let old = fm.contents(atPath: tmp), FileText.version(old) != checked {
-            _ = renamex_np(tmp, real, UInt32(RENAME_SWAP))
+            guard renamex_np(tmp, real, UInt32(RENAME_SWAP)) == 0 else {
+                // Could not put the agent's version back: it is in `tmp` and nowhere else. Keep it.
+                keepTmp = true
+                return .failed("an agent wrote the file while saving and it could not be put back; its version is at \(tmp)")
+            }
             return .conflict(FileText.version(old))
         }
         return .done(fingerprint(of: stT))

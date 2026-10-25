@@ -208,6 +208,7 @@ let suites: [(String, [Test])] = [
         ("CRLF is LF inside and CRLF on disk", FileTextTests.testCRLFIsLFInsideAndCRLFOnDisk),
         ("a BOM is stripped and restored", FileTextTests.testBOMIsStrippedAndRestored),
         ("mixed line endings are read-only", FileTextTests.testMixedLineEndingsAreReadOnly),
+        ("what cannot round-trip is read-only", FileTextTests.testWhatCannotRoundTripIsReadOnly),
         ("invalid UTF-8 has no text", FileTextTests.testInvalidUTF8HasNoText),
         ("binary is a NUL in the first 8 KB", FileTextTests.testBinaryIsANulInTheFirst8K),
         ("long lines are noticed", FileTextTests.testLongLines),
@@ -223,6 +224,8 @@ let suites: [(String, [Test])] = [
         ("extended attributes survive", FileSaveTests.testExtendedAttributesSurvive),
         ("nothing is left beside the file", FileSaveTests.testNothingIsLeftBesideTheFile),
         ("the modification time moves", FileSaveTests.testTheModificationTimeMoves),
+        ("the web refuses a hard link", FileSaveTests.testTheWebRefusesAHardLink),
+        ("a read-only mode survives", FileSaveTests.testReadOnlyModeSurvives),
         ("a missing file fails", FileSaveTests.testAMissingFileFails),
     ]),
 

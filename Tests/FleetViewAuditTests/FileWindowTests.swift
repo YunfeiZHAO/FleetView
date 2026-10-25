@@ -57,6 +57,12 @@ final class FileTextTests: FileTestCase {
         XCTAssertEqual(FileText.decode(Data("a\r\nb\n".utf8))?.text, "a\nb\n")
     }
 
+    func testWhatCannotRoundTripIsReadOnly() throws {
+        // Two BOMs: decoding drops both, encoding restores one.
+        let bytes = Data([0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF] + Array("hi\n".utf8))
+        XCTAssertEqual(FileText.decode(bytes)?.readOnlyReason, .notRoundTrip)
+    }
+
     func testInvalidUTF8HasNoText() {
         XCTAssertNil(FileText.decode(Data([0x61, 0xFF, 0xFE, 0x62])))
     }
@@ -155,6 +161,25 @@ final class FileSaveTests: FileTestCase {
         _ = FileSave.save(Data("y\n".utf8), to: p, base: version(p), force: false)
         let m = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: p)[.modificationDate] as? Date)
         XCTAssertGreaterThan(m.timeIntervalSince(past), 3000, "tools that check 'changed since I read it' must see the save")
+    }
+
+    func testTheWebRefusesAHardLink() {
+        let a = write("note.md", "one\n")
+        let outside = dir + "/outside.txt"
+        XCTAssertEqual(link(a, outside), 0)
+        guard case .failed = FileSave.save(Data("two\n".utf8), to: a, base: version(a), force: false, allowInPlace: false) else {
+            return XCTFail("a hard-linked file must not be written in place for the web")
+        }
+        XCTAssertEqual(String(decoding: read(outside), as: UTF8.self), "one\n")
+    }
+
+    func testReadOnlyModeSurvives() throws {
+        let p = write("ro.txt", "x\n")
+        chmod(p, 0o444)
+        _ = FileSave.save(Data("y\n".utf8), to: p, base: version(p), force: false)
+        let attrs = try FileManager.default.attributesOfItem(atPath: p)
+        XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.intValue, 0o444)
+        XCTAssertEqual(String(decoding: read(p), as: UTF8.self), "y\n")
     }
 
     func testAMissingFileFails() {

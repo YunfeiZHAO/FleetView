@@ -757,7 +757,8 @@ final class WebServer {
             // written beside the project rather than in it, swapped in with the file's mode, ACL and
             // extended attributes, and undone if an agent wrote in between (see FileSave). It replaced
             // `Data.write(.atomic)`, which left its temporary file in the project mid-write.
-            switch FileSave.save(body, to: url.path, base: forced ? nil : was, force: forced) {
+            // In place never: a hard link inside a project would let the LAN write its other name.
+            switch FileSave.save(body, to: url.path, base: forced ? nil : was, force: forced, allowInPlace: false) {
             case .saved:
                 FV.log("save: \(body.count) bytes → \(url.path)")
                 answer("200 OK", ["version": now, "bytes": body.count], facts: facts)

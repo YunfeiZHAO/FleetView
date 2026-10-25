@@ -26,6 +26,10 @@ public enum FileText {
         case binary
         case tooLarge = "too-large"
         case notWritable = "not-writable"
+        /// Decoding and encoding again would not give back the same bytes (two BOMs, say).
+        case notRoundTrip = "not-round-trip"
+        /// A link inside the project to a file outside it: shown, not written through.
+        case outsideProject = "outside-project"
     }
 
     /// A NUL in the first 8 KB is how git decides a file is binary, and what `/read` refuses.
@@ -61,10 +65,14 @@ public enum FileText {
             let shown = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             return Decoded(text: shown, eol: crlf >= lf ? .crlf : .lf, bom: bom, readOnlyReason: .mixedLineEndings)
         }
-        if crlf > 0 {
-            return Decoded(text: raw.replacingOccurrences(of: "\r\n", with: "\n"), eol: .crlf, bom: bom, readOnlyReason: nil)
+        let text = crlf > 0 ? raw.replacingOccurrences(of: "\r\n", with: "\n") : raw
+        let eol: EOL = crlf > 0 ? .crlf : .lf
+        // The rule above in one check: whatever this file is, saving it unchanged must give back its
+        // bytes. Anything that does not (a second BOM, which String(data:) also strips) is read-only.
+        if bom || crlf > 0, encode(text, eol: eol, bom: bom) != data {
+            return Decoded(text: text, eol: eol, bom: bom, readOnlyReason: .notRoundTrip)
         }
-        return Decoded(text: raw, eol: .lf, bom: bom, readOnlyReason: nil)
+        return Decoded(text: text, eol: eol, bom: bom, readOnlyReason: nil)
     }
 
     /// The bytes for `text` (LF-only, as the editor hands it back) in the file's own conventions.

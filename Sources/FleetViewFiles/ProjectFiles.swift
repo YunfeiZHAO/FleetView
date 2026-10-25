@@ -26,7 +26,10 @@ public enum ProjectFiles {
             let rel = queue.removeFirst()
             let abs = rel.isEmpty ? root : root + "/" + rel
             guard let names = try? fm.contentsOfDirectory(atPath: abs) else { continue }
-            for name in names.sorted() where name != ".DS_Store" {
+            for (i, name) in names.sorted().enumerated() where name != ".DS_Store" {
+                // The deadline inside a directory too: one folder of a hundred thousand files would
+                // otherwise run long past it before the outer check came round.
+                if i & 255 == 255 && Date() > deadline { complete = false; break }
                 let child = rel.isEmpty ? name : rel + "/" + name
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: abs + "/" + name, isDirectory: &isDir) else { continue }
@@ -37,6 +40,7 @@ public enum ProjectFiles {
                     if out.count >= limit { break }
                 }
             }
+            if !complete { break }
         }
         return (out, complete)
     }
