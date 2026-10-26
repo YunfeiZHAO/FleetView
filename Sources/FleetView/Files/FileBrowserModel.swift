@@ -114,6 +114,9 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         set { if statusBar.status != newValue { statusBar.status = newValue } }
     }
     @Published var revealTarget: String?
+    /// The row last clicked in the tree, file or folder — what ⌥⌘C copies when the tree has focus.
+    /// Follows the tab in front when a tab is shown.
+    @Published var selected: String?
     @Published var toast: String?
 
     // Finding files (FileBrowserModel+Find).
@@ -371,6 +374,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     }
 
     func toggle(_ dir: String) {
+        if selected != dir { selected = dir }
         if expanded.contains(dir) {
             expanded.remove(dir)
             rebuildRows()
@@ -1104,6 +1108,11 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         lastKey = (name, from, Date())
         switch name {
         case "closeTab": closeActive()
+        // ⌥⌘C, as in Finder. From the editor it is the file being edited; from the tree, the row
+        // last clicked there.
+        case "copyPath":
+            let rel = from == .page ? active?.path : (selected ?? active?.path)
+            if let rel { copyPath(rel) }
         case "save": editor.call("saveActive")
         case "quickOpen": showQuickOpen()
         case "searchFiles": sideMode = .search
@@ -1387,6 +1396,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
 
     /// A file the user went to: the back/forward history and quick open's "recently opened".
     private func noteOpened(_ rel: String) {
+        if selected != rel { selected = rel }
         recentOpened.removeAll { $0 == rel }
         recentOpened.insert(rel, at: 0)
         if recentOpened.count > 20 { recentOpened.removeLast() }

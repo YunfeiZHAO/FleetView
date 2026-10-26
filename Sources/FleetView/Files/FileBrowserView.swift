@@ -57,6 +57,7 @@ private struct FileShortcuts: View {
         ZStack {
             Button("") { model.key("save") }.keyboardShortcut("s", modifiers: .command)
             Button("") { model.key("closeTab") }.keyboardShortcut("w", modifiers: .command)
+            Button("") { model.key("copyPath") }.keyboardShortcut("c", modifiers: [.command, .option])
             Button("") { model.key("quickOpen") }.keyboardShortcut("p", modifiers: .command)
             Button("") { model.key("searchFiles") }.keyboardShortcut("f", modifiers: [.command, .shift])
             Button("") { model.key("back") }.keyboardShortcut("-", modifiers: .control)
@@ -317,7 +318,7 @@ struct FileTree: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.rows) { row in
-                        FileTreeRow(model: model, row: row, selected: model.active?.path == row.id,
+                        FileTreeRow(model: model, row: row, selected: model.selected == row.id,
                                     mark: model.marks[row.id], expanded: model.expanded.contains(row.id),
                                     dirtyDir: row.isDir && model.dirtyDirs.contains(row.id))
                             .id(row.id)
@@ -448,7 +449,7 @@ struct FileContextMenu: View {
             Button(L(.filesOpen)) { model.open(rel, pin: true) }
             Divider()
         }
-        Button(L(.filesCopyPath)) { model.copyPath(rel) }
+        Button(L(.filesCopyPath) + "  ⌥⌘C") { model.copyPath(rel) }
         Button(L(.filesCopyRelative)) { model.copyPath(rel, relativeOnly: true) }
         Button(L(.filesReveal)) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: model.absolute(rel))]) }
         if !isDir {
@@ -582,7 +583,7 @@ struct FileToolbar: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize().font(.fvLabel)
                 Button { model.copyPath(tab.path) } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.borderless).help(L(.filesCopyPath))
+                    .buttonStyle(.borderless).help(L(.filesCopyPath) + "  ⌥⌘C")
                 Menu {
                     FileContextMenu(model: model, rel: tab.path, isDir: false)
                 } label: {

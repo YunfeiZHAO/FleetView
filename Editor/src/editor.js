@@ -299,6 +299,7 @@ function baseExtensions(d) {
       {key: "Mod-p", run: () => { post("key", {name: "quickOpen"}); return true; }, preventDefault: true},
       {key: "Mod-Shift-f", run: () => { post("key", {name: "searchFiles"}); return true; }, preventDefault: true},
       {key: "Mod-w", run: () => { post("key", {name: "closeTab"}); return true; }, preventDefault: true},
+      {key: "Mod-Alt-c", run: () => { post("key", {name: "copyPath"}); return true; }, preventDefault: true},
       {key: "Ctrl--", run: () => { post("key", {name: "back"}); return true; }, preventDefault: true},
       {key: "Ctrl-Shift--", run: () => { post("key", {name: "forward"}); return true; }, preventDefault: true},
       {key: "Ctrl-g", run: gotoLine, preventDefault: true},
@@ -1112,6 +1113,8 @@ function boot() {
     if (mod && !e.shiftKey && k === "p") name = "quickOpen";
     else if (mod && e.shiftKey && k === "f") name = "searchFiles";
     else if (mod && !e.shiftKey && k === "w") name = "closeTab";
+    // ⌥ turns "c" into "ç": the physical key, not the character.
+    else if (mod && e.altKey && e.code === "KeyC") name = "copyPath";
     else if (mod && !e.shiftKey && k === "s") { e.preventDefault(); if (active) save(active); return; }
     else if (mod && !e.shiftKey && k === "f") { e.preventDefault(); api.find(""); return; }
     if (name) { e.preventDefault(); post("key", {name}); }
