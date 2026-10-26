@@ -28,5 +28,5 @@ YYYY-MM-DD-<问题简述>.md
 
 | 日期 | 文档 | 状态 | 摘要 |
 |---|---|---|---|
-| 2026-10-26 | [网页 chat 停在上下文压缩那一刻](2026-10-26-web-chat-frozen-at-compaction.md) | 已修复（未部署） | 一张 Claude 卡片的网页 chat 停在 07:46，终端已到 08:52。挑当前分支时，压缩原样保留、留在旧链上的最后一条记录被当成了分支末端；它往回走能遇到卡片的提示，而真正的末端往回走只能遇到后台通知和压缩摘要。修复：压缩带走的记录不算末端；找提示时跳过注入的 user 记录 |
-| 2026-10-22 | [关掉卡片后 agent 进程还在](2026-10-22-agent-outlives-closed-card.md) | 已修复（未部署） | 关卡片只做 `tmux kill-session`，靠 SIGHUP 让 agent 退出。一个 sp-claude 下的 Claude 收到挂断后没有退出，在主线程空转了 46 小时，同时一直占着 sub-pool 租约；卡片上显示 closed，点开后同一会话又起了第二个进程。修复：kill 之前记下 pane 里的进程，kill 之后检查，还活着的按 SIGTERM → SIGKILL 处理（`ProcessReaper`） |
+| 2026-10-26 | [网页 chat 停在上下文压缩那一刻](2026-10-26-web-chat-frozen-at-compaction.md) | 已修复 | 一张 Claude 卡片的网页 chat 停在 07:46，终端已到 08:52。挑当前分支时，压缩原样保留、留在旧链上的最后一条记录被当成了分支末端；它往回走能遇到卡片的提示，而真正的末端往回走只能遇到后台通知和压缩摘要。修复：压缩带走的记录不算末端；找提示时跳过注入的 user 记录 |
+| 2026-10-22 | [关掉卡片后 agent 进程还在](2026-10-22-agent-outlives-closed-card.md) | 已修复 | 关卡片只做 `tmux kill-session`，靠 SIGHUP 让 agent 退出。一个 sp-claude 下的 Claude 收到挂断后没有退出，在主线程空转了 46 小时，同时一直占着 sub-pool 租约；卡片上显示 closed，点开后同一会话又起了第二个进程。修复：kill 之前记下 pane 里的进程，kill 之后检查，还活着的按 SIGTERM → SIGKILL 处理（`ProcessReaper`） |

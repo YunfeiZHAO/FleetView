@@ -3,7 +3,7 @@
 | 字段 | 内容 |
 |---|---|
 | 发现日期 | 2026-10-22 |
-| 状态 | 已修复（未部署） |
+| 状态 | 已修复（build 229 部署） |
 | 影响 | 一个已关闭卡片背后的 Claude 继续运行了 46 小时：占满一个 CPU 核，一直占着一个 sub-pool 租约，同一会话同时存在两个进程。board 上看不出任何异常 |
 | 对应代码版本 | `6fb77ea`（工作区另有其他会话未提交的改动） |
 | 修复 | 新增 `Sources/FleetView/Support/ProcessReaper.swift`；修改 `Sources/FleetView/Remote/RemoteServer.swift`（`stop`、`killAllSessions`）、`Sources/FleetView/Headless.swift`（`AppStartup.stop`）。未提交 |

@@ -3,10 +3,10 @@
 | 字段 | 内容 |
 |---|---|
 | 发现日期 | 2026-10-26 |
-| 状态 | 已修复（未部署） |
+| 状态 | 已修复（build 229 部署） |
 | 影响 | 一张 Claude 卡片的网页 chat 停在 07:46，之后一个多小时的对话（含最终结果表）在网页上看不到；终端里一切正常 |
 | 对应代码版本 | `9d1498b`（运行中的是 build 214 = `6fb77ea`，这段代码两者相同） |
-| 修复 | `Sources/FleetView/Remote/Conversation.swift`：`activePath`、`latestUserText`。未提交 |
+| 修复 | `Sources/FleetView/Remote/Conversation.swift`：`activePath`、`latestUserText`（`70e76a7`） |
 
 ## 现象
 
@@ -44,7 +44,8 @@
 
 - 把 `Conversation.swift` 的新旧两版分别和一个小 harness 单独编译（`AgentHome`/`FV`/`RemoteServer` 用桩代替），对这个 transcript 调 `Conversation.parse`，传入卡片自己的 `lastPrompt`：旧版最后一条是 07:46:06，和网页上看到的一致；新版最后一条是 08:52:28，和终端一致。
 - 回归：state.json 里 17 张有 Claude transcript 的卡片，新旧输出逐字节相同的 16 张，不同的只有这一张。硬盘上最近修改的 400 个 Claude transcript（ownPrompt 取 `history.jsonl` 里该会话最后一次输入），398 个相同。另外 2 个不同：一个是本例，另一个是 10-21 的 `0d1ae69f`，旧版停在 14:07:47，新版到文件末尾 14:14:41，是同一个问题。
-- `swift build` 通过。没有在运行中的 FleetView 上验证（build 214 仍在运行，需要部署）。
+- `swift build` 通过。
+- 部署后（2026-10-26 19:58，build 229）在运行中的 FleetView 上：`GET /conversation?id=B4CD3E07…` 返回 81 条，最后一条是 08:52:28 的结果表，和终端一致。
 
 ## 没覆盖的
 
