@@ -19,6 +19,14 @@ final class ProjectWatcher {
         var head = false
         /// The stream lost events: everything shown has to be looked at again.
         var rescan = false
+        /// Repositories inside the project (one that is not a repository itself), by the folder that
+        /// holds their `.git`: what moved in each.
+        var nested: [String: GitMove] = [:]
+    }
+
+    struct GitMove: Equatable {
+        var index = false
+        var head = false
     }
 
     private var stream: FSEventStreamRef?
@@ -98,22 +106,46 @@ final class ProjectWatcher {
                 gitEvent(String(rel.dropFirst(4)), into: &b)
                 continue
             }
+            let parts = rel.split(separator: "/", omittingEmptySubsequences: false)
+            if let k = parts.firstIndex(of: ".git"), k > 0 {
+                // A clone under node_modules or a build folder is a dependency, not a repository the
+                // window shows.
+                if parts[..<k].contains(where: { ProjectFiles.skipped.contains(String($0)) }) { continue }
+                let folder = parts[..<k].joined(separator: "/")
+                let sub = k + 1 < parts.count ? "/" + parts[(k + 1)...].joined(separator: "/") : ""
+                let m = Self.gitMove(sub)
+                if m.index || m.head {
+                    var e = b.nested[folder] ?? GitMove()
+                    e.index = e.index || m.index
+                    e.head = e.head || m.head
+                    b.nested[folder] = e
+                }
+                continue
+            }
             if rel.split(separator: "/").contains(where: { ProjectFiles.skipped.contains(String($0)) }) { continue }
             b.dirs.insert(rel)
         }
-        guard b.rescan || b.index || b.head || !b.dirs.isEmpty else { return }
+        guard b.rescan || b.index || b.head || !b.dirs.isEmpty || !b.nested.isEmpty else { return }
         onBatch(b)
     }
 
     /// `sub` is the part after the git directory, starting with "/" or empty.
     private func gitEvent(_ sub: String, into b: inout Batch) {
-        if sub.isEmpty || sub == "/" { b.index = true; b.head = true; return }
-        if sub.hasPrefix("/objects") || sub.hasPrefix("/logs") { return }
-        if sub == "/index" { b.index = true; return }
+        let m = Self.gitMove(sub)
+        b.index = b.index || m.index
+        b.head = b.head || m.head
+    }
+
+    /// What a change at `sub` inside a git directory can mean. The stream reports directories, so
+    /// the git directory itself ("") stands for its index and HEAD both.
+    private static func gitMove(_ sub: String) -> GitMove {
+        if sub.isEmpty || sub == "/" { return GitMove(index: true, head: true) }
+        if sub.hasPrefix("/objects") || sub.hasPrefix("/logs") { return GitMove() }
+        if sub == "/index" { return GitMove(index: true) }
         if sub == "/HEAD" || sub == "/packed-refs" || sub.hasPrefix("/refs") || sub.hasPrefix("/worktrees") {
-            b.head = true
-            b.index = true
+            return GitMove(index: true, head: true)
         }
+        return GitMove()
     }
 }
 

@@ -385,6 +385,33 @@ enum UIText {
     case filesWindowTitle(String)
     case filesNoEditor
     case filesMissing
+    case filesTabHistory
+    case histNotARepo
+    case histNoRepo
+    case histCurrentBranch(String)
+    case histRemoteBranches
+    case histCompareWithCurrent(String)
+    case histBranchHelp
+    case histReload
+    case histOnly(String)
+    case histPicked(String)
+    case histPickedHelp
+    case histUncommitted(Int)
+    case histUncommittedTitle
+    case histVersusWorktree(String)
+    case histBranchVersusCurrent(String)
+    case histNoMergeBase
+    case histGitFailed
+    case histOpenCommit
+    case histCompareWorktree
+    case histCompareWithPicked(String)
+    case histPickForCompare
+    case histCopySha
+    case histCopySubject
+    case histNone
+    case histMore
+    case histFileHistory
+    case histFolderHistory
     case filesNotRegular
     case filesReferenceOdd
     case filesGotIt

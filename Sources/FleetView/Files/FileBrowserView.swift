@@ -108,6 +108,7 @@ struct FileSidebar: View {
             Picker("", selection: $model.sideMode) {
                 Text(L(.filesTabFiles)).tag(FileBrowserModel.SideMode.tree)
                 Text(L(.filesTabSearch)).tag(FileBrowserModel.SideMode.search)
+                Text(L(.filesTabHistory)).tag(FileBrowserModel.SideMode.history)
             }
             .pickerStyle(.segmented).labelsHidden().controlSize(.small)
             .padding(.horizontal, 10).padding(.bottom, 6)
@@ -127,8 +128,10 @@ struct FileSidebar: View {
                 } else {
                     FilterResults(model: model)
                 }
-            } else {
+            } else if model.sideMode == .search {
                 SearchPane(model: model)
+            } else {
+                HistoryPane(model: model)
             }
         }
         .background(Theme.panel)
@@ -320,7 +323,8 @@ struct FileTree: View {
                     ForEach(model.rows) { row in
                         FileTreeRow(model: model, row: row, selected: model.selected == row.id,
                                     mark: model.marks[row.id], expanded: model.expanded.contains(row.id),
-                                    dirtyDir: row.isDir && model.dirtyDirs.contains(row.id))
+                                    dirtyDir: row.isDir && model.dirtyDirs.contains(row.id),
+                                    branch: row.isDir ? model.nestedBranches[row.id] : nil)
                             .id(row.id)
                     }
                 }
@@ -345,6 +349,8 @@ struct FileTreeRow: View {
     let mark: GitStatus.Mark?
     let expanded: Bool
     let dirtyDir: Bool
+    /// A repository inside the project starts here: its branch.
+    var branch: String? = nil
     @State private var hover = false
 
     var body: some View {
@@ -362,6 +368,9 @@ struct FileTreeRow: View {
             FileIcon(name: row.name, isDir: row.isDir)
             Text(row.name).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle)
                 .foregroundColor(textColor)
+            if let branch {
+                Text("⎇ " + branch).font(.fvMono).foregroundColor(Theme.outline).lineLimit(1)
+            }
             Spacer(minLength: 4)
             if let mark {
                 Text(mark.rawValue).font(.system(size: 10.5, weight: .bold, design: .monospaced))
@@ -449,6 +458,10 @@ struct FileContextMenu: View {
             Button(L(.filesOpen)) { model.open(rel, pin: true) }
             Divider()
         }
+        if model.repoFor(rel) != nil {
+            Button(isDir ? L(.histFolderHistory) : L(.histFileHistory)) { model.showHistory(of: rel) }
+            Divider()
+        }
         Button(L(.filesCopyPath) + "  ⌥⌘C") { model.copyPath(rel) }
         Button(L(.filesCopyRelative)) { model.copyPath(rel, relativeOnly: true) }
         Button(L(.filesReveal)) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: model.absolute(rel))]) }
@@ -517,8 +530,13 @@ struct FileTabView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            FileIcon(name: tab.path, isDir: false)
-            Text((tab.path as NSString).lastPathComponent)
+            if let c = tab.changes {
+                Image(systemName: c.sha != nil ? "clock.arrow.circlepath" : "plusminus").font(.system(size: 11.5))
+                    .foregroundColor(Theme.primary).frame(width: 15)
+            } else {
+                FileIcon(name: tab.path, isDir: false)
+            }
+            Text(tab.changes.map { String($0.title.prefix(28)) } ?? (tab.path as NSString).lastPathComponent)
                 .font(.system(size: 12.5)).italic(!tab.pinned).lineLimit(1)
                 .foregroundColor(on ? Theme.text : Theme.subtext)
             ZStack {
@@ -543,7 +561,7 @@ struct FileTabView: View {
         .onHover { hover = $0 }
         .gesture(TapGesture(count: 1).onEnded { model.activate(tab.id) })
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.pin(tab.id) })
-        .help(tab.path + (tab.pinned ? "" : "  " + L(.filesPreviewTabHelp)))
+        .help((tab.changes?.title ?? tab.path) + (tab.pinned ? "" : "  " + L(.filesPreviewTabHelp)))
     }
 }
 
@@ -561,6 +579,10 @@ struct FileToolbar: View {
                     .buttonStyle(.borderless).disabled(!model.canGoForward).help(L(.filesForward) + "  ⌃⇧-")
                 Button { model.showQuickOpen() } label: { Image(systemName: "magnifyingglass") }
                     .buttonStyle(.borderless).help(L(.filesQuickOpen) + "  ⌘P")
+                if let c = tab.changes {
+                    Text(c.title).font(.fvBodySmall).foregroundColor(Theme.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                } else {
                 breadcrumbs(tab.path)
                 Spacer(minLength: 8)
                 if tab.kind == .text {
@@ -590,6 +612,7 @@ struct FileToolbar: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                }
             }
             .padding(.horizontal, 12).frame(height: 36)
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.outlineVariant).frame(height: 1) }

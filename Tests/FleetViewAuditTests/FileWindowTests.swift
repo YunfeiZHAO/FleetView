@@ -331,3 +331,88 @@ final class PathReferenceTests: XCTestCase {
         XCTAssertNil(PathReference.text("tab\there.md", for: .claude))
     }
 }
+
+final class GitHistoryTests: FileTestCase {
+    private func git(_ args: String...) {
+        let r = Subprocess.run("/usr/bin/git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=Tess"] + args, timeout: 20)
+        XCTAssertEqual(r.status, 0, "git \(args.joined(separator: " "))")
+    }
+
+    private func indexStamp() -> String {
+        var st = stat()
+        stat(dir + "/.git/index", &st)
+        return "\(st.st_ino) \(st.st_mtimespec.tv_sec) \(st.st_mtimespec.tv_nsec) \(st.st_ctimespec.tv_nsec)"
+    }
+
+    /// Three commits: a.txt and b.txt, a change with a Claude trailer, then b.txt renamed.
+    private func makeRepo() throws -> GitReader.Repo {
+        _ = write("a.txt", "one\n")
+        _ = write("b.txt", "bee\nbee\n")
+        git("init", "-q", "-b", "main")
+        git("add", ".")
+        git("commit", "-qm", "first")
+        _ = write("a.txt", "one\ntwo\nthree\n")
+        git("commit", "-qam", "second", "-m", "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
+        git("mv", "b.txt", "c.txt")
+        git("commit", "-qm", "rename")
+        return try XCTUnwrap(GitReader.shared.repo(at: dir))
+    }
+
+    func testLogReadsCommitsWithCountsAndAgents() throws {
+        let repo = try makeRepo()
+        let log = try XCTUnwrap(GitReader.shared.log(repo))
+        XCTAssertEqual(log.map(\.subject), ["rename", "second", "first"])
+        XCTAssertEqual(log[1].agent, "claude")
+        XCTAssertNil(log[0].agent)
+        XCTAssertEqual(log[1].added, 2)
+        XCTAssertEqual(log[1].files, 1)
+        XCTAssertEqual(log[0].author, "Tess")
+        XCTAssertTrue(log[0].refs.contains("HEAD -> main"), "\(log[0].refs)")
+        XCTAssertEqual(log[2].parents, [])
+        XCTAssertEqual(log[1].parents, [log[2].sha])
+        // Paging, and one file's history across its rename.
+        XCTAssertEqual(GitReader.shared.log(repo, skip: 1, limit: 1)?.map(\.subject), ["second"])
+        XCTAssertEqual(GitReader.shared.log(repo, path: "c.txt", follow: true)?.map(\.subject), ["rename", "first"])
+    }
+
+    func testChangesOfACommitAndOfTheWorkingTree() throws {
+        let repo = try makeRepo()
+        let g = GitReader.shared
+        let head = try XCTUnwrap(g.headCommit(repo))
+        let renamed = try XCTUnwrap(g.changes(repo, .commit(head)))
+        XCTAssertEqual(renamed, [GitChange(path: "c.txt", oldPath: "b.txt", status: "R", added: 0, deleted: 0, binary: false)])
+        let root = try XCTUnwrap(g.log(repo)?.last?.sha)
+        XCTAssertEqual(g.changes(repo, .commit(root))?.map(\.path), ["a.txt", "b.txt"], "a root commit is everything it added")
+        XCTAssertEqual(g.changes(repo, .between(root, head))?.map(\.status), ["M", "R"])
+
+        // Uncommitted: a real change, and a file that was only touched (stat-dirty, same bytes).
+        _ = write("a.txt", "one\ntwo\nthree\nfour\n")
+        sleep(1)
+        utimes(dir + "/c.txt", nil)
+        let before = indexStamp()
+        let wt = try XCTUnwrap(g.changes(repo, .worktree("HEAD")))
+        XCTAssertEqual(wt.map(\.path), ["a.txt"], "a touched file is not a change")
+        XCTAssertEqual(wt.first?.added, 1)
+        let patch = try XCTUnwrap(g.patch(repo, .worktree("HEAD"), paths: ["a.txt"]))
+        XCTAssertTrue(String(decoding: patch.text, as: UTF8.self).contains("+four"))
+        XCTAssertEqual(g.blob(repo, rev: root, path: "a.txt"), Data("one\n".utf8))
+        _ = g.log(repo)
+        _ = g.branches(repo)
+        XCTAssertEqual(indexStamp(), before, "reading history must not rewrite .git/index")
+    }
+
+    func testBranchesAndMergeBase() throws {
+        let repo = try makeRepo()
+        git("branch", "side", "HEAD~1")
+        let b = GitReader.shared.branches(repo)
+        XCTAssertEqual(Set(b.map(\.name)), ["main", "side"])
+        XCTAssertEqual(b.first { $0.isHead }?.name, "main")
+        let side = try XCTUnwrap(b.first { $0.name == "side" })
+        XCTAssertEqual(GitReader.shared.mergeBase(repo, "HEAD", "side"), side.sha)
+    }
+
+    func testRemoteHeadIsNotABranch() {
+        let raw = "refs/heads/main\u{0}aaa\u{0}100\u{0}*\nrefs/remotes/origin/HEAD\u{0}aaa\u{0}100\u{0} \nrefs/remotes/origin/main\u{0}aaa\u{0}100\u{0} \n"
+        XCTAssertEqual(GitBranches.parse(Data(raw.utf8)).map(\.name), ["main", "origin/main"])
+    }
+}

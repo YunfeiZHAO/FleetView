@@ -229,6 +229,13 @@ let suites: [(String, [Test])] = [
         ("a missing file fails", FileSaveTests.testAMissingFileFails),
     ]),
 
+    suite("File window — history", GitHistoryTests.self, [
+        ("log reads commits, counts and agents", GitHistoryTests.testLogReadsCommitsWithCountsAndAgents),
+        ("changes of a commit and of the working tree", GitHistoryTests.testChangesOfACommitAndOfTheWorkingTree),
+        ("branches and their merge base", GitHistoryTests.testBranchesAndMergeBase),
+        ("a remote's HEAD is not a branch", GitHistoryTests.testRemoteHeadIsNotABranch),
+    ]),
+
     suite("File window — a path typed into a card", PathReferenceTests.self, [
         ("a plain path goes as it is", PathReferenceTests.testPlainPaths),
         ("a path that needs quotes is quoted for its reader", PathReferenceTests.testQuoting),

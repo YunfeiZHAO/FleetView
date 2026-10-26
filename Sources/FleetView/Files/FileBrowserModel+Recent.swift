@@ -85,7 +85,9 @@ extension FileBrowserModel {
                 }
             }
             let byPath = Dictionary(edits.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
-            let out = times.sorted { $0.1 > $1.1 }.prefix(8).map { rel, m -> Recent in
+            // "Lately" is the last three days: an untracked file from last month is uncommitted, not recent.
+            let since = Date().addingTimeInterval(-3 * 86_400)
+            let out = times.filter { $0.1 >= since }.sorted { $0.1 > $1.1 }.prefix(8).map { rel, m -> Recent in
                 // The recorded write is the author only if nothing touched the file well after it.
                 let e = byPath[root + "/" + rel]
                 let by = e.flatMap { $0.at >= m.addingTimeInterval(-120) ? $0.terminalName : nil }

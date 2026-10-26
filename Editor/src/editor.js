@@ -67,6 +67,11 @@ const WORDS = {
     outline: "大纲", noPreview: "没有内容", imageHint: "点图片在「适应窗口」和「实际大小」之间切换",
     compareTitle: "左边是磁盘上的版本，右边是你的。把需要的改动从左边拿过来，再保存右边。",
     saveMerged: "保存右边的结果", cancel: "取消", loading: "读取中…",
+    files: "个文件", copySha: "复制 sha", cmpWT: "与工作区对比", sideBySide: "并排", open: "打开", parent: "父提交",
+    rootCommit: "第一个提交", binary: "二进制文件，不显示内容", untrackedDir: "还没被 git 跟踪的文件夹，里面的文件不逐个列出",
+    showInTree: "在目录树中显示", tooLong: "还有 $ 行没有显示", seeAll: "并排看全部", truncated: "diff 太大，只显示了开头",
+    noChange: "内容没有变化（可能只改了权限）", refresh: "刷新", worktree: "工作区", nothing: "（无）", against: "相对",
+    moreFiles: "还有 $ 个文件没有列出", noFiles: "没有改动", close: "关闭", failed: "读不出来", newFile: "新文件",
     phrases: {
       "Find": "查找", "Replace": "替换", "next": "下一个", "previous": "上一个", "all": "全部",
       "match case": "区分大小写", "regexp": "正则", "by word": "整词", "replace": "替换",
@@ -81,6 +86,13 @@ const WORDS = {
     outline: "Outline", noPreview: "Nothing to show", imageHint: "Click the image to switch between fit and actual size",
     compareTitle: "Left is the version on disk, right is yours. Bring over what you need from the left, then save the right.",
     saveMerged: "Save the right side", cancel: "Cancel", loading: "Loading…",
+    files: "files", copySha: "Copy SHA", cmpWT: "Compare with working tree", sideBySide: "Side by side", open: "Open",
+    parent: "parent", rootCommit: "first commit", binary: "Binary file, not shown",
+    untrackedDir: "A folder git does not track yet; its files are not listed one by one", showInTree: "Show in tree",
+    tooLong: "$ more lines not shown", seeAll: "See all side by side", truncated: "The diff is large; only its start is shown",
+    noChange: "No change in content (perhaps only the mode)", refresh: "Refresh", worktree: "working tree", nothing: "(none)",
+    against: "against", moreFiles: "$ more files not listed", noFiles: "No changes", close: "Close", failed: "Could not read it",
+    newFile: "new file",
     phrases: {},
   },
 };
@@ -433,6 +445,7 @@ async function loadHead(d) {
 
 function stash() {
   const d = docs.get(active);
+  if (d && d.kind === "changes" && d.ch && host.changes.style.display !== "none") d.ch.scroll = host.changes.scrollTop;
   if (!d || !d.state) return;
   d.state = view.state;
   // A hidden editor reports 0: keep where it was instead.
@@ -447,10 +460,18 @@ function display(which) {
   host.cm.style.display = which === "cm" ? "" : "none";
   host.preview.style.display = which === "preview" ? "" : "none";
   host.info.style.display = which === "info" ? "" : "none";
+  host.changes.style.display = which === "changes" ? "" : "none";
 }
 
 function showDoc(d) {
   if (d.info) { renderInfo(d.info); display("info"); return; }
+  if (d.kind === "changes") {
+    if (!d.ch) { renderInfo({kind: "loading", title: words.loading}); display("info"); return; }
+    renderChanges(d);
+    display("changes");
+    host.changes.scrollTop = d.ch.scroll || 0;
+    return;
+  }
   if (!d.state) { renderInfo({kind: "loading", title: words.loading}); display("info"); return; }
   view.setState(d.state);
   if (d.mode === "preview") {
@@ -738,6 +759,7 @@ async function compare(id) {
 
 function closeCompare() {
   if (merge) { merge.destroy(); merge = null; }
+  if (host.compareSave) host.compareSave.style.display = "";
   mergeTab = null;
   host.compare.style.display = "none";
   host.compareBody.innerHTML = "";
@@ -861,6 +883,274 @@ function anchor(d, name) {
   return h && h.line ? api.goto(d.id, h.line) : false;
 }
 
+// ---------------------------------------------------------------- changes: a commit, the working tree
+
+// What unfolds by itself when a tab opens: files in order until this many changed lines, or this
+// many files. The rest unfold on a click. A file's diff draws at most MAX_ROWS lines.
+const DIFF_BUDGET = 1500, DIFF_FILES = 15, MAX_ROWS = 3000;
+
+async function loadChanges(d) {
+  const r = await bridge.fetchText(appURL("changes/" + encodeURIComponent(d.id)));
+  if (!r.ok) { d.info = infoFrom(r); return false; }
+  let data;
+  try { data = JSON.parse(r.text); } catch (e) { d.info = {kind: "error", title: words.failed}; return false; }
+  d.info = null;
+  const before = d.ch;
+  d.ch = {data, open: new Set(), patches: new Map(), scroll: before ? before.scroll : 0};
+  if (before) {
+    // A refresh keeps what was unfolded, by path; the diffs themselves are read again.
+    for (const f of data.files) if (before.open.has(f.path)) d.ch.open.add(f.path);
+  } else if (data.focus >= 0) {
+    // Opened for one file (its history): that file alone. Unfolding the ones above it too would
+    // push it down the page as their diffs arrive, out from under the scroll that found it.
+  } else {
+    let lines = 0;
+    for (const f of data.files) {
+      if (d.ch.open.size >= DIFF_FILES) break;
+      if (f.dir || f.binary) continue;
+      const n = (f.add || 0) + (f.del || 0);
+      if (d.ch.open.size > 0 && lines + n > DIFF_BUDGET) continue;
+      lines += n;
+      d.ch.open.add(f.path);
+    }
+  }
+  if (data.focus >= 0) d.ch.open.add(data.files[data.focus].path);
+  return true;
+}
+
+function renderChanges(d) {
+  const data = d.ch.data;
+  let h = `<div class="chwrap">${changesHeader(d)}<div class="chlist">`;
+  for (const f of data.files) h += fileBlock(d, f);
+  if (!data.files.length) h += `<div class="chnote">${words.noFiles}</div>`;
+  if (data.more > 0) h += `<div class="chmore">${words.moreFiles.replace("$", data.more)}</div>`;
+  host.changes.innerHTML = h + "</div></div>";
+  for (const f of data.files) if (d.ch.open.has(f.path) && !d.ch.patches.has(f.path)) loadPatch(d, f);
+}
+
+function totals(files) {
+  let a = 0, x = 0;
+  for (const f of files) { a += f.add || 0; x += f.del || 0; }
+  return `<span class="a">+${a}</span> <span class="d">−${x}</span>`;
+}
+
+function changesHeader(d) {
+  const data = d.ch.data, c = data.commit;
+  const count = `${data.files.length + (data.more || 0)} ${words.files} · ${totals(data.files)}`;
+  if (c) {
+    const lines = c.message.split("\n");
+    const subject = lines.shift(), body = lines.join("\n").trim();
+    const when = new Date(c.date * 1000).toLocaleString(words === WORDS.zh ? "zh-CN" : undefined,
+      {year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+    const parents = c.parents.length
+      ? `${words.parent} ` + c.parents.map(p => `<a data-act="commit" data-sha="${p}">${p.slice(0, 7)}</a>`).join(" ")
+      : words.rootCommit;
+    const agent = c.agent ? `<span class="agent">${c.agent === "claude" ? "Claude" : "Codex"}</span>` : "";
+    return `<div class="chhead"><div class="chsub">${escapeHTML(subject)}</div>${body ? `<pre class="chbody">${escapeHTML(body)}</pre>` : ""}
+      <div class="chmeta"><span class="sha">${c.short}</span><span>${escapeHTML(c.author)}</span><span>${when}</span>${agent}<span>${parents}</span><span>${count}</span></div>
+      <div class="chbtns"><button data-act="copy" data-text="${c.sha}">${words.copySha}</button><button data-act="cmpwt" data-sha="${c.sha}">${words.cmpWT}</button></div></div>`;
+  }
+  const sides = data.kind === "worktree" ? `${words.worktree} ${words.against} <span class="sha">${escapeHTML(data.a)}</span>`
+                                         : `<span class="sha">${escapeHTML(data.a)}</span> → <span class="sha">${escapeHTML(data.b)}</span>`;
+  return `<div class="chhead"><div class="chsub">${escapeHTML(data.title)}</div>
+    <div class="chmeta"><span>${sides}</span><span>${count}</span></div>
+    ${d.meta.live ? `<div class="chbtns"><button data-act="refresh">${words.refresh}</button></div>` : ""}</div>`;
+}
+
+function fileBlock(d, f) {
+  const open = d.ch.open.has(f.path);
+  const name = f.path.split("/").pop(), dir = f.path.slice(0, f.path.length - name.length);
+  const st = f.status === "?" ? "U" : f.status;
+  const n = f.add != null ? `<span class="n"><span class="a">+${f.add}</span> <span class="d">−${f.del || 0}</span></span>` : "";
+  const side = !f.dir && !f.binary ? `<button data-act="side">${words.sideBySide}</button>` : "";
+  const openBtn = f.rel != null && f.status !== "D" ? `<button data-act="openfile">${f.dir ? words.showInTree : words.open}</button>` : "";
+  return `<div class="chf${open ? " open" : ""}" data-i="${f.i}"><div class="chfh" data-act="toggle"><span class="chev">›</span>`
+    // The path ellipsizes at its start (the container is right-to-left) but reads left to right
+    // inside: without the isolate, bidi moves a leading "10_23_" to the far end.
+    + `<span class="st s${st}">${st}</span><span class="fp"><bdi dir="ltr">${escapeHTML(dir)}<b>${escapeHTML(name)}</b></bdi></span>`
+    + (f.old ? `<span class="old">← ${escapeHTML(f.old)}</span>` : "")
+    + `<span class="sp"></span>${n}${side}${openBtn}</div>`
+    + (open ? `<div class="chfb">${fileBody(d, f)}</div>` : "") + "</div>";
+}
+
+function fileBody(d, f) {
+  if (f.dir) return `<div class="chnote">${words.untrackedDir}</div>`;
+  if (f.binary) return `<div class="chnote">${words.binary}</div>`;
+  const p = d.ch.patches.get(f.path);
+  if (!p) return `<div class="chnote">${words.loading}</div>`;
+  if (p.error) return `<div class="chnote">${words.failed}</div>`;
+  if (p.binary) return `<div class="chnote">${words.binary}</div>`;
+  if (!p.rows.length) return `<div class="chnote">${words.noChange}</div>`;
+  const editable = f.rel != null && f.status !== "D";
+  let h = p.truncated ? `<div class="chnote">${words.truncated}</div>` : "";
+  const shown = p.rows.length > MAX_ROWS ? p.rows.slice(0, MAX_ROWS) : p.rows;
+  for (const r of shown) {
+    if (r.t === "h") { h += `<div class="dh">⋯ ${escapeHTML(r.text)}</div>`; continue; }
+    const cls = (r.t === "+" ? "add" : r.t === "-" ? "del" : "") + (editable ? " click" : "");
+    h += `<div class="dr ${cls}" data-n="${r.n ?? ""}"><span class="ln">${r.o ?? ""}</span><span class="ln">${r.n ?? ""}</span>`
+       + `<span class="tx">${r.html ?? escapeHTML(r.text)}</span></div>`;
+  }
+  if (p.rows.length > MAX_ROWS) {
+    h += `<div class="chnote">${words.tooLong.replace("$", p.rows.length - MAX_ROWS)}<button data-act="side">${words.seeAll}</button></div>`;
+  }
+  return h;
+}
+
+async function loadPatch(d, f) {
+  d.ch.patches.set(f.path, null);
+  const r = await bridge.fetchText(appURL(`patch/${encodeURIComponent(d.id)}/${f.i}`));
+  if (!d.ch || !d.ch.data.files.includes(f)) return;
+  let p;
+  if (!r.ok) p = r.status === 415 ? {binary: true, rows: []} : {error: true, rows: []};
+  else {
+    p = parsePatch(r.text);
+    p.truncated = !!r.headers["x-fv-truncated"];
+    if (p.rows.length <= MAX_ROWS) highlightRows(p.rows, f.lang);
+  }
+  d.ch.patches.set(f.path, p);
+  if (active === d.id) {
+    const el = host.changes.querySelector(`.chf[data-i="${f.i}"] .chfb`);
+    if (el) el.innerHTML = fileBody(d, f);
+  }
+}
+
+/** Hunks of a unified diff as rows: " " context, "+" added, "-" removed, "h" a hunk's start. */
+function parsePatch(text) {
+  const rows = [];
+  let o = 0, n = 0, inHunk = false, binary = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("@@")) {
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/.exec(line);
+      if (m) { o = +m[1]; n = +m[2]; rows.push({t: "h", text: m[3]}); inHunk = true; }
+      continue;
+    }
+    if (line.startsWith("diff --git ")) { inHunk = false; continue; }
+    if (!inHunk) { if (line.startsWith("Binary files")) binary = true; continue; }
+    const c = line[0];
+    if (c === "+") rows.push({t: "+", n: n++, text: line.slice(1)});
+    else if (c === "-") rows.push({t: "-", o: o++, text: line.slice(1)});
+    else if (c === " ") rows.push({t: " ", o: o++, n: n++, text: line.slice(1)});
+  }
+  return {rows, binary};
+}
+
+/** Colours for a diff: the new side (context and added lines) parsed as one text, the removed
+ *  lines as another, each split back into lines. A hunk's start can still fall inside a comment. */
+function highlightRows(rows, lang) {
+  const side = list => {
+    const out = highlightLines(list.map(r => r.text).join("\n"), lang);
+    list.forEach((r, i) => { r.html = out[i]; });
+  };
+  side(rows.filter(r => r.t === "+" || r.t === " "));
+  side(rows.filter(r => r.t === "-"));
+}
+
+function highlightLines(code, lang) {
+  const lines = code.split("\n");
+  const language = languageFor(lang);
+  if (!language || code.length > 300_000) return lines.map(escapeHTML);
+  const out = lines.map(() => "");
+  const starts = [];
+  let p = 0;
+  for (const l of lines) { starts.push(p); p += l.length + 1; }
+  let li = 0, pos = 0;
+  const emit = (from, to, cls) => {
+    while (from < to) {
+      while (li + 1 < starts.length && starts[li + 1] <= from) li++;
+      const lineEnd = starts[li] + lines[li].length;
+      const end = Math.min(to, lineEnd);
+      if (end > from) {
+        const t = escapeHTML(code.slice(from, end));
+        out[li] += cls ? `<span class="${cls}">${t}</span>` : t;
+      }
+      from = end < lineEnd ? end : lineEnd + 1;
+    }
+  };
+  try {
+    highlightTree(language.parser.parse(code), highlight, (from, to, cls) => {
+      if (from > pos) emit(pos, from, "");
+      emit(from, to, cls);
+      pos = to;
+    });
+  } catch (e) { return lines.map(escapeHTML); }
+  if (pos < code.length) emit(pos, code.length, "");
+  return out;
+}
+
+function changeFileAt(d, el) {
+  const box = el.closest(".chf");
+  return box ? d.ch.data.files[+box.dataset.i] : null;
+}
+
+function toggleFile(d, f) {
+  if (d.ch.open.has(f.path)) d.ch.open.delete(f.path); else d.ch.open.add(f.path);
+  const box = host.changes.querySelector(`.chf[data-i="${f.i}"]`);
+  if (box) box.outerHTML = fileBlock(d, f);
+  if (d.ch.open.has(f.path) && !d.ch.patches.has(f.path)) loadPatch(d, f);
+}
+
+/** Unfold a file and bring it into view. */
+function focusFile(d, path) {
+  if (!d.ch) return false;
+  const f = d.ch.data.files.find(f => f.rel === path || f.path === path || f.old === path);
+  if (!f) return false;
+  if (!d.ch.open.has(f.path)) toggleFile(d, f);
+  const box = host.changes.querySelector(`.chf[data-i="${f.i}"]`);
+  if (box) box.scrollIntoView({block: "start"});
+  return true;
+}
+
+/** One file's two versions side by side, both read-only, in the compare overlay. */
+async function sideBySide(d, f) {
+  const [a, b] = await Promise.all(["a", "b"].map(s => bridge.fetchText(appURL(`blob/${encodeURIComponent(d.id)}/${f.i}/${s}`))));
+  if (!a.ok || !b.ok || active !== d.id) return;
+  closeCompare();
+  mergeTab = d.id;
+  const data = d.ch.data;
+  host.compare.style.display = "";
+  host.compareText.textContent = `${f.path} · ${data.a || words.nothing} ↔ ${data.b || words.worktree}`;
+  host.compareSave.style.display = "none";
+  host.compareCancel.textContent = words.close;
+  host.compareCancel.onclick = closeCompare;
+  const support = supportFor(f.lang);
+  const ext = [lineNumbers(), syntaxHighlighting(highlight), theme, support || [], EditorState.readOnly.of(true),
+               EditorState.phrases.of(words.phrases), keymap.of([{key: "Escape", run: () => { closeCompare(); return true; }}])];
+  merge = new MergeView({
+    a: {doc: a.text, extensions: ext}, b: {doc: b.text, extensions: ext}, parent: host.compareBody,
+    highlightChanges: true, gutter: true, collapseUnchanged: {margin: 4, minSize: 10},
+  });
+}
+
+function onChangesClick(e) {
+  const d = docs.get(active);
+  if (!d || d.kind !== "changes" || !d.ch) return;
+  const act = e.target.closest("[data-act]");
+  const f = changeFileAt(d, e.target);
+  if (act) {
+    switch (act.dataset.act) {
+      case "toggle": if (f && !e.target.closest("button")) toggleFile(d, f); return;
+      case "side": if (f) sideBySide(d, f); return;
+      case "openfile": if (f && f.rel != null) post("openFile", {tab: d.id, path: f.rel}); return;
+      case "copy": post("copy", {tab: d.id, text: act.dataset.text}); return;
+      case "cmpwt": post("compareWorktree", {tab: d.id, sha: act.dataset.sha}); return;
+      case "commit": post("openCommit", {tab: d.id, sha: act.dataset.sha}); return;
+      case "refresh": refreshChanges(d); return;
+    }
+  }
+  // A line of a diff: open the file there. Not when the click ended a text selection.
+  const row = e.target.closest(".dr.click");
+  if (row && f && f.rel != null && window.getSelection().isCollapsed) {
+    let n = +row.dataset.n;
+    for (let r = row; !n && r; r = r.nextElementSibling) n = +(r.dataset && r.dataset.n);
+    post("openFile", {tab: d.id, path: f.rel, line: n || 1});
+  }
+}
+
+async function refreshChanges(d) {
+  stash();
+  if (await loadChanges(d) && active === d.id) showDoc(d);
+}
+
 // ---------------------------------------------------------------- the API Swift calls
 
 const api = {
@@ -886,6 +1176,14 @@ const api = {
     }
     active = id;
     d.seen = Date.now();
+    if (d.kind === "changes") {
+      showDoc(d);
+      if (!d.ch && await loadChanges(d) && active === id) {
+        showDoc(d);
+        if (d.ch.data.focus >= 0) focusFile(d, d.ch.data.files[d.ch.data.focus].path);
+      } else if (active === id) showDoc(d);
+      return {ok: !d.info};
+    }
     if (d.kind !== "text") { d.info = meta.info; showDoc(d); return {ok: true}; }
     if (!d.state && !d.info) {
       showDoc(d);
@@ -907,6 +1205,12 @@ const api = {
     active = id;
     const d = docs.get(id);
     d.seen = Date.now();
+    if (d.kind === "changes") {
+      showDoc(d);
+      // The working tree moves while nobody looks: read again on the way back to it.
+      if (d.meta.live && d.ch) refreshChanges(d);
+      return {ok: true};
+    }
     if (d.kind === "text" && !d.state && !d.info) {
       showDoc(d);
       const ok = await load(d);
@@ -1033,7 +1337,13 @@ const api = {
     return true;
   },
   /** Land on a line, a search, or a heading's anchor: {line, find, anchor}. */
-  jump(id, where) { const d = docs.get(id); if (d && id === active) jump(d, where || {}); return true; },
+  jump(id, where) {
+    const d = docs.get(id);
+    if (!d || id !== active) return true;
+    if (d.kind === "changes") { if (where && where.file) focusFile(d, where.file); return true; }
+    jump(d, where || {});
+    return true;
+  },
   compare,
   /** HEAD moved: fetch the baseline again. */
   headChanged(id) { const d = docs.get(id); if (d && d.state) loadHead(d); return true; },
@@ -1073,12 +1383,15 @@ function boot() {
   host.article = document.getElementById("article");
   host.toc = document.getElementById("toc");
   host.info = document.getElementById("info");
+  host.changes = document.getElementById("changes");
   host.compare = document.getElementById("compare");
   host.compareBody = document.getElementById("compareBody");
   host.compareText = document.getElementById("compareText");
   host.compareSave = document.getElementById("compareSave");
   host.compareCancel = document.getElementById("compareCancel");
-  view = new EditorView({parent: host.cm, state: EditorState.create({doc: ""})});
+  // The highlight style's CSS is mounted by a state that uses it: from the start, so a commit's diff
+  // or a rendered document shown before any file is coloured too.
+  view = new EditorView({parent: host.cm, state: EditorState.create({doc: "", extensions: [syntaxHighlighting(highlight), theme]})});
   display("info");
 
   host.article.addEventListener("click", e => {
@@ -1101,6 +1414,7 @@ function boot() {
     if (el) el.scrollIntoView({block: "start"});
   });
   host.preview.addEventListener("scroll", () => requestAnimationFrame(spy), {passive: true});
+  host.changes.addEventListener("click", onChangesClick);
   // A window that was covered or minimised gets no animation frames; measure again when it shows.
   document.addEventListener("visibilitychange", () => { if (!document.hidden && view) view.requestMeasure(); });
 

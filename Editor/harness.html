@@ -89,6 +89,15 @@ window.fvBridge = {
     return Promise.resolve(null);
   },
   async fetchText(url) {
+    const c = /^fvfile:\/\/app\/(changes|patch|blob)\/([^/]+)(?:\/(\d+))?(?:\/([ab]))?$/.exec(url);
+    if (c) {
+      const set = window.CHANGES[decodeURIComponent(c[2])];
+      if (!set) return {ok: false, status: 404, text: "", headers: {}};
+      if (c[1] === "changes") return {ok: true, status: 200, text: JSON.stringify(set.data), headers: {}};
+      const f = set.files[+c[3]];
+      if (c[1] === "patch") return f.binary ? {ok: false, status: 415, text: "", headers: {}} : {ok: true, status: 200, text: f.patch, headers: {}};
+      return {ok: true, status: 200, text: c[4] === "a" ? f.a : f.b, headers: {}};
+    }
     const m = /^fvfile:\/\/app\/(doc|head|disk)\/(.+)$/.exec(url);
     if (!m) return {ok: false, status: 404, text: "", headers: {}};
     // `fetchDelay`: a slow read, to type while a reload is on its way.
@@ -99,6 +108,27 @@ window.fvBridge = {
     const headers = {"x-fv-version": "v" + text.length + ":" + text.slice(-8)};
     if (f.readOnly) headers["x-fv-readonly"] = "mixed-eol";
     return {ok: true, status: 200, text, headers};
+  },
+};
+// A commit with three files, as the Swift side would serve it.
+window.CHANGES = {
+  c1: {
+    data: {title: "a1b2c3d Fix the store", kind: "commit", a: "9f8e7d6", b: "a1b2c3d", focus: -1, more: 0,
+      commit: {sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", short: "a1b2c3d", parents: ["9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"],
+               author: "Tess", date: 1793001600, refs: ["HEAD -> main"], coAuthors: ["Claude <noreply@anthropic.com>"], agent: "claude",
+               message: "Fix the store\n\nKeep the last save time.\n\nCo-Authored-By: Claude <noreply@anthropic.com>"},
+      files: [
+        {i: 0, path: "Sources/App/Store.swift", rel: "Sources/App/Store.swift", status: "M", add: 2, del: 1, binary: false, dir: false, lang: "swift"},
+        {i: 1, path: "docs/new.md", rel: "docs/new.md", status: "A", add: 3, del: 0, binary: false, dir: false, lang: "markdown"},
+        {i: 2, path: "logo.png", rel: "logo.png", status: "M", binary: true, dir: false, lang: "plain"},
+      ]},
+    files: [
+      {patch: "diff --git a/Sources/App/Store.swift b/Sources/App/Store.swift\nindex 1..2 100644\n--- a/Sources/App/Store.swift\n+++ b/Sources/App/Store.swift\n@@ -3,4 +3,5 @@ struct Store {\n     var items: [String] = []\n-    var saved = false\n+    var saved: Date?\n+    /* a comment */ var count = 0\n     func load() {}\n }\n",
+       a: "import Foundation\n\nstruct Store {\n    var items: [String] = []\n    var saved = false\n    func load() {}\n}\n",
+       b: "import Foundation\n\nstruct Store {\n    var items: [String] = []\n    var saved: Date?\n    /* a comment */ var count = 0\n    func load() {}\n}\n"},
+      {patch: "@@ -0,0 +1,3 @@\n+# New\n+\n+Text.\n", a: "", b: "# New\n\nText.\n"},
+      {binary: true},
+    ],
   },
 };
 window.openTab = (tab, path, lang, extra = {}) => { TABS[tab] = path; return fv.open(tab, {path, lang, ...extra}); };
@@ -116,6 +146,7 @@ window.openTab = (tab, path, lang, extra = {}) => { TABS[tab] = path; return fv.
 <div id="cm"></div>
 <div id="preview" style="display:none"><article id="article" class="md"></article><nav id="toc" class="toc"></nav></div>
 <div id="info"></div>
+<div id="changes" style="display:none"></div>
 <div id="compare" style="display:none">
   <div class="cmpbar"><span id="compareText"></span><span class="sp"></span><button id="compareCancel"></button><button id="compareSave" class="pri"></button></div>
   <div id="compareBody"></div>

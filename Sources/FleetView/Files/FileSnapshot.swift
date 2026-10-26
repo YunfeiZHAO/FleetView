@@ -91,10 +91,14 @@ enum FileSnapshot {
             case "wait":
                 spin(Double(arg) ?? 1)
             case "do":
-                guard let id = model.activeTab else { break }
+                let id = model.activeTab ?? ""
                 switch arg {
                 case "overwrite": model.overwrite(id)
                 case "restoreRecovered": model.restoreRecovered(id)
+                case "history": model.sideMode = .history
+                case "commit": if let c = model.commits.first { model.openCommit(c.sha) }
+                case "uncommitted": model.openUncommitted()
+                case let a where a.hasPrefix("fileHistory="): model.showHistory(of: String(a.dropFirst("fileHistory=".count)))
                 case "useDisk": model.useDiskVersion(id)
                 case "save": model.saveTabs(model.unsavedTabs) { ok in print("files snapshot: saveTabs ok=\(ok)") }
                 default: break

@@ -14,7 +14,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; }
-#cm, #preview, #info { position: absolute; inset: 0; }
+#cm, #preview, #info, #changes { position: absolute; inset: 0; }
 #cm .cm-editor { height: 100%; }
 #cm .cm-editor.cm-focused { outline: none; }
 @keyframes fvflash { 0%, 30% { background: var(--tintStrong); } 100% { background: transparent; } }
@@ -78,3 +78,43 @@ button.pri { background: var(--accent); color: var(--onAccent); }
 #compareBody .cm-deletedChunk, #compareBody .cm-deletedLine { background: rgba(255,180,171,.12) !important; }
 #compareBody .cm-changedText { background: var(--tintStrong) !important; }
 #compareBody .cm-merge-revert button { padding: 0 4px; }
+
+/* ---- changes: a commit, the working tree, two versions ---- */
+/* Added and removed lines differ by background alone, as everywhere in this window. */
+:root { --dAdd: color-mix(in srgb, var(--accent) 17%, transparent); --dDel: color-mix(in srgb, var(--del) 15%, transparent); }
+#changes { overflow: auto; }
+.chwrap { max-width: 1180px; margin: 0 auto; padding: 18px 22px 40vh; }
+.chhead { padding: 4px 2px 14px; border-bottom: 1px solid var(--stroke); margin-bottom: 12px; }
+.chsub { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.chbody { font: 12.5px/1.55 var(--mono); color: var(--sub); white-space: pre-wrap; margin: 8px 0 0; }
+.chmeta { margin-top: 8px; font-size: 12px; color: var(--outline); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.chmeta .sha, .chfh .sha { font-family: var(--mono); color: var(--accent); }
+.chmeta a { color: var(--accent); cursor: pointer; font-family: var(--mono); }
+.chmeta .agent { background: var(--high); color: var(--text); border-radius: 9px; padding: 0 7px; font-size: 11px; }
+.chbtns { display: flex; gap: 8px; margin-top: 10px; }
+.chbtns button, .chfh button { font-size: 11.5px; padding: 2px 9px; }
+.a { color: var(--accent); } .d { color: var(--del); }
+.chf { border: 1px solid var(--stroke); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.chfh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); cursor: pointer; font-size: 12.5px; position: sticky; top: 0; z-index: 1; }
+.chfh .chev { color: var(--outline); width: 10px; transition: transform .12s; display: inline-block; }
+.chf.open .chfh .chev { transform: rotate(90deg); }
+.chfh .fp { color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; min-width: 0; }
+.chfh .fp b { color: var(--text); font-weight: 600; }
+.chfh .old { color: var(--outline); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chfh .sp { flex: 1; }
+.chfh .n { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+.st { font: 600 10.5px var(--mono); width: 16px; text-align: center; border-radius: 4px; flex: none; }
+.st.sA, .st.sU { color: var(--accent); } .st.sM, .st.sR, .st.sC, .st.sT { color: #ffb86a; } .st.sD { color: var(--del); }
+.chfb { font: var(--fs)/1.55 var(--mono); overflow-x: auto; }
+.dr { display: grid; grid-template-columns: 48px 48px 1fr; min-width: max-content; cursor: default; }
+.dr.click { cursor: pointer; }
+.dr .ln { color: var(--gutter); text-align: right; padding-right: 8px; user-select: none; font-size: .92em; }
+.dr .tx { white-space: pre; padding: 0 12px 0 6px; }
+.dr.add { background: var(--dAdd); }
+.dr.del { background: var(--dDel); }
+.dr:hover .ln { color: var(--text); }
+.dh { color: var(--outline); background: var(--high); padding: 2px 12px 2px 104px; font-size: .92em; white-space: pre; }
+.chnote { color: var(--outline); font-size: 12.5px; padding: 10px 14px; }
+.chnote button { margin-left: 8px; }
+.chmore { color: var(--outline); font-size: 12.5px; padding: 6px 2px; }
+.chloading { color: var(--outline); padding: 40px; text-align: center; }

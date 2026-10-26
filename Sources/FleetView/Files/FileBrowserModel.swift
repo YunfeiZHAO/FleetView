@@ -9,6 +9,40 @@ func onUtility<T>(_ work: @escaping @Sendable () -> T) async -> T {
     }
 }
 
+/// A repository the window shows: the project's own, or one inside a project folder that is not a
+/// repository itself.
+struct RepoRef: Equatable {
+    let repo: GitReader.Repo
+    /// "" for the project's own repository; otherwise the folder, relative to the project root, that
+    /// is the repository's top level.
+    let folder: String
+    /// The project root's path inside the repository: "" unless the project is a folder inside it.
+    let rootInRepo: String
+
+    /// A repository-relative path as the tree names it, or nil when it is outside the project.
+    func project(_ p: String) -> String? {
+        if !folder.isEmpty { return p.isEmpty ? folder : folder + "/" + p }
+        if rootInRepo.isEmpty { return p }
+        if p == rootInRepo { return "" }
+        return p.hasPrefix(rootInRepo + "/") ? String(p.dropFirst(rootInRepo.count + 1)) : nil
+    }
+
+    /// A path in the tree as the repository names it.
+    func inRepo(_ rel: String) -> String {
+        if !folder.isEmpty { return rel == folder ? "" : String(rel.dropFirst(folder.count + 1)) }
+        if rootInRepo.isEmpty { return rel }
+        return rel.isEmpty ? rootInRepo : rootInRepo + "/" + rel
+    }
+
+    /// Whether a path in the tree is in this repository.
+    func contains(_ rel: String) -> Bool {
+        folder.isEmpty || rel == folder || rel.hasPrefix(folder + "/")
+    }
+
+    /// The part of the repository the window shows: the project's folder in it, or all of it.
+    var scope: String? { rootInRepo.isEmpty ? nil : rootInRepo }
+}
+
 /// The status bar's cursor and diff counts (see `FileBrowserModel.statusBar`).
 @MainActor
 final class FileStatusModel: ObservableObject {
@@ -29,7 +63,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         let ignored: Bool
     }
 
-    enum Kind: Equatable { case text, image, other }
+    enum Kind: Equatable { case text, image, other, changes }
     enum Mode: String { case source, preview }
 
     struct Tab: Identifiable, Equatable {
@@ -41,6 +75,8 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         var dirty = false
         var readOnly: String? = nil
         var wrap = false
+        /// For a `.changes` tab: which changes it shows.
+        var changes: ChangeSpec? = nil
     }
 
     enum Banner: Equatable {
@@ -99,12 +135,16 @@ final class FileBrowserModel: ObservableObject, EditorHost {
 
     @Published private(set) var repo: GitReader.Repo?
     @Published private(set) var branch: String?
+    /// Repositories inside a project folder that is not one (see RepoRef). Empty when `repo` is set.
+    @Published private(set) var nested: [RepoRef] = []
+    /// Their branches, by folder.
+    @Published private(set) var nestedBranches: [String: String] = [:]
     @Published private(set) var rows: [Row] = []
     @Published private(set) var marks: [String: GitStatus.Mark] = [:]
     @Published private(set) var dirtyDirs: Set<String> = []
     @Published var showIgnored = false { didSet { if showIgnored != oldValue { rebuildRows() } } }
-    @Published private(set) var tabs: [Tab] = []
-    @Published private(set) var activeTab: String?
+    @Published var tabs: [Tab] = []
+    @Published var activeTab: String?
     @Published private(set) var banners: [String: Banner] = [:]
     /// Cursor and diff counts, which change with every keystroke: their own object, so typing redraws
     /// the status bar and not the tree, the tabs and the toolbar.
@@ -120,8 +160,8 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     @Published var toast: String?
 
     // Finding files (FileBrowserModel+Find).
-    enum SideMode: Hashable { case tree, search }
-    @Published var sideMode: SideMode = .tree
+    enum SideMode: Hashable { case tree, search, history }
+    @Published var sideMode: SideMode = .tree { didSet { if sideMode == .history && oldValue != .history { historyShown() } } }
     @Published var filter = "" { didSet { if filter != oldValue { runFilter() } } }
     @Published var filterResults: [String] = []
     @Published var quickOpen = false {
@@ -150,6 +190,23 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     var forwardStack: [String] = []
     var navigating = false
     var recentOpened: [String] = []
+
+    // History (FileBrowserModel+History).
+    /// The repository the 提交 page shows, by folder ("" is the project's own).
+    @Published var historyRepo = ""
+    /// The branch it lists; nil is HEAD.
+    @Published var historyRef: String?
+    /// A file or folder whose history it lists (project-relative); nil for all of it.
+    @Published var historyPath: String?
+    @Published var commits: [GitCommit] = []
+    @Published var historyState: HistoryState = .idle
+    @Published var branchList: [GitBranch] = []
+    /// A commit picked as one end of a comparison, waiting for the other.
+    @Published var comparePick: String?
+    var historyStale = true
+    var historyGeneration = 0
+    /// What a changes tab's page asked for, by tab: the files, to answer `patch/` and `blob/` by index.
+    var changeFiles: [String: [ChangeFile]] = [:]
 
     // Recently changed files (FileBrowserModel+Recent).
     struct Recent: Identifiable, Equatable {
@@ -188,9 +245,19 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     /// Staged renames: new path → the path HEAD has it under.
     private(set) var renames: [String: String] = [:]
     private(set) var headCommit: String?
+    /// Per repository (by folder), what HEAD was the last time it was looked at.
+    private var headCommits: [String: String] = [:]
+    private var headSignatures: [String: String] = [:]
+    /// Each repository's last status, by folder; merged into `marks` and the rest.
+    private var statusBy: [String: RepoStatus] = [:]
+    func repoStatus(_ folder: String) -> RepoStatus? { statusBy[folder] }
+    struct RepoStatus {
+        var marks: [String: GitStatus.Mark] = [:]
+        var untracked: Set<String> = []
+        var renames: [String: String] = [:]
+    }
     private var toastTimer: DispatchWorkItem?
     private var lastKey: (name: String, from: KeySource, at: Date) = ("", .window, .distantPast)
-    private var headSignature: String?
 
     /// The window can be seen. Everything that costs anything waits for this.
     var visible = true {
@@ -247,6 +314,8 @@ final class FileBrowserModel: ObservableObject, EditorHost {
                 readBranch()
                 checkHead()
                 requestStatus(after: 0)
+            } else {
+                await self.discoverNested()
             }
             startWatching()
             refreshRecent()
@@ -323,6 +392,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         // `git check-ignore` is not run again for a folder an agent is only writing into.
         let known = force ? nil : listings[dir].map { list in (Set(list.map(\.name)), ignoredNames[dir] ?? [], ignoreStamp[dir]) }
         Task {
+            let lookForGit = repo == nil && !dir.isEmpty && !self.nested.contains { $0.folder == dir }
             let (entries, ignored, stamp) = await onUtility { () -> ([Entry], Set<String>, Date?) in
                 let entries = Self.list(abs)
                 let stamp = (try? FileManager.default.attributesOfItem(atPath: abs + "/.gitignore"))?[.modificationDate] as? Date
@@ -337,6 +407,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
             self.listings[dir] = entries
             self.ignoredNames[dir] = ignored
             self.ignoreStamp[dir] = stamp
+            if lookForGit && FileManager.default.fileExists(atPath: abs + "/.git") { self.addNested([dir]) }
             self.rebuildRows()
             let waiting = self.loadWaiters.removeValue(forKey: dir) ?? []
             waiting.forEach { $0() }
@@ -413,6 +484,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
 
     private var pendingDirs: Set<String> = []
     private var pendingIndex = false, pendingHead = false, pendingRescan = false
+    private var pendingNested: [String: ProjectWatcher.GitMove] = [:]
     private var flushTimer: DispatchWorkItem?
 
     private func received(_ b: ProjectWatcher.Batch) {
@@ -420,6 +492,12 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         pendingIndex = pendingIndex || b.index
         pendingHead = pendingHead || b.head
         pendingRescan = pendingRescan || b.rescan
+        for (folder, m) in b.nested {
+            var e = pendingNested[folder] ?? ProjectWatcher.GitMove()
+            e.index = e.index || m.index
+            e.head = e.head || m.head
+            pendingNested[folder] = e
+        }
         // A build running for an hour behind a covered window would otherwise pile up every folder it
         // touched: past a point, looking at everything once is cheaper than remembering each.
         if pendingDirs.count > 2000 { pendingDirs.removeAll(); pendingRescan = true }
@@ -446,10 +524,16 @@ final class FileBrowserModel: ObservableObject, EditorHost {
             }
         }
         if pendingRescan { for id in watches.keys { scheduleCheck(id, after: 0.1) } }
-        if pendingHead { checkHead(); readBranch() }
+        let nestedMoved = pendingNested
+        pendingNested.removeAll()
+        if repo == nil {
+            let unknown = nestedMoved.keys.filter { f in !nested.contains { $0.folder == f } }
+            if !unknown.isEmpty { addNested(unknown) }
+        }
+        if pendingHead || nestedMoved.values.contains(where: \.head) { checkHead(); readBranch() }
         // An agent writing into a folder git already lists as one untracked entry, or into one it
         // ignores, changes nothing git would report: no status for that.
-        let worthStatus = pendingIndex || pendingHead || pendingRescan
+        let worthStatus = pendingIndex || pendingHead || pendingRescan || !nestedMoved.isEmpty
             || pendingDirs.contains { d in !untrackedDirs.contains { d == $0 || d.hasPrefix($0 + "/") } && !isIgnored(d) }
         if worthStatus { requestStatus() }
         if pendingIndex || pendingRescan || pendingDirs.contains(where: { !isIgnored($0) }) { fileIndexStale = true }
@@ -488,7 +572,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     /// behind another window, never while it cannot be seen — and never sooner than five times what
     /// the last one took, so a slow repository is asked less often.
     func requestStatus(after delay: TimeInterval = 1.5) {
-        guard repo != nil else { return }
+        guard !repos.isEmpty else { return }
         guard visible else { gitStale = true; return }
         statusTimer?.cancel()
         let minGap = max(isKey ? 3 : 10, lastStatusTook * 5)
@@ -499,10 +583,12 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     }
 
     private func runStatus(attempt: Int) {
-        guard let repo, visible else { gitStale = true; return }
+        guard !repos.isEmpty, visible else { gitStale = true; return }
         if statusRunning { statusAgain = true; return }
-        // An agent's git command holds the index right now: let it finish first.
-        if FileManager.default.fileExists(atPath: repo.gitDir + "/index.lock"), attempt < 10 {
+        // An agent's git command holds an index right now: let it finish first. A repository still
+        // locked after ten tries keeps its last status this round.
+        let locked = repos.filter { FileManager.default.fileExists(atPath: $0.repo.gitDir + "/index.lock") }
+        if !locked.isEmpty, attempt < 10 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.runStatus(attempt: attempt + 1) }
             return
         }
@@ -511,33 +597,49 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         let token = CancelToken()
         statusCancel = token
         let started = Date()
+        let refs = repos.filter { r in !locked.contains(r) }
         Task {
-            let sub = self.rootInRepo
-            let entries = await onUtility { GitReader.shared.status(repo, under: sub.isEmpty ? nil : sub, cancel: token) }
+            // One after another: the two git slots are shared with every other window.
+            let results = await onUtility { () -> [(String, [GitStatus.Entry])] in
+                refs.compactMap { r in
+                    GitReader.shared.status(r.repo, under: r.scope, cancel: token).map { (r.folder, $0) }
+                }
+            }
             self.statusRunning = false
             self.lastStatusAt = Date()
             self.lastStatusTook = Date().timeIntervalSince(started)
-            if let entries { self.apply(entries) }
+            for (folder, entries) in results {
+                guard let r = self.repos.first(where: { $0.folder == folder }) else { continue }
+                self.statusBy[folder] = Self.digest(entries, in: r)
+            }
+            self.mergeStatus()
             if self.statusAgain { self.statusAgain = false; self.requestStatus() }
         }
     }
 
-    private func repoRelative(_ p: String) -> String? {
-        if rootInRepo.isEmpty { return p }
-        if p == rootInRepo { return "" }
-        return p.hasPrefix(rootInRepo + "/") ? String(p.dropFirst(rootInRepo.count + 1)) : nil
-    }
-
-    private func apply(_ entries: [GitStatus.Entry]) {
-        var m: [String: GitStatus.Mark] = [:], dirs = Set<String>(), untracked = Set<String>(), moved: [String: String] = [:]
+    private static func digest(_ entries: [GitStatus.Entry], in r: RepoRef) -> RepoStatus {
+        var out = RepoStatus()
         for e in entries {
             var p = e.path
             let isDir = p.hasSuffix("/")
             if isDir { p.removeLast() }
-            guard let rel = repoRelative(p), !rel.isEmpty else { continue }
-            m[rel] = e.mark
-            if isDir { untracked.insert(rel) }
-            if let o = e.originalPath, let relO = repoRelative(o) { moved[rel] = relO }
+            guard let rel = r.project(p), !rel.isEmpty else { continue }
+            out.marks[rel] = e.mark
+            if isDir { out.untracked.insert(rel) }
+            if let o = e.originalPath, let relO = r.project(o) { out.renames[rel] = relO }
+        }
+        return out
+    }
+
+    private func mergeStatus() {
+        statusBy = statusBy.filter { k, _ in repos.contains { $0.folder == k } }
+        var m: [String: GitStatus.Mark] = [:], dirs = Set<String>(), untracked = Set<String>(), moved: [String: String] = [:]
+        for st in statusBy.values {
+            m.merge(st.marks) { a, _ in a }
+            untracked.formUnion(st.untracked)
+            moved.merge(st.renames) { a, _ in a }
+        }
+        for rel in m.keys {
             var d = Self.parent(rel)
             while !d.isEmpty { dirs.insert(d); d = Self.parent(d) }
         }
@@ -546,6 +648,73 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         untrackedDirs = untracked
         renames = moved
         refreshRecent()
+    }
+
+    // MARK: - Repositories
+
+    /// The project's own repository, as a RepoRef.
+    var mainRef: RepoRef? { repo.map { RepoRef(repo: $0, folder: "", rootInRepo: rootInRepo) } }
+
+    /// Every repository the window shows: the project's own, or those found inside it.
+    var repos: [RepoRef] { mainRef.map { [$0] } ?? nested }
+
+    /// The repository a path in the tree belongs to.
+    func repoFor(_ rel: String) -> RepoRef? {
+        if let m = mainRef { return m }
+        return nested.filter { $0.contains(rel) }.max { $0.folder.count < $1.folder.count }
+    }
+
+    func repo(folder: String) -> RepoRef? { repos.first { $0.folder == folder } }
+
+    /// A project folder that is not a repository may hold some: look three levels down, briefly,
+    /// past the folders nobody keeps repositories in. More turn up as the tree lists folders.
+    private func discoverNested() async {
+        let root = self.root
+        let found = await onUtility { () -> [String] in
+            let fm = FileManager.default
+            let deadline = Date().addingTimeInterval(0.5)
+            var out: [String] = [], queue: [(String, Int)] = [("", 0)], seen = 0
+            while !queue.isEmpty, seen < 3000, Date() < deadline, out.count < 12 {
+                let (rel, depth) = queue.removeFirst()
+                seen += 1
+                let abs = rel.isEmpty ? root : root + "/" + rel
+                if !rel.isEmpty && fm.fileExists(atPath: abs + "/.git") { out.append(rel); continue }
+                guard depth < 3, let names = try? fm.contentsOfDirectory(atPath: abs) else { continue }
+                for n in names.sorted() where !n.hasPrefix(".") && !ProjectFiles.skipped.contains(n) {
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: abs + "/" + n, isDirectory: &isDir), isDir.boolValue {
+                        queue.append((rel.isEmpty ? n : rel + "/" + n, depth + 1))
+                    }
+                }
+            }
+            return out
+        }
+        if !found.isEmpty { addNested(found) }
+    }
+
+    /// Take these folders on as repositories, if git agrees they are the top of one.
+    func addNested(_ folders: [String]) {
+        guard repo == nil else { return }
+        let root = self.root
+        let fresh = folders.filter { f in !nested.contains { $0.folder == f } }
+        guard !fresh.isEmpty, nested.count < 12 else { return }
+        Task {
+            let refs = await onUtility { () -> [RepoRef] in
+                fresh.compactMap { f in
+                    let abs = root + "/" + f
+                    guard let r = GitReader.shared.repo(at: abs),
+                          URL(fileURLWithPath: r.toplevel).resolvingSymlinksInPath().path == abs else { return nil }
+                    return RepoRef(repo: r, folder: f, rootInRepo: "")
+                }
+            }
+            let added = refs.filter { r in !self.nested.contains { $0.folder == r.folder } }
+            guard !added.isEmpty else { return }
+            self.nested = (self.nested + added).sorted { $0.folder < $1.folder }.prefix(12).map { $0 }
+            self.readBranch()
+            self.checkHead()
+            self.requestStatus(after: 0)
+            self.historyReposChanged()
+        }
     }
 
     private nonisolated static func headSignature(_ repo: GitReader.Repo) -> String? {
@@ -562,11 +731,21 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     }
 
     /// What HEAD points at, read from the file rather than by running git.
-    private func readBranch() {
-        guard let repo, let head = try? String(contentsOfFile: repo.gitDir + "/HEAD", encoding: .utf8) else { return }
+    nonisolated static func branchName(_ repo: GitReader.Repo) -> String? {
+        guard let head = try? String(contentsOfFile: repo.gitDir + "/HEAD", encoding: .utf8) else { return nil }
         let h = head.trimmingCharacters(in: .whitespacesAndNewlines)
-        branch = h.hasPrefix("ref: refs/heads/") ? String(h.dropFirst("ref: refs/heads/".count)) : String(h.prefix(8))
-        window?.subtitle = subtitle
+        return h.hasPrefix("ref: refs/heads/") ? String(h.dropFirst("ref: refs/heads/".count)) : String(h.prefix(8))
+    }
+
+    private func readBranch() {
+        if let repo {
+            let b = Self.branchName(repo)
+            if b != branch { branch = b }
+            window?.subtitle = subtitle
+        }
+        var nb: [String: String] = [:]
+        for r in nested { nb[r.folder] = Self.branchName(r.repo) }
+        if nb != nestedBranches { nestedBranches = nb }
     }
 
     var subtitle: String {
@@ -580,16 +759,20 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     /// when they differ from last time. Every focus change and every ref event would otherwise be a
     /// `git rev-parse`.
     func checkHead() {
-        guard let repo else { return }
-        Task {
-            let sig = await onUtility { Self.headSignature(repo) }
-            if let sig, sig == self.headSignature { return }
-            let commit = await onUtility { GitReader.shared.headCommit(repo) }
-            self.headSignature = sig
-            guard commit != self.headCommit else { return }
-            let first = self.headCommit == nil
-            self.headCommit = commit
-            if !first { for t in self.tabs where t.kind == .text { self.editor.call("headChanged", [t.id]) } }
+        for r in repos {
+            Task {
+                let sig = await onUtility { Self.headSignature(r.repo) }
+                if let sig, sig == self.headSignatures[r.folder] { return }
+                let commit = await onUtility { GitReader.shared.headCommit(r.repo) }
+                self.headSignatures[r.folder] = sig
+                self.historyMoved(r.folder)
+                guard commit != self.headCommits[r.folder] else { return }
+                let first = self.headCommits[r.folder] == nil
+                self.headCommits[r.folder] = commit
+                if r.folder.isEmpty { self.headCommit = commit }
+                guard !first else { return }
+                for t in self.tabs where t.kind == .text && r.contains(t.path) { self.editor.call("headChanged", [t.id]) }
+            }
         }
     }
 
@@ -609,7 +792,9 @@ final class FileBrowserModel: ObservableObject, EditorHost {
                                                "mp3", "mp4", "mov", "m4a", "wav", "aiff", "sqlite", "db", "jar",
                                                "class", "o", "a", "dylib", "so", "pyc", "woff", "woff2", "ttf", "otf"]
 
-    static func language(for path: String) -> String {
+    /// `sniff`: read the first line of a file with no extension for a `#!` — not for a list of
+    /// paths from a commit, which may not exist on disk.
+    static func language(for path: String, sniff: Bool = true) -> String {
         let name = (path as NSString).lastPathComponent.lowercased()
         let ext = (name as NSString).pathExtension
         switch ext {
@@ -644,7 +829,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         if [".zshrc", ".bashrc", ".bash_profile", ".zprofile", ".profile"].contains(name) { return "shell" }
         if name == "makefile" || name == "gnumakefile" { return "shell" }
         // No extension: the first line may say (`scripts/project-manager` is Python).
-        if ext.isEmpty, let h = FileHandle(forReadingAtPath: path) {
+        if sniff, ext.isEmpty, let h = FileHandle(forReadingAtPath: path) {
             let first = String(decoding: h.readData(ofLength: 120), as: UTF8.self)
             try? h.close()
             if first.hasPrefix("#!") {
@@ -684,15 +869,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         let lang = Self.language(for: abs)
         let id = UUID().uuidString
         let tab = Tab(id: id, path: rel, pinned: pin, kind: kind, mode: lang == "markdown" ? .preview : .source)
-        if !pin, let i = tabs.firstIndex(where: { !$0.pinned && !$0.dirty }) {
-            let old = tabs[i].id
-            tabs[i] = tab
-            dispose(old)
-        } else if let a = tabs.firstIndex(where: { $0.id == activeTab }) {
-            tabs.insert(tab, at: a + 1)
-        } else {
-            tabs.append(tab)
-        }
+        placeTab(tab, pin: pin)
         docs[id] = Doc(abs: abs, lang: lang, size: size)
         activeTab = id
         status = Status()
@@ -715,6 +892,19 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         }
         noteOpened(rel)
         reveal(rel)
+    }
+
+    /// A new tab goes where the preview tab was (unless `pin`), or after the one in front.
+    func placeTab(_ tab: Tab, pin: Bool) {
+        if !pin, let i = tabs.firstIndex(where: { !$0.pinned && !$0.dirty }) {
+            let old = tabs[i].id
+            tabs[i] = tab
+            dispose(old)
+        } else if let a = tabs.firstIndex(where: { $0.id == activeTab }) {
+            tabs.insert(tab, at: a + 1)
+        } else {
+            tabs.append(tab)
+        }
     }
 
     static func rawURL(_ abs: String) -> String {
@@ -776,7 +966,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
                 if !whereTo.isEmpty { self.editor.call("jump", [id, whereTo]) }
             }
         }
-        if let rel = tabs.first(where: { $0.id == id })?.path { reveal(rel); noteOpened(rel) }
+        if let t = tabs.first(where: { $0.id == id }), t.kind != .changes { reveal(t.path); noteOpened(t.path) }
     }
 
     func pin(_ id: String) {
@@ -827,6 +1017,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         watches.removeValue(forKey: id)?.cancel()
         checks.removeValue(forKey: id)?.cancel()
         docs.removeValue(forKey: id)
+        changeFiles.removeValue(forKey: id)
         diskReads.removeValue(forKey: id)
         banners.removeValue(forKey: id)
     }
@@ -848,6 +1039,9 @@ final class FileBrowserModel: ObservableObject, EditorHost {
         case "disk": return await serveDoc(rest, updateBase: false)
         case "head": return await serveHead(rest)
         case "raw": return await serveRaw(rest)
+        case "changes": return await serveChanges(rest)
+        case "patch": return await servePatch(rest)
+        case "blob": return await serveBlob(rest)
         default: return .notFound
         }
     }
@@ -938,7 +1132,7 @@ final class FileBrowserModel: ObservableObject, EditorHost {
     /// 404 — no tint — for a file HEAD does not have (new, untracked, no commits yet) and for files
     /// above 20 MB, where the page does not diff anyway.
     func serveHead(_ id: String) async -> EditorBridge.Response {
-        guard let doc = docs[id], repo != nil, doc.size <= 20_000_000 else { return .notFound }
+        guard let doc = docs[id], let rel0 = relative(doc.abs), repoFor(rel0) != nil, doc.size <= 20_000_000 else { return .notFound }
         var target = doc.abs
         // A rename staged in the index: HEAD has the file under its old name.
         if let rel = relative(doc.abs), let old = renames[rel] { target = absolute(old) }
@@ -1089,6 +1283,22 @@ final class FileBrowserModel: ObservableObject, EditorHost {
             if let tab, let id = body["id"] as? String, let d = docs[tab] {
                 if id == "openDefault", Self.safeToOpen(d.abs) { NSWorkspace.shared.open(URL(fileURLWithPath: d.abs)) }
                 if id == "reveal" { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: d.abs)]) }
+            }
+        case "openFile":
+            if let path = body["path"] as? String { open(path, pin: true, line: body["line"] as? Int) }
+        case "openCommit":
+            if let sha = body["sha"] as? String, let spec = tabs.first(where: { $0.id == tab })?.changes {
+                openCommit(sha, in: spec.repoFolder, pin: true)
+            }
+        case "compareWorktree":
+            if let sha = body["sha"] as? String, let spec = tabs.first(where: { $0.id == tab })?.changes {
+                compareWithWorktree(sha, in: spec.repoFolder)
+            }
+        case "copy":
+            if let text = body["text"] as? String {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                showToast(L(.filesCopied))
             }
         case "mode":
             if let tab, let m = (body["mode"] as? String).flatMap(Mode.init(rawValue:)),

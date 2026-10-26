@@ -169,5 +169,5 @@ now holds that.
 4. Quick open, search in files, back and forward.
 5. Recently changed files and who changed them.
 
-History and compare views (the 提交 / 对比 pages of the earlier git mockup) are a later design; the
-window does not show their tabs until they exist.
+History and compare views (the 提交 / 对比 pages of the earlier git mockup) came next: see
+[the file window's history](2026-10-26-file-window-history.md).
