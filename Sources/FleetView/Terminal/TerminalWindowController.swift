@@ -162,6 +162,35 @@ private final class ThemedTerminalView: LocalProcessTerminalView {
     }
 }
 
+/// Collects the exit status of a window's child after SwiftTerm has stopped watching for it.
+///
+/// SwiftTerm calls `waitpid` only from its own exit watch, and `LocalProcess.terminate()` cancels
+/// that watch the moment it has sent SIGTERM — before the child has had a chance to exit. So every
+/// window FleetView closed (removing a card, closing it, hiding it) left its `tmux attach` client
+/// behind as a zombie: 42 of them on one run that had been up three days, one per removed card.
+/// Harmless one at a time, but each holds a pid until FleetView quits. See
+/// docs/问题与修复/2026-10-30-closed-windows-leave-zombies.md.
+private enum ChildReaper {
+    private static let queue = DispatchQueue(label: "fleetview.child-reaper")
+
+    static func collect(_ pid: pid_t) {
+        guard pid > 0 else { return }
+        check(pid, again: 0.05)
+    }
+
+    /// Polled, with the wait growing, rather than watched with a process source: tested against
+    /// SwiftTerm 1.14, a watch armed between the SIGTERM and the exit never fired — 30 runs out of
+    /// 30 left the zombie. A client that ignores the SIGTERM is looked at once a minute, which is
+    /// one syscall. The pid cannot be reused while this runs: until it is waited for, it is ours.
+    private static func check(_ pid: pid_t, again delay: TimeInterval) {
+        queue.asyncAfter(deadline: .now() + delay) {
+            var status: Int32 = 0
+            // 0 is still running. Anything else — collected, or not ours to collect — ends it.
+            if waitpid(pid, &status, WNOHANG) == 0 { check(pid, again: min(delay * 4, 60)) }
+        }
+    }
+}
+
 /// One independent terminal window (its own NSWindow hosting a SwiftTerm view), running an
 /// interactive login shell in the project cwd. The dashboard shows a card per controller.
 @MainActor
@@ -173,6 +202,9 @@ final class TerminalWindowController: NSObject, NSWindowDelegate, @preconcurrenc
     /// The window is on its way out, so the process ending is our own doing rather than the shell
     /// exiting under the user. Without it the card would land on "exited" instead of "closed".
     private var closing = false
+    /// SwiftTerm has already waited for the child: it ended on its own and its exit watch fired.
+    /// Once that has happened the pid is free to be reused, and must not be waited on again.
+    private var childReaped = false
 
     var onExit: ((UUID, Int32?) -> Void)?
     var onClose: ((UUID) -> Void)?
@@ -393,6 +425,7 @@ final class TerminalWindowController: NSObject, NSWindowDelegate, @preconcurrenc
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}   // keep our fixed name
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     func processTerminated(source: TerminalView, exitCode: Int32?) {
+        childReaped = true               // SwiftTerm calls this only after its own waitpid
         guard !closing else { return }   // we killed it; `handleWindowClosed` owns the status
         onExit?(termId, exitCode)
     }
@@ -410,6 +443,9 @@ final class TerminalWindowController: NSObject, NSWindowDelegate, @preconcurrenc
         // terminating a window whose shell already ended (`exit` at the prompt) would signal that
         // pid number again — by then it can belong to something else entirely.
         if termView.process.running { termView.process.terminate() }
+        // Whether or not it was running: the pty can report EOF before the exit arrives, and the
+        // exit watch that would have reaped it dies with this view.
+        if !childReaped { ChildReaper.collect(termView.process.shellPid) }
         onClose?(termId)
     }
 }

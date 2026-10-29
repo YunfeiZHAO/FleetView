@@ -1105,6 +1105,43 @@ enum WebDashboardPage {
 </div>
 
 <script>
+/* ---------- requests that cannot hang ----------
+   On a bad line the page used to drop off and stay off until it was reloaded. Nothing here had a
+   deadline: a request sent just before the network went away — or before the phone moved to
+   another network, or slept — waits for an answer on a connection that no longer exists, and a
+   browser lets a page have six connections to one host. The polls below fire every second or two,
+   so six such requests piled up within seconds, and every request after them, the ping that
+   decides "offline" included, queued behind them for good. Reloading worked only because it threw
+   the six away. So every request gets a deadline and can be dropped on demand (`abortAll`), and
+   the polls never overlap themselves (`poll`). `timeout:0` opts out, for the few requests whose
+   answer must not be guessed at: a send, whose failure path puts the text back to be sent again,
+   and a save. */
+const FETCH_DEADLINE=12000;
+const inflight=new Set();
+const fetchNoDeadline=window.fetch.bind(window);
+window.fetch=function(input,init){
+  init=Object.assign({},init);
+  const ms=init.timeout===undefined?FETCH_DEADLINE:init.timeout; delete init.timeout;
+  if(!ms) return fetchNoDeadline(input,init);
+  const ctl=new AbortController(), theirs=init.signal;
+  if(theirs){ if(theirs.aborted) ctl.abort(); else theirs.addEventListener('abort',()=>ctl.abort(),{once:true}); }
+  init.signal=ctl.signal;
+  inflight.add(ctl);
+  /* Left running after the headers arrive: the body can stall too, and aborting a request that
+     has finished is a no-op. */
+  setTimeout(()=>{ ctl.abort(); inflight.delete(ctl); },ms);
+  return fetchNoDeadline(input,init);
+};
+function abortAll(){ for(const c of inflight) c.abort(); inflight.clear(); }
+/* Run `fn` every `ms`, skipping a beat while the last run is still out — at most one request per
+   poll on the wire, however slow the line. */
+function poll(fn,ms,now=true){
+  let busy=false;
+  const run=async()=>{ if(busy) return; busy=true; try{ await fn(); }catch(e){} finally{ busy=false; } };
+  if(now) run();
+  return setInterval(run,ms);
+}
+
 /* ---------- words ----------
    Every word the page shows lives here, once per language, key for key — the markup and the code
    below only ever name a key. Two tables side by side rather than strings scattered through 2,000
@@ -1191,6 +1228,7 @@ const I18N={
     'net.toastOff':'连不上 Mac，正在重试','net.toastOffLast':'连不上 Mac，正在重试（上次：{route}）',
     'net.latency':'延迟 {ms} ms','net.latencyRange':'延迟 {ms} ms（最近 {n} 次 {lo}–{hi} ms）',
     'net.node':'本设备：{node}','net.refreshed':'看板 {s} 秒前刷新',
+    'net.reconnecting':'正在重连…','net.reconnected':'已重新连接','net.back':'已重新连上 Mac',
     'toast.attachedTo':'文件已附加到「{name}」的输入框',
     'trig.title':'触发器','trig.chip':'{n} 个触发器 · 点击查看',
     'trig.secCron':'定时任务','trig.secBg':'后台任务 · 结束或有动静时唤醒 agent','trig.secLaunchd':'launchd 定时',
@@ -1295,6 +1333,7 @@ const I18N={
     'net.toastOff':'Can’t reach the Mac — retrying','net.toastOffLast':'Can’t reach the Mac — retrying (last: {route})',
     'net.latency':'Latency {ms} ms','net.latencyRange':'Latency {ms} ms (last {n}: {lo}–{hi} ms)',
     'net.node':'This device: {node}','net.refreshed':'Board refreshed {s}s ago',
+    'net.reconnecting':'Reconnecting…','net.reconnected':'Reconnected','net.back':'Back in touch with the Mac',
     'toast.attachedTo':'Attached to {name}’s message box',
     'trig.title':'Triggers','trig.chip':{one:'1 trigger · tap to see',other:'{n} triggers · tap to see'},
     'trig.secCron':'Scheduled','trig.secBg':'Background work · wakes the agent when it reports','trig.secLaunchd':'launchd jobs',
@@ -1862,7 +1901,7 @@ async function popTerm(){await ensureTerm();if(curUrl)window.open(curUrl,'_blank
 
 /* ---------- conversation view ---------- */
 const TOOLICON={terminal:'terminal',edit:'pencil',read:'file-text',search:'search',web:'globe',task:'bot',other:'dot'};
-function startChatPoll(){stopChatPoll();chatTimer=setInterval(loadChat,3000);}
+function startChatPoll(){stopChatPoll();chatTimer=poll(loadChat,3000,false);}
 function stopChatPoll(){if(chatTimer){clearInterval(chatTimer);chatTimer=null;}}
 /* Consecutive failures, so a persistent one can be told apart from a slow one. It used to be
    neither: renderChat lives inside the try and the catch was empty, so the skeleton was only ever
@@ -2706,7 +2745,7 @@ async function sendText(){
      again if it had not — Codex takes text followed at once by Enter as a paste and turns that Enter
      into a newline. "stuck" is the one case that needs you: the text is typed but never ran, which
      on the board looks exactly like an agent ignoring you. An older Mac answers without "submit". */
-  const req=fetch('/type?id='+encodeURIComponent(curId)+'&enter=1&wait=1&text='+encodeURIComponent(t));
+  const req=fetch('/type?id='+encodeURIComponent(curId)+'&enter=1&wait=1&text='+encodeURIComponent(t),{timeout:0});
   setTimeout(loadChat,400);
   try{
     const r=await (await req).json();
@@ -3237,7 +3276,7 @@ async function fbLoadMd(path,mode,scrollTo){
   const body=document.getElementById('fbbody');
   if(!fbDoc) body.innerHTML='<div class="fbnote">'+tr('common.loading')+'</div>';
   let r,text;
-  try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store'}); text=await r.text(); }
+  try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store',timeout:60000}); text=await r.text(); }
   catch(e){ body.innerHTML='<div class="fbnote">'+tr('fb.readFailed')+'</div>'; return; }
   if(fbFile!==path) return;                      // walked away while it loaded
   if(!r.ok){ body.innerHTML='<div class="fbnote">'+esc(text)+'</div>'; return; }
@@ -3313,7 +3352,7 @@ async function fbSave(force){
   try{
     r=await fetch('/save?path='+encodeURIComponent(d.path)+'&base='+encodeURIComponent(d.version)+(force?'&force=1':''),
                   {method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},
-                   body:d.crlf?text.replace(/\n/g,'\r\n'):text});
+                   body:d.crlf?text.replace(/\n/g,'\r\n'):text,timeout:0});
     j=await r.json().catch(()=>({}));
   }catch(e){ toast(tr('toast.saveNoMac')); return; }
   if(fbDoc!==d) return;
@@ -3356,7 +3395,7 @@ function openTrig(id){
   document.getElementById('triglist').innerHTML='<div class="tnote">'+tr('common.loading')+'</div>';
   document.getElementById('trig').classList.add('on');
   loadTrig();
-  clearInterval(trigTimer); trigTimer=setInterval(loadTrig,5000);
+  clearInterval(trigTimer); trigTimer=poll(loadTrig,5000,false);
 }
 function closeTrig(){
   trigId=null; clearInterval(trigTimer); trigTimer=null;
@@ -4101,7 +4140,7 @@ window.addEventListener('hashchange',()=>{
   if(termOpen()) closeTerm();
   if(state) openPendingTerm(state);
 });
-tick();setInterval(tick,1500);
+poll(tick,1500);
 // A tab opened by the file browser's ↗, or one reloaded while it was open, lands on that folder or file.
 { const m=location.hash.match(/^#fb=(.+)$/); if(m){ try{ fbOpenPath(decodeURIComponent(m[1])); }catch(e){} } }
 
@@ -4119,7 +4158,9 @@ async function ping(){
     const r=await fetch('/ping',{cache:'no-store',signal:ctl.signal});
     const j=await r.json();
     net.rtts.push(performance.now()-t0); if(net.rtts.length>5) net.rtts.shift();
+    const wasOff=net.fails>=2;
     net.fails=0; net.via=j;
+    if(wasOff) recovered();
   }catch(e){
     // Gone: what the line was like before says nothing about it once it is back.
     if(++net.fails>=2) net.rtts=[];
@@ -4151,22 +4192,53 @@ function renderNet(){
     el.title=netRoute()+(ms==null?'':' · '+Math.round(ms)+' ms');
   }
 }
-/* Tapping the bars says what they mean: a phone has no hover for the title. */
+/* Tapping the bars reconnects, then says what they mean (a phone has no hover for the title).
+   Reconnecting on every tap rather than only when they read offline: the terminal tab is ttyd's
+   own connection, to another port, and it can be dead — "Press ⏎ to Reconnect", with no ⏎ a phone
+   can reach — while every ping here is fine. */
 function netToast(){
-  const ms=netMedian(), route=netRoute();
-  if(net.fails>=2){ toast(route?tr('net.toastOffLast',{route:route}):tr('net.toastOff'),3500); return; }
-  const parts=[route||tr('net.aria')];
+  // Read before reconnecting, which starts the latency samples over.
+  const off=net.fails>=2, ms=netMedian(), route=netRoute(), rtts=[...net.rtts];
+  reconnect(true);
+  if(off){ toast(tr('net.reconnecting'),3500); return; }
+  const parts=[tr('net.reconnected'),route||tr('net.aria')];
   if(ms!=null){
-    const lo=Math.round(Math.min(...net.rtts)), hi=Math.round(Math.max(...net.rtts));
-    parts.push(net.rtts.length>1?tr('net.latencyRange',{ms:Math.round(ms),n:net.rtts.length,lo:lo,hi:hi})
-                                 :tr('net.latency',{ms:Math.round(ms)}));
+    const lo=Math.round(Math.min(...rtts)), hi=Math.round(Math.max(...rtts));
+    parts.push(rtts.length>1?tr('net.latencyRange',{ms:Math.round(ms),n:rtts.length,lo:lo,hi:hi})
+                            :tr('net.latency',{ms:Math.round(ms)}));
   }
   if(net.via&&net.via.node) parts.push(tr('net.node',{node:net.via.node}));
   if(net.stateAt) parts.push(tr('net.refreshed',{s:Math.max(0,Math.round((Date.now()-net.stateAt)/1000))}));
   toast(parts.join(' · '),4500);
 }
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) ping(); });
-renderNet();ping();setInterval(ping,2000);
+/* Everything in flight is dropped, so nothing new waits behind a request stuck on a dead
+   connection, and what the page shows is asked for again now rather than at the next beat. */
+let manualAt=0;
+function reconnect(manual){
+  abortAll();
+  if(manual){ manualAt=Date.now(); net.rtts=[]; renderNet(); }
+  ping(); tick();
+  if(termOpen()){
+    if(curView==='chat') loadChat();
+    else if(manual) retryTerm();       // a fresh ttyd page, which connects again on load
+  }
+}
+/* The line came back by itself. ttyd may have given up on its socket while it was gone, and a
+   fresh page is the only reliable way back in, so the terminal tab is reloaded too. */
+function recovered(){
+  abortAll(); tick();
+  if(termOpen()){ if(curView==='chat') loadChat(); else retryTerm(); }
+  if(Date.now()-manualAt<20000) toast(tr('net.back'),2500);
+}
+/* A phone that slept or changed networks comes back with every connection it had dead, and none of
+   them says so. Reconnecting costs one round of requests; waiting costs up to the deadline. */
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ hiddenAt=Date.now(); return; }
+  if(hiddenAt&&Date.now()-hiddenAt>5000) reconnect(false); else ping();
+});
+window.addEventListener('online',()=>reconnect(false));
+renderNet();poll(ping,2000);
 
 // ---------- agent-authored dynamic panel (top region) ----------
 let panelMtime=-1;
@@ -4187,11 +4259,11 @@ async function pollPanel(){
     }else{el.classList.remove('show');panelMtime=-1;}
   }catch(e){}
 }
-pollPanel();setInterval(pollPanel,1500);
+poll(pollPanel,1500);
 /* On its own timer, not inside tick(): tick() stops while a conversation is open, and a file that
    arrives while you are reading one is exactly when you want to be told. Slower, because handing a
    file over is a human-paced event. */
-loadFiles();setInterval(loadFiles,4000);
+poll(loadFiles,4000);
 </script>
 </body>
 </html>
