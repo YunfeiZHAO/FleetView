@@ -3,7 +3,7 @@
 | 字段 | 内容 |
 |---|---|
 | 发现日期 | 2026-10-30 |
-| 状态 | 已修复（未部署） |
+| 状态 | 已修复（build 234 部署） |
 | 影响 | 生产 FleetView（PID 58735，10-26 21:05 启动）名下累积了 42 个 `<defunct>` 子进程，每关掉一个终端窗口就多一个，直到 FleetView 退出才会被清掉。只占进程号，不占 CPU 和内存；本机每个用户的进程上限是 5333 |
 | 对应代码版本 | `2e4f3b1` |
 | 修复 | `Sources/FleetView/Terminal/TerminalWindowController.swift`：新增 `ChildReaper`，`windowWillClose` 在 SwiftTerm 没有回收子进程时自己回收 |
@@ -54,7 +54,7 @@
 
 ## 没有覆盖的
 
-- 现有的 42 个僵尸只有 FleetView 退出后才会消失。部署新版本时本来就要退出，到时会一起清掉。
+- 部署 build 234 时退出了旧实例，那 42 个僵尸随之消失；新实例重新接上 18 个窗口后，名下 0 个僵尸。修复本身是在上面的测试程序里验证的，没有为了验证去关用户的窗口。
 - `LocalProcess` 的 `deinit` 也会取消 `childMonitor`。如果以后有路径不经过 `windowWillClose` 就释放了终端视图，同样的问题还会出现。
 
 ## 以后怎么查
