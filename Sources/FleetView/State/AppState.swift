@@ -1443,6 +1443,7 @@ final class AppState: ObservableObject {
         let tmuxPath = remote.tmuxPath
         let srcSession = RemoteServer.sessionName(for: id)
         let srcTranscript = hookSessionPath(for: id) ?? src.transcriptPath
+        if let i = terminals.firstIndex(where: { $0.id == newT.id }) { terminals[i].forkedFrom = srcTranscript }
         let termCwd = src.cwd
         let srcSubPool = src.subPool
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2209,6 +2210,9 @@ final class AppState: ObservableObject {
             }
             // A new process holds none of the old one's crons or background work.
             if ev.source == "startup" || ev.source == "resume" { forgetReportedTriggers(uid) }
+            // Any session but the fork itself is past it: a `/clear` in a fork that has its own file
+            // by then must read as the empty conversation it is, not as the one it was forked from.
+            if ev.source != "fork" { terminals[idx].forkedFrom = nil }
             if ev.source == "startup" {
                 terminals[idx].lastPrompt = ""                    // brand-new session, no prompt yet
             } else if let tp = ev.transcriptPath {
@@ -2422,7 +2426,7 @@ final class AppState: ObservableObject {
             guard let s = query["id"], let id = UUID(uuidString: s), let act = query["do"] else {
                 return ("400 Bad Request", "application/json", Data(#"{"error":"bad id"}"#.utf8))
             }
-            webAction(id, act, name: query["name"])
+            webAction(id, act, name: query["name"], query: query)
             return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
         case "/type":
             guard let s = query["id"], let id = UUID(uuidString: s) else {
@@ -2596,7 +2600,13 @@ final class AppState: ObservableObject {
         // It names a session whose file does not exist yet: Claude has started and nothing has
         // been said, so there is no conversation — and above all not someone else's. Guessing past
         // this point handed a fresh card the newest unclaimed transcript in its folder.
-        if reportedSessionPath(for: id) != nil { return nil }
+        //
+        // Except a fork, which has said nothing new but carries a whole conversation: until its
+        // first message it is the one it was forked from, and that is what its terminal shows.
+        if reportedSessionPath(for: id) != nil {
+            if let origin = t.forkedFrom, FileManager.default.fileExists(atPath: origin) { return origin }
+            return nil
+        }
         if let tp = t.transcriptPath, FileManager.default.fileExists(atPath: tp) { return tp }
         // A plain shell has no conversation at all — never guess one for it, or it would inherit
         // some unrelated session from the same project.
@@ -2678,20 +2688,49 @@ final class AppState: ObservableObject {
     }
 
     /// Perform a card action requested from the web (mirrors the desktop drag-to-act zones).
-    private func webAction(_ id: UUID, _ act: String, name: String?) {
+    private func webAction(_ id: UUID, _ act: String, name: String?, query: [String: String] = [:]) {
         // Wrapped so that an action naming a terminal that no longer exists still leaves a trace:
         // it changes nothing, so the state diff alone would show a silent no-op.
+        let onto = query["card"].map { "card \($0)" } ?? query["cluster"].map { "cluster \($0)" }
+            ?? query["project"].map { "project \($0)" }
         audited(AuditIntent("web.action",
                             categories: ["web"],
                             target: auditTarget(terminal: id),
-                            data: AuditValue.compact(["do": .string(act), "name": name.map { .string($0) }]),
+                            data: AuditValue.compact(["do": .string(act), "name": name.map { .string($0) },
+                                                      "onto": onto.map { .string($0) }]),
                             message: "web action \(act)")) {
-            performWebAction(id, act, name: name)
+            performWebAction(id, act, name: name, query: query)
         }
     }
 
-    private func performWebAction(_ id: UUID, _ act: String, name: String?) {
+    /// What a card dropped on the web board lands on — the desktop's rules (`clusterTarget`) over
+    /// the thing the page says it was dropped on. Decided here rather than trusted from the page:
+    /// the page aims at a board drawn a poll ago, and this is what makes "drop it there" mean the
+    /// same thing on both boards.
+    private func webDrop(_ id: UUID, _ query: [String: String]) -> ClusterDrop? {
+        guard let src = terminals.first(where: { $0.id == id }) else { return nil }
+        func joining(_ cluster: UUID) -> ClusterDrop? {
+            if cluster == src.clusterId { return nil }
+            guard let owner = members(ofCluster: cluster).first?.projectId else { return nil }
+            return owner == src.projectId ? .cluster(cluster) : .project(owner)
+        }
+        if let c = query["cluster"].flatMap(UUID.init(uuidString:)) { return joining(c) }
+        if let t = query["card"].flatMap(UUID.init(uuidString:)), t != id,
+           let target = terminals.first(where: { $0.id == t }) {
+            if target.projectId != src.projectId { return .project(target.projectId) }
+            if let c = target.clusterId { return joining(c) }   // a grouped card means its group
+            return .card(t)
+        }
+        if let p = query["project"].flatMap(UUID.init(uuidString:)), p != src.projectId,
+           project(p) != nil {
+            return .project(p)
+        }
+        return nil
+    }
+
+    private func performWebAction(_ id: UUID, _ act: String, name: String?, query: [String: String] = [:]) {
         switch act {
+        case "drop":         if let drop = webDrop(id, query) { applyClusterDrop(id, drop) }
         case "done":         toggleSubtaskDone(id)
         case "duplicate":    duplicateTerminal(id)
         case "remove":       removeTerminal(id)

@@ -137,6 +137,15 @@ struct TerminalSession: Identifiable, Codable, Hashable {
     /// to the conversation's own record (`AgentHome.resuming`). nil is "never seen either way",
     /// which is every row written before this existed.
     var subPool: Bool? = nil
+
+    /// The conversation this card's Claude was forked from (`--resume <it> --fork-session`, which a
+    /// duplicate types), shown as its conversation until the fork has a file of its own.
+    ///
+    /// A fork names its new session at once but Claude writes the file with the first message, and
+    /// until then the card's own session is a path to nothing. The web chat read it as an empty
+    /// conversation while the terminal beside it showed the whole history it carried. Cleared by
+    /// the next session that is not this fork starting. Optional: this struct is in state.json.
+    var forkedFrom: String? = nil
 }
 
 struct Cluster: Identifiable, Codable, Hashable {

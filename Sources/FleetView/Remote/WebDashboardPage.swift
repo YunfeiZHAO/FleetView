@@ -371,12 +371,24 @@ enum WebDashboardPage {
     background:var(--card);box-shadow:0 8px 28px rgba(0,0,0,.4)}
   .zone{flex:1 1 0;min-width:0;max-width:96px;display:flex;flex-direction:column;align-items:center;gap:4px;
     padding:10px 4px;border-radius:20px;color:var(--text);text-align:center;white-space:nowrap;
-    font-size:12px;line-height:16px;font-weight:500;transition:background .12s}
+    font-size:12px;line-height:16px;font-weight:500;transition:background .12s,color .12s,transform .12s,box-shadow .12s}
   .zone svg.ic{width:20px;height:20px}
   .zone span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .zone.hot{background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  /* The zone under the finger. It used to take the secondary-container tint, which in light is
+     #e8def8 on a #ece6ee dock — a difference nobody could see, least of all around the fingertip
+     covering it. Filled with the accent and lifted clear of the finger instead. */
+  .zone.hot{background:var(--accent);color:var(--onAccent);transform:translateY(-10px) scale(1.12);
+    box-shadow:0 6px 16px rgba(0,0,0,.3)}
   .zone.danger{color:var(--red)}
-  .zone.danger.hot{background:var(--errorContainer);color:var(--onErrorContainer)}
+  .zone.danger.hot{background:var(--red);color:var(--bg)}
+  /* Where a card dropped away from the dock would land — a card, a group or another project — ringed
+     the way the Mac rings it; and the group a card would walk out of, dashed in the error colour,
+     because leaving and joining are opposite outcomes and must not look alike. */
+  .droptarget{outline:2.5px solid var(--accent);outline-offset:3px;
+    box-shadow:0 0 0 7px color-mix(in srgb,var(--accent) 22%,transparent)}
+  section.proj.droptarget{border-radius:16px}
+  .cluster.leaving{outline:2px dashed var(--red);outline-offset:3px}
+  #chip .note{display:block;margin-top:2px;font-weight:400;opacity:.8;white-space:normal}
   /* Six actions across a phone: tighter, and the label a step down, so "取消书签" still fits whole. */
   @media (max-width:440px){ #dock{gap:2px;padding:6px} .zone{padding:10px 2px;font-size:11px} }
   /* terminal overlay */
@@ -1178,7 +1190,11 @@ const I18N={
     'toast.noTranscript':'这个终端没有对话记录',
     'dock.mark':'加书签','dock.unmark':'取消书签','dock.duplicate':'复制','dock.rename':'重命名',
     'dock.hide':'隐藏窗口','dock.show':'显示窗口','dock.leave':'移出组','dock.remove':'移除',
-    'drag.drop':'松开：{action}','prompt.rename':'重命名终端',
+    'drag.drop':'松开：{action}',
+    'drop.join':'松开：加入「{name}」','drop.groupWith':'松开：和「{name}」组成一组',
+    'drop.leave':'松开：移出「{name}」','drop.moveTo':'松开：移到「{name}」','drop.group':'分组',
+    'drop.noteWorking':'agent 正在跑，会被打断后带着记录重开','drop.noteCodex':'Codex 记录按日期存放，不用搬；会在新项目里重新打开',
+    'drop.noteNoHistory':'还没有对话记录，只是换个项目','drop.noteMove':'对话记录一起搬过去，然后重新打开这段对话','prompt.rename':'重命名终端',
     'toast.openOnMac':'先在 Mac 上打开这个终端','toast.gone':'这个终端已经不在看板上了',
     'toast.notOpen':'这个终端现在没有在 Mac 上打开',
     'proj.search':'搜索 ~/PycharmProjects','proj.noMatch':'没有匹配的文件夹','proj.none':'~/PycharmProjects 里没有文件夹',
@@ -1281,7 +1297,11 @@ const I18N={
     // "Bookmark" is a pixel too wide for six zones across a phone.
     'dock.mark':'Mark','dock.unmark':'Unmark','dock.duplicate':'Duplicate','dock.rename':'Rename',
     'dock.hide':'Hide','dock.show':'Show','dock.leave':'Ungroup','dock.remove':'Remove',
-    'drag.drop':'Drop: {action}','prompt.rename':'Rename terminal',
+    'drag.drop':'Drop: {action}',
+    'drop.join':'Release to join “{name}”','drop.groupWith':'Release to group with “{name}”',
+    'drop.leave':'Release to leave “{name}”','drop.moveTo':'Release to move to “{name}”','drop.group':'Group',
+    'drop.noteWorking':'The agent is running; it will be interrupted and reopened with its history','drop.noteCodex':'Codex files history by date, so nothing moves; it reopens in the new project',
+    'drop.noteNoHistory':'No conversation yet; it just changes project','drop.noteMove':'The conversation moves with it and is reopened there','prompt.rename':'Rename terminal',
     'toast.openOnMac':'Open this terminal on the Mac first','toast.gone':'This terminal is no longer on the board',
     'toast.notOpen':'This terminal isn’t open on the Mac right now',
     'proj.search':'Search ~/PycharmProjects','proj.noMatch':'No matching folders','proj.none':'No folders in ~/PycharmProjects',
@@ -3498,9 +3518,10 @@ async function delTrig(i){
 
 // ---------- create / actions ----------
 async function newTerm(pid){try{await fetch('/new?projectId='+encodeURIComponent(pid));setTimeout(tick,300);}catch(e){}}
-async function doAction(id,act,extra){
+async function doAction(id,act,extra,params){
   let u='/action?id='+encodeURIComponent(id)+'&do='+act;
   if(extra)u+='&name='+encodeURIComponent(extra);
+  for(const k in (params||{})) u+='&'+k+'='+encodeURIComponent(params[k]);
   try{await fetch(u);setTimeout(tick,200);}catch(e){}
 }
 
@@ -3513,6 +3534,8 @@ let drag={id:null,name:null,cluster:false,x:0,y:0,sx:0,sy:0,active:false,
 const HOLD_MS=450;
 function endDrag(){
   clearTimeout(drag.holdTimer);
+  markDrop(null); drag.drop=null; drag.hotAct=null; drag.sayKey=null;
+  if(scrollRaf){ cancelAnimationFrame(scrollRaf); scrollRaf=0; }
   window.removeEventListener('pointermove',onMove);
   window.removeEventListener('pointerup',onUp);
   window.removeEventListener('pointercancel',endDrag);
@@ -3543,6 +3566,97 @@ function zoneAt(x,y){
     const r=el.getBoundingClientRect();
     if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return el;
   }return null;
+}
+/* ---------- dropping on the board, as on the Mac ----------
+   Away from the dock a card can land on another card (the two become a group), inside a group (it
+   joins), in another project — its section, or any card or group of it — (it moves there, history
+   and all), or on empty board when it is in a group (it leaves). The same rules, in the same order,
+   as the Mac's `clusterTarget`; the page says what it was over and the Mac decides again on the
+   drop (`do=drop`), so a board drawn a poll ago cannot do something the Mac would not. */
+const byId=(list,id)=>(list||[]).find(x=>x.id===id);
+function clusterEl(cid){ return document.querySelector('.cluster[data-cid="'+cid+'"]'); }
+function sectionEl(pid){ return document.querySelector('section.proj[data-pid="'+pid+'"]'); }
+function boardDrop(x,y){
+  /* The dock's whole footprint, gaps and padding included: a card lying under the panel must not
+     light up through a gap between two zones. */
+  const dk=document.getElementById('dock').getBoundingClientRect();
+  if(x>=dk.left-14&&x<=dk.right+14&&y>=dk.top-14&&y<=dk.bottom+14) return null;
+  const src=state&&byId(state.terminals,drag.id); if(!src) return null;
+  const el=document.elementFromPoint(x,y);
+  if(!el||!el.closest('#root')||el.closest('header')) return null;
+  // A group box wins over the cards in it: the task is what is being aimed at.
+  const cl=el.closest('.cluster');
+  if(cl){
+    if(cl.dataset.cid===src.clusterId) return null;          // already in it
+    return cl.dataset.pid===src.projectId?{k:'cluster',id:cl.dataset.cid,el:cl}
+                                         :{k:'project',id:cl.dataset.pid,el:sectionEl(cl.dataset.pid)||cl};
+  }
+  const cd=el.closest('.card');
+  if(cd&&cd.dataset.id!==drag.id){
+    // A card in 进行中 stands outside its project's section; a foreign one names its project.
+    if(cd.dataset.pid!==src.projectId) return {k:'project',id:cd.dataset.pid,el:sectionEl(cd.dataset.pid)||cd};
+    if(cd.dataset.cid) return cd.dataset.cid===src.clusterId?null:{k:'cluster',id:cd.dataset.cid,el:clusterEl(cd.dataset.cid)||cd};
+    return {k:'card',id:cd.dataset.id,el:cd};
+  }
+  const sec=el.closest('section.proj');
+  if(sec&&sec.dataset.pid!==src.projectId) return {k:'project',id:sec.dataset.pid,el:sec};
+  if(src.clusterId) return {k:'leave',id:src.clusterId,el:clusterEl(src.clusterId)};
+  return null;
+}
+let dropEl=null, leaveEl=null;
+function markDrop(d){
+  const want=d&&d.k!=='leave'?d.el:null, leave=d&&d.k==='leave'?d.el:null;
+  if(dropEl!==want){ if(dropEl)dropEl.classList.remove('droptarget'); if(want)want.classList.add('droptarget'); dropEl=want; }
+  if(leaveEl!==leave){ if(leaveEl)leaveEl.classList.remove('leaving'); if(leave)leave.classList.add('leaving'); leaveEl=leave; }
+}
+/* What letting go would do, in the words of the thing it lands on — and for a move, the second line
+   the Mac gives it: a move restarts the agent, which is more than the gesture looks like. */
+function dropSay(d){
+  const s=state, src=byId(s.terminals,drag.id)||{};
+  const group=id=>{const c=byId(s.clusters,id);return c&&c.name?c.name:tr('drop.group');};
+  if(d.k==='card'){const t=byId(s.terminals,d.id);return [tr('drop.groupWith',{name:t?t.name:''}),''];}
+  if(d.k==='cluster') return [tr('drop.join',{name:group(d.id)}),''];
+  if(d.k==='leave') return [tr('drop.leave',{name:group(d.id)}),''];
+  const p=byId(s.projects,d.id);
+  const note=src.status==='working'?tr('drop.noteWorking'):src.agent==='codex'?tr('drop.noteCodex')
+            :!src.transcript?tr('drop.noteNoHistory'):tr('drop.noteMove');
+  return [tr('drop.moveTo',{name:p?p.name:''}),note];
+}
+/* Near the top or just above the dock the board scrolls under a held card, so another project can
+   be reached on a phone — the touch that is dragging cannot also scroll. */
+let scrollRaf=0;
+function autoScroll(){
+  scrollRaf=0;
+  if(!drag.active) return;
+  const head=document.querySelector('header'), top=head?Math.max(0,head.getBoundingClientRect().bottom):0;
+  const dockTop=document.getElementById('dock').getBoundingClientRect().top, EDGE=64;
+  let v=0;
+  if(drag.y<top+EDGE) v=-Math.ceil((top+EDGE-drag.y)/5);
+  else if(drag.y>dockTop-EDGE&&drag.y<dockTop) v=Math.ceil((drag.y-(dockTop-EDGE))/5);
+  if(!v) return;
+  const before=window.scrollY; window.scrollBy(0,v);
+  if(window.scrollY===before) return;                      // at the end: nothing more to reveal
+  aim(drag.x,drag.y);
+  scrollRaf=requestAnimationFrame(autoScroll);
+}
+/* Work out the target under (x,y) and say so: the zone or the ring, the chip, and a tick on a phone
+   that can give one each time the target changes. */
+function aim(x,y){
+  const chip=document.getElementById('chip');
+  document.querySelectorAll('#dock .zone').forEach(z=>z.classList.remove('hot'));
+  const hot=zoneAt(x,y);
+  drag.hotAct=hot?hot.dataset.zone:null;   // remember target NOW; the dock is hidden before onUp reads it
+  if(hot)hot.classList.add('hot');
+  drag.drop=hot?null:boardDrop(x,y);
+  markDrop(drag.drop);
+  const [say,note]=hot?[tr('drag.drop',{action:hot.dataset.label}),'']:drag.drop?dropSay(drag.drop):[drag.name,''];
+  const key=say+'|'+note;
+  if(drag.sayKey!==key){
+    chip.textContent=say;
+    if(note){ const n=document.createElement('span'); n.className='note'; n.textContent=note; chip.appendChild(n); }
+    if(drag.sayKey&&(hot||drag.drop)&&navigator.vibrate) navigator.vibrate(6);
+    drag.sayKey=key;
+  }
 }
 function onDown(e){
   // The id chip is neither a drag handle nor a way in: a tap on it copies the id and nothing
@@ -3592,13 +3706,10 @@ function onMove(e){
     const chip=document.getElementById('chip');chip.textContent=drag.name;chip.style.display='block';
   }
   const chip=document.getElementById('chip');chip.style.left=e.clientX+'px';chip.style.top=e.clientY+'px';
-  document.querySelectorAll('#dock .zone').forEach(z=>z.classList.remove('hot'));
-  const hot=zoneAt(e.clientX,e.clientY);
-  drag.hotAct=hot?hot.dataset.zone:null;   // remember target NOW; the dock is hidden before onUp reads it
-  if(hot)hot.classList.add('hot');
+  drag.x=e.clientX; drag.y=e.clientY;
   // The label by the finger says what letting go will do, not just what is being carried.
-  const say=hot?tr('drag.drop',{action:hot.dataset.label}):drag.name;
-  if(chip.textContent!==say) chip.textContent=say;
+  aim(e.clientX,e.clientY);
+  if(!scrollRaf) scrollRaf=requestAnimationFrame(autoScroll);
 }
 function onUp(e){
   clearTimeout(drag.holdTimer);
@@ -3610,6 +3721,9 @@ function onUp(e){
   drag.live=false;
   const wasActive=drag.active;
   const act=wasActive?drag.hotAct:null;   // captured during onMove, while zones still had layout
+  const drop=wasActive&&!act?drag.drop:null;
+  markDrop(null); drag.drop=null; drag.sayKey=null; drag.active=false;
+  if(scrollRaf){ cancelAnimationFrame(scrollRaf); scrollRaf=0; }
   document.getElementById('chip').style.display='none';
   document.getElementById('dock').style.display='none';
   if(drag.card)drag.card.classList.remove('dragging');
@@ -3619,6 +3733,11 @@ function onUp(e){
   if(heldStill) return;
   if(!wasActive){ // a tap, not a drag
     if(drag.canopen)openTerm(drag.id,drag.name);else toast(tr('toast.openOnMac'));
+    return;
+  }
+  if(drop){
+    if(drop.k==='leave') doAction(drag.id,'leaveCluster');
+    else doAction(drag.id,'drop',null,{[drop.k]:drop.id});
     return;
   }
   if(!act)return;
@@ -3672,7 +3791,7 @@ function card(t){
   const tok=t.tokens>0?`<span class="ls" title="${tr('common.tokens',{n:t.tokens})}">${short(t.tokens)}</span>`:'';
   const trig=t.trig>0?`<span class="trig" role="button" title="${tr('trig.chip',{n:t.trig})}" onclick="event.stopPropagation();openTrig('${t.id}')">${ic(t.trigTimed>0?'alarm-clock':'hourglass','s12')}${t.trig}</span>`:'';
   const uid=t.id.toLowerCase();
-  return `<div class="${cls}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
+  return `<div class="${cls}" data-id="${t.id}" data-pid="${t.projectId}" data-cid="${t.clusterId||''}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
     <div class="hd">${cardGlyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
     <div class="pr bs"><span class="sig">${t.status==='shell'?'$':'›'}</span><span class="tx">${t.prompt?esc(t.prompt):'—'}</span></div>
     <div class="ft"><span class="uid" role="button" data-short="${uid.slice(0,4)}…" onclick="event.stopPropagation();uidTap(this,'${t.id}')"
@@ -3945,7 +4064,7 @@ function projSection(s,p,all,terms,fold,dorm){
     // two-terminal task when the task has six and four are filtered out.
     const memAll=all.filter(t=>t.clusterId===cid);
     const size=mem.length===memAll.length?`${memAll.length}`:`${mem.length} / ${memAll.length}`;
-    h+=`<div class="cluster"><div class="chead">${ic('square-stack','s14')}<span class="cname ts">${esc(c?c.name:'')}</span>`+
+    h+=`<div class="cluster" data-cid="${cid}" data-pid="${p.id}"><div class="chead">${ic('square-stack','s14')}<span class="cname ts">${esc(c?c.name:'')}</span>`+
        `<span class="ts" title="${tr('count.terminals',{n:memAll.length})}">${size}</span></div>`+
        `<div class="grid">${mem.map(t=>card(t)).join('')}</div></div>`;
   }
