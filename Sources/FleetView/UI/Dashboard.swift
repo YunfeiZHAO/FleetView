@@ -82,6 +82,13 @@ struct DashboardView: View {
                 SessionTreePanel(model: state.treeModel)
                     .frame(width: columns.tree)
                     .transition(.move(edge: .trailing))
+            } else if let id = state.triggersPanelTerminalId {
+                // Beside the board rather than over it, and the board stays live: the panel is
+                // read alongside the cards, and a click on another card's chip switches to it.
+                Rectangle().fill(Theme.outlineVariant).frame(width: 1)
+                TriggersPanel(terminalId: id)
+                    .frame(width: TriggersPanel.width)
+                    .transition(.move(edge: .trailing))
             }
         }
         .background(GeometryReader { g in
@@ -89,6 +96,7 @@ struct DashboardView: View {
         })
         .onPreferenceChange(WindowWidthKey.self) { windowWidth = $0 }
         .animation(.easeOut(duration: 0.22), value: state.treePanelTerminalId != nil)
+        .animation(.easeOut(duration: 0.22), value: state.triggersPanelTerminalId != nil)
         .background(Theme.bg)
         .frame(minWidth: 960, minHeight: 580)
         .overlay { treeInspector }     // interactive: text selection + scrolling
@@ -466,7 +474,9 @@ struct Sidebar: View {
     }
 
     @ViewBuilder private func groupView(_ group: TaskGroup) -> some View {
-        SidebarGroupHeader(name: group.project.name)
+        SidebarGroupHeader(name: group.project.name) {
+            FileWindows.shared.open(group.project, app: state)
+        }
         ForEach(group.tasks) { task in TaskRow(task: task).padding(.leading, Sidebar.rowIndent) }
     }
 
@@ -568,6 +578,8 @@ struct SidebarSectionHeader<Accessory: View>: View {
 /// A project's name over its terminals in the sidebar, this Mac's or a peer's.
 struct SidebarGroupHeader: View {
     let name: String
+    /// This Mac's projects can be browsed; the peer board's headings (another Mac's) cannot.
+    var browse: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -576,6 +588,10 @@ struct SidebarGroupHeader: View {
         }
         .foregroundColor(Theme.onSurfaceVariant)
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let browse { Button(L(.projFiles), action: browse) }
+        }
     }
 }
 
@@ -1390,7 +1406,9 @@ struct ProjectSection: View {
                         withAnimation(.easeOut(duration: 0.18)) { showChart.toggle() }
                     }
                 }
-                // No Finder button: a double-click on the project's name already opens it there.
+                // The project's file window — not a Finder button: a double-click on the project's
+                // name already opens Finder. This is where the files are read and edited in-app.
+                iconButton("folder", help: L(.projFiles)) { FileWindows.shared.open(project, app: state) }
                 iconButton("plus", help: L(.projNewTerminal)) { state.requestNewTerminal(projectId: project.id) }
                 // Closes the project on this board only: its folder and its conversations stay.
                 iconButton("xmark", help: L(.projRemove)) {

@@ -203,6 +203,13 @@ enum UIText {
     case searchNMessages(Int)
     case searchOpening
     case searchOpenNew
+    case searchResumeHere
+    case searchResumeLatest
+    case searchResumeStep
+    case searchResumeStepHelp
+    case searchResumeHereHelp
+    case searchResumeLatestHelp
+    case searchNoLatest
     case searchJumpTerminal
     case searchSwitchProject
     case searchSelect
@@ -338,6 +345,156 @@ enum UIText {
     case searchProjectSummary(Int, Int)
     case searchProjectClosedHint
     case searchProjectOpenHint
+    case cardTriggers
+    case trigChipHelp(Int, Int)
+    case trigTitle
+    case trigGone
+    case trigAgentAsking
+    case trigNoAgent
+    case trigSectionScheduled
+    case trigSectionBackground
+    case trigSectionLaunchd
+    case trigEveryMinutes(Int)
+    case trigHourly(String)
+    case trigDaily(String)
+    case trigWeekdays(String)
+    case trigOnce(String)
+    case trigInterval(String)
+    case trigNext(String)
+    case trigNextAbout(String)
+    case trigCreated(String)
+    case trigFired(Int, String)
+    case trigNeverFired
+    case trigExpires(String)
+    case trigWakeup
+    case trigRecurring
+    case trigOneShot
+    case trigDeleteHelp
+    case trigStopHelp
+    case trigConfirmAgent
+    case trigConfirmLaunchd
+    case trigConfirm
+    case trigConfirmStop
+    case trigCancelling
+    case trigRemoving
+    case trigReportedAt(String)
+    case trigNeverReported
+    case trigNotRunning
+    case trigCodexNote
+    case trigNone
+    case trigNoneDetail
+    case trigShowAll
+    case trigShowLess
+    case trigReason(String)
+    case trigCopied
+    case projFiles
+    case cardOpenFiles
+    case filesWindowTitle(String)
+    case filesNoEditor
+    case filesMissing
+    case filesTabHistory
+    case histNotARepo
+    case histNoRepo
+    case histCurrentBranch(String)
+    case histRemoteBranches
+    case histCompareWithCurrent(String)
+    case histBranchHelp
+    case histReload
+    case histOnly(String)
+    case histPicked(String)
+    case histPickedHelp
+    case histUncommitted(Int)
+    case histUncommittedTitle
+    case histVersusWorktree(String)
+    case histBranchVersusCurrent(String)
+    case histNoMergeBase
+    case histGitFailed
+    case histOpenCommit
+    case histCompareWorktree
+    case histCompareWithPicked(String)
+    case histPickForCompare
+    case histCopySha
+    case histCopySubject
+    case histNone
+    case histMore
+    case histFileHistory
+    case histFolderHistory
+    case filesNotRegular
+    case filesReferenceOdd
+    case filesGotIt
+    case filesRONotRoundTrip
+    case filesBinaryDetail(String)
+    case filesNotUTF8(String)
+    case filesOpenDefault
+    case filesReveal
+    case filesOpen
+    case filesLargeTitle(String, String)
+    case filesLargeBody
+    case filesOutside
+    case filesUnsavedOne(String)
+    case filesUnsavedMany(Int)
+    case filesUnsavedBody
+    case filesUnsavedQuit
+    case filesUnsavedUpdate
+    case filesSaveAll
+    case filesDontSave
+    case filesCopied
+    case filesReferenced(String)
+    case filesEmpty
+    case filesShowIgnored
+    case filesCopyPath
+    case filesCopyRelative
+    case filesReference
+    case filesReferenceNone
+    case filesPreviewTabHelp
+    case filesPreview
+    case filesSource
+    case filesWrap
+    case filesGotoLine
+    case filesDiskChanged
+    case filesDeleted
+    case filesSaveFailed(String)
+    case filesRecovered(String)
+    case filesRecoveredOld
+    case filesCrashRestored
+    case filesUseDisk
+    case filesCompare
+    case filesOverwrite
+    case filesCloseTab
+    case filesRestore
+    case filesDiscard
+    case filesCursor(Int, Int)
+    case filesLines(Int)
+    case filesReadOnly(String)
+    case filesDiffStats(Int, Int, Int)
+    case filesPlainText
+    case filesROMixed
+    case filesRONotWritable
+    case filesMarkModified
+    case filesMarkAdded
+    case filesMarkDeleted
+    case filesMarkRenamed
+    case filesMarkUntracked
+    case filesMarkConflicted
+    case updUnsavedCancelled
+    case filesTabFiles
+    case filesTabSearch
+    case filesFilterPlaceholder
+    case filesSearchPlaceholder
+    case filesSearchCase
+    case filesSearchHint
+    case filesSearching
+    case filesSearchNone
+    case filesSearchTruncated
+    case filesQuickOpenPlaceholder
+    case filesQuickOpenRecent
+    case filesQuickOpen
+    case filesBack
+    case filesForward
+    case filesSearchSummary(Int, Int)
+    case filesFilterCount(Int)
+    case filesRecent
+    case filesChangedBy(String)
 }
 
 /// The language the UI is drawn in: Chinese when the first preferred language is any Chinese,

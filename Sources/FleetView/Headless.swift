@@ -10,6 +10,9 @@ enum AppStartup {
         // Start auditing right after load, before anything can mutate state: the first snapshot is
         // the baseline every later diff is measured against.
         AppAudit.shared.start(state)
+        // After the audit baseline, so the renames are on record; before any window or web view is
+        // made, so none of them is titled with a name about to change.
+        state.deduplicateTerminalNames()
 
         // Live status via Claude Code hooks (reversible; no-ops for terminals FleetView didn't launch).
         HookInstaller.install()
@@ -19,6 +22,7 @@ enum AppStartup {
         state.web.app = state
         state.web.start()            // web dashboard (mirror of this window) on the LAN
         state.startPanelWatch()      // hot-load the agent-authored top panel (no relaunch needed)
+        state.startTriggerWatch()    // last-reported crons/background work, and LaunchAgents naming cards
         // Warm the conversation-search index in the background. The first build reads every
         // transcript on disk (~15 s); every refresh after that is incremental and near-free, so
         // doing it at launch means ⌘K is instant instead of waiting on a cold index.
@@ -52,6 +56,9 @@ enum AppStartup {
         state.saveNow()          // saves are debounced now; this is the one that must not be missed
         state.web.stop()
         state.remote.stopAll()
+        // Only waits when a terminal was closed in the last few seconds — Close All just above, or a
+        // card closed right before quitting — and was not gone yet (see ProcessReaper).
+        state.remote.waitForReaping()
         AppAudit.shared.stop(reason: "quit")   // flushes the buffer before the process goes away
     }
 }

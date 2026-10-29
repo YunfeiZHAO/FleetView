@@ -28,6 +28,15 @@ cp "$BIN" "$APP/Contents/MacOS/FleetView"
 # project-manager rides along: GET /pm runs it on this machine for a caller on another one, and an
 # installed app must not depend on the checkout it was built from still being where it was.
 cp "$ROOT/scripts/project-manager" "$APP/Contents/Resources/project-manager"
+# The file window's editor page, built and committed in Editor/dist. Without it the window opens
+# with an empty editor and only a note saying so — refuse rather than ship that.
+if [ ! -f "$ROOT/Editor/dist/editor.js" ]; then
+  echo "✗ Editor/dist/editor.js is missing — run Editor/build.sh first" >&2
+  exit 1
+fi
+mkdir -p "$APP/Contents/Resources/editor"
+cp "$ROOT/Editor/dist/index.html" "$ROOT/Editor/dist/editor.js" "$ROOT/Editor/dist/editor.css" \
+   "$ROOT/Editor/dist/THIRD_PARTY_LICENSES.txt" "$APP/Contents/Resources/editor/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

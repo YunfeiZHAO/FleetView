@@ -11,6 +11,11 @@ final class AppState: ObservableObject {
     /// Terminals that have been removed, newest first. The board forgets a card the moment it is
     /// removed; this is what remembers the name, uuid and session it had (see `TerminalArchive`).
     @Published var terminalArchive: [TerminalArchive] = []
+    /// The highest default number each project name has handed out (`<name>-<n>`). Stored rather
+    /// than recounted, because what is on the board and in the drawer is not the whole history:
+    /// the drawer keeps no shell-only card and only so many per project, and a count of either
+    /// started again at 1 once they emptied — eight different cards were called FleetView-2.
+    var terminalNumbers: [String: Int] = [:]
     @Published var clusters: [Cluster] = []
     @Published var selectedProjectId: UUID? = nil   // nil == All Projects
     @Published var sidebarWidth: Double = 236
@@ -85,11 +90,26 @@ final class AppState: ObservableObject {
     @Published var treePanelTerminalId: UUID?
     @Published var treePanelWidth: Double = 460
 
+    // MARK: - Triggers (see AppState+Triggers)
+
+    /// What each terminal's agent last said it has scheduled or left running, from its Stop hook.
+    @Published var triggerReports: [UUID: TriggerReport] = [:]
+    /// LaunchAgents that name a terminal, from the last look at ~/Library/LaunchAgents.
+    @Published var launchdTriggers: [UUID: [AgentTrigger]] = [:]
+    /// Cancellations sent to an agent and not yet carried out, by `terminal/trigger key`.
+    @Published var triggerCancels: [String: Date] = [:]
+    @Published var triggersPanelTerminalId: UUID?
+
     // MARK: - Fresh changes
 
     /// When each terminal's last run ended by going back to idle. Kept only in memory: it drives the
     /// few seconds a card that just finished stays tinted, and after a relaunch nothing is fresh.
     @Published var runEndedAt: [UUID: Date] = [:]
+    /// When an agent CLI was last started in each terminal, and the command line that started it,
+    /// from the shell's report. Only rollouts written since then — or the one it was told to resume
+    /// — can be that agent's (see `transcriptPath(for:)`). Memory only: after a relaunch the agents'
+    /// files already exist and are found the usual way.
+    var agentStarted: [UUID: (at: Date, command: String)] = [:]
     /// How long a change counts as fresh: a run that started this recently draws in the strong
     /// primary tone, one that ended this recently in the tertiary container, then both settle.
     /// Terminals start and stop on their own (hooks, auto-recover, scheduled pings), and a
@@ -228,6 +248,7 @@ final class AppState: ObservableObject {
 
     /// Open the tree panel for a terminal's current session (project-dir scoped, treeflow-style).
     func openSessionTree(_ id: UUID) {
+        triggersPanelTerminalId = nil           // one panel on the right at a time
         treePanelTerminalId = id
         guard let path = transcriptPath(for: id) else {
             treeModel.showEmpty(L(.treeNoAgent))
@@ -456,6 +477,23 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Put text into a terminal's input without pressing Return — the file window's "reference in
+    /// card". Through tmux when the terminal runs under it, so a hidden card takes it too; typed into
+    /// the window otherwise. Audited: it is typing into someone's session.
+    func insertText(_ id: UUID, _ text: String, why: String) {
+        let name = terminals.first { $0.id == id }?.name ?? id.uuidString
+        audited(AuditIntent("terminal.\(why)", event: "fleetview.terminal.text_inserted", categories: ["process"],
+                            target: auditTarget(terminal: id), data: ["chars": .int(text.count)],
+                            message: "put a file reference into \(name)'s input")) {
+            if remote.tmuxPath != nil {
+                remote.sendText(id, text: text, enter: false)
+            } else {
+                controllers[id]?.type(text)
+            }
+            markActivity(id)
+        }
+    }
+
     /// Type a command into a terminal's shell after a delay (used by fork/duplicate flows).
     func typeIntoTerminal(_ id: UUID, _ command: String, after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -538,7 +576,8 @@ final class AppState: ObservableObject {
             $0.agentKind == .codex && $0.status != .closed && $0.status != .needsYou
         }.map { t in
             (id: t.id, cwd: t.cwd, hook: hookSessionPath(for: t.id), stored: t.transcriptPath,
-             home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) })
+             home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) },
+             started: agentStarted[t.id].map { ($0.at.addingTimeInterval(-2), $0.command) })
         }
         guard !targets.isEmpty else { return }
         let claimed = Set(terminals.compactMap { $0.transcriptPath })
@@ -546,10 +585,12 @@ final class AppState: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var verdicts: [(UUID, Bool)] = []
             for t in targets {
+                let fallback = [t.hook, t.stored].compactMap { $0 }
+                    .first { p in t.started.map { Self.continues(p, since: $0.0, command: $0.1) } ?? true }
                 let path = CodexSession.currentRollout(cwd: t.cwd,
                                                        excluding: claimed.subtracting([t.stored].compactMap { $0 }),
-                                                       home: t.home)
-                    ?? t.hook ?? t.stored
+                                                       home: t.home, since: t.started?.0)
+                    ?? fallback
                 guard let path, let working = CodexSession.isWorking(rollout: path) else { continue }
                 verdicts.append((t.id, working))
             }
@@ -607,6 +648,7 @@ final class AppState: ObservableObject {
         var terminalFontSize: Double?
         var terminalArchive: [TerminalArchive]?
         var showRecentStrip: Bool?
+        var terminalNumbers: [String: Int]?
 
         /// Every field decoded on its own, and a field that will not decode is dropped rather than
         /// taken as a corrupt file.
@@ -637,6 +679,7 @@ final class AppState: ObservableObject {
             terminalFontSize = get(.terminalFontSize, Double.self)
             terminalArchive = get(.terminalArchive, [TerminalArchive].self)
             showRecentStrip = get(.showRecentStrip, Bool.self)
+            terminalNumbers = get(.terminalNumbers, [String: Int].self)
         }
 
         init(projects: [Project], terminals: [TerminalSession], clusters: [Cluster],
@@ -644,7 +687,7 @@ final class AppState: ObservableObject {
              tasksCollapsed: Bool?, notesCollapsed: Bool?, treePanelWidth: Double?,
              showOnlyMarked: Bool?, closeTerminalsOnQuit: Bool?, collapsedProjects: [UUID]?,
              terminalFontSize: Double?, terminalArchive: [TerminalArchive]?,
-             showRecentStrip: Bool?) {
+             showRecentStrip: Bool?, terminalNumbers: [String: Int]?) {
             self.projects = projects; self.terminals = terminals; self.clusters = clusters
             self.selectedProjectId = selectedProjectId; self.sidebarWidth = sidebarWidth
             self.notes = notes; self.tasksCollapsed = tasksCollapsed
@@ -652,6 +695,7 @@ final class AppState: ObservableObject {
             self.showOnlyMarked = showOnlyMarked; self.closeTerminalsOnQuit = closeTerminalsOnQuit
             self.collapsedProjects = collapsedProjects; self.terminalFontSize = terminalFontSize
             self.terminalArchive = terminalArchive; self.showRecentStrip = showRecentStrip
+            self.terminalNumbers = terminalNumbers
         }
 
         /// This with the soft fields blanked: what is left is what a crash must not lose. Soft is
@@ -731,6 +775,7 @@ final class AppState: ObservableObject {
         showOnlyMarked = p.showOnlyMarked ?? false
         showRecentStrip = p.showRecentStrip ?? true
         closeTerminalsOnQuit = p.closeTerminalsOnQuit ?? false
+        terminalNumbers = p.terminalNumbers ?? [:]
         // Clamped on the way in as well as on the way out: state.json is a file on disk that people
         // do edit, and a 400pt terminal is a window with one character in it.
         if let s = p.terminalFontSize {
@@ -810,7 +855,8 @@ final class AppState: ObservableObject {
                           // Still carried here while archive.json does not hold it, so that a
                           // failed write can never be what drops it.
                           terminalArchive: savedArchive == terminalArchive ? nil : terminalArchive,
-                          showRecentStrip: showRecentStrip)
+                          showRecentStrip: showRecentStrip,
+                          terminalNumbers: terminalNumbers.isEmpty ? nil : terminalNumbers)
         if p == savedState {
             softSaveWork?.cancel()
             softSaveWork = nil
@@ -971,10 +1017,16 @@ final class AppState: ObservableObject {
         }
         return audited(AuditIntent("terminal.create",
                                    data: ["name_source": .string(name == nil ? "auto" : "user")])) {
-            var t = TerminalSession(projectId: projectId,
-                                    name: name ?? defaultTerminalName(for: proj),
+            let unique = TerminalNames.unique(name ?? defaultTerminalName(for: proj), at: Date(),
+                                              taken: takenTerminalNames(except: id))
+            var t = TerminalSession(projectId: projectId, name: unique,
                                     clusterId: clusterId, cwd: cwd ?? proj.path, autoRunClaude: autoRunClaude)
             if let id { t.id = id }
+            // Counted when a card is made, not when a name is offered: the new-terminal sheet asks
+            // for the default and may be cancelled, or the name typed over with one of the user's.
+            if let n = TerminalNames.defaultNumber(unique, project: proj.name) {
+                terminalNumbers[proj.name] = max(terminalNumbers[proj.name] ?? 0, n)
+            }
             t.status = .shell
             terminals.append(t)
             openWindow(for: t)
@@ -1059,10 +1111,8 @@ final class AppState: ObservableObject {
     nonisolated static func codexCommand(transcript path: String, termCwd: String,
                                          verb: String, pinnedCwd: String? = nil,
                                          subPool: Bool? = nil) -> String? {
-        let base = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        let parts = base.split(separator: "-")
-        guard parts.count >= 5 else { return nil }
-        let sid = parts.suffix(5).joined(separator: "-")
+        // A revert's segment is named `…-<thread>_<rollout>.jsonl`; the thread is what resumes.
+        let sid = CodexTree.sessionId(fromRollout: path)
         guard UUID(uuidString: sid) != nil else { return nil }
         // The rollout says where the session ran, which is the right answer everywhere except
         // after a deliberate move — there the card has been told it belongs somewhere else, and
@@ -1292,6 +1342,10 @@ final class AppState: ObservableObject {
             // and only what is left — the removals — lands under this intent.
             closeAllTerminals(reason: reason)
             FV.log("board cleared (\(reason)): \(projects.count) project(s), \(terminals.count) terminal(s)")
+            retireLaunchdJobs(for: terminals.map(\.id))
+            triggerReports.removeAll()
+            saveTriggerReports()
+            closeTriggers()
             terminals.removeAll()
             projects.removeAll()
             clusters.removeAll()
@@ -1438,7 +1492,10 @@ final class AppState: ObservableObject {
         // Archive before anything is torn down — `transcriptPath(for:)` needs the terminal to still
         // be in `terminals`, and after this line the session id is unrecoverable.
         if let t = terminals.first(where: { $0.id == id }) { archive(t) }
+        retireLaunchdJobs(for: [id])
         if treePanelTerminalId == id { closeSessionTree() }
+        if triggersPanelTerminalId == id { closeTriggers() }
+        forgetReportedTriggers(id)
         controllers[id]?.closeWindow()
         controllers[id] = nil
         remote.stop(id)                 // kill this terminal's web server + tmux session
@@ -1446,6 +1503,7 @@ final class AppState: ObservableObject {
         tokenSeries[id] = nil
         lastParsedTranscriptSize[id] = nil
         lastTokenRefreshAt[id] = nil
+        agentStarted[id] = nil
         pruneClusters()
         save()
     }
@@ -1523,8 +1581,9 @@ final class AppState: ObservableObject {
     func renameTerminal(_ id: UUID, to name: String) {
         audited(AuditIntent("terminal.rename")) {
             guard let idx = terminals.firstIndex(where: { $0.id == id }) else { return }
-            terminals[idx].name = name
-            controllers[id]?.setTitle(name)
+            let unique = TerminalNames.unique(name, at: Date(), taken: takenTerminalNames(except: id))
+            terminals[idx].name = unique
+            controllers[id]?.setTitle(unique)
             save()
         }
     }
@@ -2041,6 +2100,7 @@ final class AppState: ObservableObject {
         // conversation's session_id but the WORKER's rollout as transcript_path. Only that
         // rollout's head tells them apart; hook.sh cannot, and neither can the session id.
         let worker = ev.transcriptPath.map(CodexTree.isWorkerRollout) ?? false
+        if !ev.writtenPaths.isEmpty { FileEdits.shared.note(ev.writtenPaths, terminal: terminals[idx]) }
         // Everything this hook provokes is the agent's (or the shell's) doing, not the user's at the
         // keyboard — declaring it once here attributes the whole cascade correctly.
         AuditContext.with(hookActor(ev, terminal: terminals[idx])) {
@@ -2130,6 +2190,7 @@ final class AppState: ObservableObject {
             enterStatus(.needsYou, at: idx)
         case "Stop":
             enterStatus(.idle, at: idx)
+            noteReportedTriggers(ev, terminal: uid)
         case "Notification":
             // The Notification hook fires for BOTH permission requests and idle "waiting for input".
             // Only a permission/approval request is a genuine "needs you"; idle just means returned.
@@ -2146,6 +2207,8 @@ final class AppState: ObservableObject {
             if terminals[idx].status != .working && terminals[idx].status != .needsYou {
                 enterStatus(.idle, at: idx)
             }
+            // A new process holds none of the old one's crons or background work.
+            if ev.source == "startup" || ev.source == "resume" { forgetReportedTriggers(uid) }
             if ev.source == "startup" {
                 terminals[idx].lastPrompt = ""                    // brand-new session, no prompt yet
             } else if let tp = ev.transcriptPath {
@@ -2157,9 +2220,12 @@ final class AppState: ObservableObject {
             // that it is a Codex terminal at all — and so the only thing that starts its status poll.
             // Not for Claude: its hooks say which CLI ran which conversation, and a command line only
             // says what was typed — `claude update` in an `sp-claude` card would relabel the card.
-            if let c = ev.command, let home = AgentHome.launched(by: c), home.kind == .codex {
-                terminals[idx].agentKind = .codex
-                terminals[idx].subPool = home.viaSubPool
+            if let c = ev.command, let home = AgentHome.launched(by: c) {
+                agentStarted[uid] = (Date(), c)
+                if home.kind == .codex {
+                    terminals[idx].agentKind = .codex
+                    terminals[idx].subPool = home.viaSubPool
+                }
             }
             // A plain (non-claude) command ran at the zsh prompt → back to "shell", show the command.
             // `claude` still reports itself so the *act of starting an agent* is audited, but it must
@@ -2394,6 +2460,19 @@ final class AppState: ObservableObject {
             }
             else if let d = query["del"], let nid = UUID(uuidString: d) { removeNote(nid) }
             return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
+        case "/trigger/cancel":
+            // `key` is what `/triggers` listed; `wakeup` is what it worked out from the transcript,
+            // passed back so this answer does not have to read the transcript on the main actor.
+            guard let s = query["id"], let id = UUID(uuidString: s), let key = query["key"] else {
+                return ("400 Bad Request", "application/json", Data(#"{"error":"bad id"}"#.utf8))
+            }
+            guard let trig = triggers(for: id).first(where: { $0.key == key }) else {
+                return ("404 Not Found", "application/json", Self.errorJSON(L(.trigGone)))
+            }
+            if let why = cancelTrigger(trig, on: id, wakeup: query["wakeup"] == "1") {
+                return ("409 Conflict", "application/json", Self.errorJSON(why))
+            }
+            return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
         case "/favicon.ico":
             // Answer once instead of 404-ing forever: browsers ask unprompted and keep retrying.
             return ("204 No Content", "image/x-icon", Data())
@@ -2452,7 +2531,10 @@ final class AppState: ObservableObject {
     /// transcript and the screen and encoding the answer are done off it (`ConversationSpec`).
     func conversationSpec(_ id: UUID) -> ConversationSpec {
         let t = terminals.first(where: { $0.id == id })
+        // A Claude that has started but not been spoken to yet reads as an empty chat — its own
+        // session, with nothing in it — rather than as a shell.
         let path = transcriptPath(for: id)
+            ?? (t?.status.isAgent == true ? reportedSessionPath(for: id) : nil)
         return ConversationSpec(path: path, cwd: t?.cwd ?? "", ownPrompt: t?.lastPrompt ?? "",
                                 status: t?.status.rawValue, shared: path.map(terminalsSharing) ?? 0,
                                 tmuxPath: remote.tmuxPath, tmuxSession: RemoteServer.sessionName(for: id))
@@ -2462,7 +2544,11 @@ final class AppState: ObservableObject {
     /// agent kind. nil if no agent session has been captured yet (nothing to fork a query from).
     func askSpec(_ id: UUID) -> AskSpec? {
         guard let t = terminals.first(where: { $0.id == id }), let path = transcriptPath(for: id) else { return nil }
-        let sid = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        // A Claude transcript is named for its session; a Codex rollout only carries the thread id
+        // inside `rollout-<ts>-<id>[_<rollout>].jsonl`, and the whole stem is no id Codex knows.
+        let sid = AgentHome.isCodex(path)
+            ? CodexTree.sessionId(fromRollout: path)
+            : ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         guard !sid.isEmpty else { return nil }
         return AskSpec(sessionId: sid, cwd: t.cwd, agent: t.agentKind.rawValue,
                        command: AgentHome.resuming(path, kind: t.agentKind, subPool: t.subPool).command)
@@ -2486,14 +2572,31 @@ final class AppState: ObservableObject {
         // correct — and when hooks ARE working both answers are the same file anyway.
         if t.agentKind == .codex {
             let claimed = Set(terminals.filter { $0.id != id }.compactMap { $0.transcriptPath })
+            // Two seconds of slack: the shell reports the command as it starts, and Codex can
+            // touch its rollout within the same second.
+            let started = agentStarted[id]
+            let since = started?.at.addingTimeInterval(-2)
             if let live = CodexSession.currentRollout(cwd: t.cwd, excluding: claimed,
-                                                      home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) }) {
+                                                      home: t.subPool.map { AgentHome(kind: .codex, subPool: $0) },
+                                                      since: since) {
                 return live
+            }
+            // Started, and has written nothing since: a conversation with nothing in it yet. The
+            // pointer and the card still name the one that ran here before — this card's, but not
+            // what it is doing now — so they count only if that one went on after the start, or is
+            // the one the command resumed (a reopen types `codex resume <id>`).
+            if let started, let since {
+                return [hookSessionPath(for: id), t.transcriptPath].compactMap { $0 }
+                    .first { Self.continues($0, since: since, command: started.command) }
             }
         }
         // The pointer hook.sh writes for this terminal wins for Claude: it is rewritten on every
         // hook event, so it survives a missed event or a `--resume` that switched sessions.
         if let live = hookSessionPath(for: id) { return live }
+        // It names a session whose file does not exist yet: Claude has started and nothing has
+        // been said, so there is no conversation — and above all not someone else's. Guessing past
+        // this point handed a fresh card the newest unclaimed transcript in its folder.
+        if reportedSessionPath(for: id) != nil { return nil }
         if let tp = t.transcriptPath, FileManager.default.fileExists(atPath: tp) { return tp }
         // A plain shell has no conversation at all — never guess one for it, or it would inherit
         // some unrelated session from the same project.
@@ -2534,6 +2637,24 @@ final class AppState: ObservableObject {
         let path = AgentHome.canonical(reported)
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return AgentHome.isCodex(path) ? CodexTree.mainLineRollout(of: path) : path
+    }
+
+    /// Is `rollout` what a Codex started at `since` by `command` is writing: touched since, or the
+    /// thread the command resumed?
+    nonisolated static func continues(_ rollout: String, since: Date, command: String) -> Bool {
+        if (CodexSession.modified(rollout) ?? .distantPast) >= since { return true }
+        let sid = CodexTree.sessionId(fromRollout: rollout)
+        return !sid.isEmpty && command.contains(sid)
+    }
+
+    /// The Claude session this terminal's hook last named, whether or not its file exists yet —
+    /// Claude creates it with the first message, well after SessionStart reports it.
+    func reportedSessionPath(for id: UUID) -> String? {
+        guard let data = try? Data(contentsOf: FV.sessionPointer(for: id)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reported = obj["transcript_path"] as? String else { return nil }
+        let path = AgentHome.canonical(reported)
+        return AgentHome.isCodex(path) ? nil : path
     }
 
     /// How many terminals point at the same transcript. >1 means the conversation genuinely belongs
@@ -2588,7 +2709,8 @@ final class AppState: ObservableObject {
         // openable (reattach from the web) — not one has-session call per terminal.
         let live = remote.available ? remote.liveSessions() : []
         let terms = terminals.map { t in
-            WebSnapshot.Term(id: t.id.uuidString, name: t.name, projectId: t.projectId.uuidString,
+            let trig = triggers(for: t)
+            return WebSnapshot.Term(id: t.id.uuidString, name: t.name, projectId: t.projectId.uuidString,
                              clusterId: t.clusterId?.uuidString, status: t.status.rawValue,
                              statusLabel: t.status.apiLabel, agent: t.agentKind.label,
                              prompt: t.lastPrompt, tokens: t.newTokens,
@@ -2606,7 +2728,9 @@ final class AppState: ObservableObject {
                                  : -1,
                              cwd: t.cwd,
                              transcript: t.transcriptPath,
-                             window: windowState(t.id).rawValue)
+                             window: windowState(t.id).rawValue,
+                             trig: trig.isEmpty ? nil : trig.count,
+                             trigTimed: trig.isEmpty ? nil : trig.filter(\.isTimed).count)
         }
         return WebSnapshot(
             projects: projects.map { .init(id: $0.id.uuidString, name: $0.name, path: $0.path) },
@@ -2773,7 +2897,7 @@ final class AppState: ObservableObject {
     /// `removeTerminal` has already stopped this one.
     private func handleWindowClosed(_ id: UUID) {
         let wasTracked = controllers.removeValue(forKey: id) != nil
-        if wasTracked && !isQuitting { remote.stop(id) }
+        if wasTracked && !isQuitting { remote.stop(id); forgetReportedTriggers(id) }
         hiddenFrames[id] = nil
         if let idx = terminals.firstIndex(where: { $0.id == id }) {
             if !isQuitting { terminals[idx].windowHidden = nil }   // a closed card is not a hidden one
@@ -2782,8 +2906,68 @@ final class AppState: ObservableObject {
         save()
     }
 
+    /// The next `<project>-<n>`: one past the highest the project has ever had, so a number is
+    /// never given to a second card. Read, not reserved — see `newTerminal`.
+    ///
+    /// Numbered per project *name*, not per project: names are one namespace, and two folders
+    /// called `src` would otherwise each hand out `src-1`.
     private func defaultTerminalName(for proj: Project) -> String {
-        "\(proj.name)-\(terminals.filter { $0.projectId == proj.id }.count + 1)"
+        // The board and the drawer as well as the counter: every card from before the counter
+        // existed is only there, and so is a name someone typed in the default's shape.
+        let seen = terminals.map(\.name) + terminalArchive.map(\.name)
+        let highest = seen.compactMap { TerminalNames.defaultNumber($0, project: proj.name) }.max() ?? 0
+        let taken = takenTerminalNames(except: nil)
+        var n = max(highest, terminalNumbers[proj.name] ?? 0) + 1
+        while taken.contains(TerminalNames.key("\(proj.name)-\(n)")) { n += 1 }
+        return "\(proj.name)-\(n)"
+    }
+
+    /// Every name a card holds, as `TerminalNames.key`s: on the board and in the drawer, since both
+    /// are where a card is looked up by name. `except` is the card being named — renaming a card to
+    /// its own name, or a removed card coming back under its own uuid, is not a clash.
+    func takenTerminalNames(except id: UUID?) -> Set<String> {
+        var taken = Set<String>()
+        for t in terminals where t.id != id { taken.insert(TerminalNames.key(t.name)) }
+        for a in terminalArchive where a.id != id { taken.insert(TerminalNames.key(a.name)) }
+        return taken
+    }
+
+    /// Give every name that more than one card holds back to one of them (`TerminalNames`).
+    ///
+    /// Who keeps it: a card on the board over one in the drawer — the board's are the names in use,
+    /// and renaming one would change a window title under the user — then the earliest. The rest
+    /// get the time their conversation began (the transcript's creation, falling back to when the
+    /// card was last active or removed), which is what tells two `tasks` apart.
+    ///
+    /// Run after the audit log has started, so each rename is on record.
+    func deduplicateTerminalNames() {
+        func began(_ transcript: String?) -> Date? {
+            guard let transcript else { return nil }
+            return (try? FileManager.default.attributesOfItem(atPath: transcript))?[.creationDate] as? Date
+        }
+        let archive = terminalArchive.indices.sorted { terminalArchive[$0].removedAt < terminalArchive[$1].removedAt }
+        let claims = terminals.map { t in
+            TerminalNames.Claim(id: t.id, name: t.name,
+                                since: began(t.transcriptPath) ?? t.lastActivity ?? Date())
+        } + archive.map { i in
+            let a = terminalArchive[i]
+            return TerminalNames.Claim(id: a.id, name: a.name, since: began(a.transcriptPath) ?? a.removedAt)
+        }
+        let renamed = TerminalNames.deduplicated(claims)
+        guard renamed.contains(where: { $0 != nil }) else { return }
+        audited(AuditIntent("terminal.deduplicate_names",
+                            data: ["renamed": .int(renamed.compactMap { $0 }.count)])) {
+            for (k, name) in renamed.enumerated() {
+                guard let name else { continue }
+                if k < terminals.count {
+                    terminals[k].name = name
+                    controllers[terminals[k].id]?.setTitle(name)
+                } else {
+                    terminalArchive[archive[k - terminals.count]].name = name
+                }
+            }
+            save()
+        }
     }
 
     private func pruneClusters() {
@@ -2838,7 +3022,10 @@ extension AppState {
         let ids = Set(hits.map(\.sid))
         if ids.isEmpty { return .missing }
         if ids.count > 1 { return .ambiguous(ids.sorted()) }
-        return .found(path: hits[0].path, session: hits[0].sid)
+        // A reverted Codex thread is several files under one id; the newest name is the one it
+        // continues in (the first holds what the revert threw away). Claude hits are one file.
+        let pick = hits.max { ($0.path as NSString).lastPathComponent < ($1.path as NSString).lastPathComponent }!
+        return .found(path: pick.path, session: pick.sid)
     }
 
     /// The folder a Claude conversation ran in, as `--resume` will need it: the recorded cwd when it
@@ -2872,7 +3059,7 @@ extension AppState {
         guard wanted.count >= 8, wanted.allSatisfy({ $0.isHexDigit || $0 == "-" }) else {
             return ("400 Bad Request", ["error": "give a session id: a uuid, or at least its first 8 characters"])
         }
-        var path: String, sid: String
+        let path: String, sid: String
         switch Self.conversationFile(wanted) {
         case .missing:
             return ("404 Not Found", ["error": "no Claude or Codex conversation \(wanted) on this Mac"])
@@ -2882,6 +3069,15 @@ extension AppState {
         case .found(let p, let s):
             path = p; sid = s
         }
+        return restoreConversation(path: path, sid: sid)
+    }
+
+    /// The same, for a conversation whose file is already known — a search result's "resume at
+    /// the latest", which is this card coming back rather than a fork of it. `newName` is for the
+    /// last resort, a card that never existed: what search calls it reads better than an id.
+    func restoreConversation(path found: String, sid foundSid: String,
+                             newName: String? = nil) -> (status: String, body: [String: Any]) {
+        var path = found, sid = foundSid
         var resolvedFrom: String?
         if CodexTree.isWorkerRollout(path), let main = CodexTree.mainLineRollout(of: path) {
             resolvedFrom = sid
@@ -2957,7 +3153,7 @@ extension AppState {
         guard !folder.isEmpty, let pid = boardProject(containing: folder) else {
             return ("422 Unprocessable Entity", ["error": "could not tell which folder \(sid) ran in"])
         }
-        guard let t = newTerminal(projectId: pid, name: "↺ " + String(sid.prefix(8))) else {
+        guard let t = newTerminal(projectId: pid, name: newName ?? "↺ " + String(sid.prefix(8))) else {
             return ("500 Internal Server Error", ["error": "could not open a terminal"])
         }
         bring(t.id, kind: nil, subPool: nil, lastPrompt: nil)

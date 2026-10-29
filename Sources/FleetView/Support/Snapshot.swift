@@ -28,6 +28,7 @@ enum Snapshot {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        if let root = ProcessInfo.processInfo.environment["FV_SNAPSHOT_FILES"] { FileSnapshot.run(root: root, into: dir) }
 
         let state = AppState()
         fill(state)
@@ -92,6 +93,15 @@ enum Snapshot {
                   to: "\(dir)/search-\(suffix).png")
             state.searchOpen = false
             state.searchModel.reset()
+            // The trigger panel, for the card the sample gives a schedule to. Set directly rather
+            // than through `openTriggers`, whose look at the scratch home's LaunchAgents would
+            // replace the sample's launchd job with nothing.
+            if let rt = state.terminals.first(where: { $0.name == treeTerminal }) {
+                state.triggersPanelTerminalId = rt.id
+                shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                      to: "\(dir)/triggers-\(suffix).png")
+                state.triggersPanelTerminalId = nil
+            }
             // Conversation search over whatever the scratch home's agent folders hold:
             // FV_SNAPSHOT_HISTORY=<query>. Drawn folded, then with the first project open.
             if let q = ProcessInfo.processInfo.environment["FV_SNAPSHOT_HISTORY"] {
@@ -118,8 +128,35 @@ enum Snapshot {
                     shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
                           to: "\(dir)/search-history-open-\(suffix).png")
                 }
+                let found = m.groups
                 state.searchOpen = false
                 m.reset()
+                // The same conversations as removed cards of the first project, opened the way its
+                // archive button opens them, with the newest card selected.
+                if let home = state.projects.first {
+                    let names = ["FleetView-4", "search panel", "deploy 212", "perf pass", "web fold"]
+                    state.terminalArchive = zip(found, names).enumerated().map { i, pair in
+                        TerminalArchive(id: UUID(), projectId: home.id, projectPath: home.path,
+                                        name: pair.1, cwd: home.path, sessionId: nil,
+                                        transcriptPath: pair.0.id,
+                                        lastPrompt: pair.0.hits.first { $0.role == .user }?.body ?? "",
+                                        removedAt: Date().addingTimeInterval(Double(-3600 * i)))
+                    }
+                    state.openArchive(projectId: home.id)
+                    let deadline = Date().addingTimeInterval(10)
+                    while m.projectGroups.isEmpty, Date() < deadline {
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    }
+                    if let hit = m.projectGroups.flatMap(\.sessions).flatMap(\.hits).max(by: { $0.ts < $1.ts }) {
+                        m.selectedKey = "h:\(hit.id)"
+                        m.showPreview(hit)
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+                    }
+                    shoot(DashboardView().environmentObject(state), size: size, appearance: appearance,
+                          to: "\(dir)/search-archive-\(suffix).png")
+                    state.closeSearch()
+                    state.terminalArchive = []
+                }
             }
         }
         exit(0)
@@ -235,6 +272,35 @@ enum Snapshot {
             if let fv1 = s.terminals.first(where: { $0.name == "FleetView-1" }) {
                 s.runEndedAt[fv1.id] = Date().addingTimeInterval(-2)
             }
+        }
+        // Things that will make an agent act on its own (see AgentTrigger): a recurring check and
+        // a /loop-style one-shot on ride-tracker, background work on backfill-a, and a LaunchAgent
+        // that pings ride-tracker hourly — one of each kind the panel lists.
+        // A one-shot forty minutes out, written the way Claude pins one: minute, hour, day, month.
+        let at = Calendar.current.dateComponents([.minute, .hour, .day, .month], from: now.addingTimeInterval(2400))
+        let soon = "\(at.minute!) \(at.hour!) \(at.day!) \(at.month!) *"
+        if let rt = s.terminals.first(where: { $0.name == treeTerminal }) {
+            s.triggerReports[rt.id] = TriggerReport(at: now.addingTimeInterval(-240), items: [
+                AgentTrigger(kind: .cron, id: "fa91d4ca", schedule: "9,29,49 * * * *", recurring: true,
+                             text: w("[Ride check — every 20 min] Re-run the drift analysis on any new GPX files in ~/rides and post a one-line summary.",
+                                     "[骑行检查 · 每 20 分钟] 对 ~/rides 里新增的 GPX 文件重跑一次漂移分析，用一句话汇报结果。")),
+                AgentTrigger(kind: .cron, id: "65eaac32", schedule: soon, recurring: false,
+                             text: w("Check whether the map-matching job has finished; if so, compare the two tracks.",
+                                     "看看地图匹配任务跑完没有；跑完了就对比两条轨迹。")),
+            ])
+            s.launchdTriggers[rt.id] = [
+                AgentTrigger(kind: .launchd, id: "com.example.progress-ping.ride", schedule: "24 * * * *",
+                             recurring: true, text: w("progress-ping.sh How is it going?", "progress-ping.sh 进度如何？"),
+                             command: "/bin/bash ~/scripts/progress-ping.sh", path: "/tmp/none.plist"),
+            ]
+        }
+        if let b = s.terminals.first(where: { $0.name == "backfill-a" }) {
+            s.triggerReports[b.id] = TriggerReport(at: now.addingTimeInterval(-3600), items: [
+                AgentTrigger(kind: .background, id: "b6nqyz1wh", schedule: nil, recurring: nil,
+                             text: w("Wait for the warehouse load to finish", "等数仓导入跑完"),
+                             taskType: "shell", status: "running",
+                             command: "until grep -q LOADED load.log; do sleep 60; done"),
+            ])
         }
         s.notes = [Note(text: "claude --dangerously-skip-permissions"),
                    Note(text: "claude --resume"),

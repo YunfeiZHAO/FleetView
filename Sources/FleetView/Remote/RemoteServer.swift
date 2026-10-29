@@ -12,7 +12,7 @@ struct TmuxSpec {
 
 /// What `ask` needs to run a forked, context-aware side query for a terminal's agent.
 struct AskSpec: Sendable {
-    let sessionId: String   // the agent session (transcript filename without .jsonl)
+    let sessionId: String   // the agent session: Claude's transcript name, Codex's thread id
     let cwd: String
     let agent: String       // "claude" / "codex" / ""
     let command: String     // the CLI to run it with: "claude", "sp-claude", "codex", "sp-codex"
@@ -243,8 +243,12 @@ final class RemoteServer {
         // `spec.command` is one of AgentHome's four names, never text from a request, so it is safe
         // to put in the line itself. An `sp-claude` session has to be asked through `sp-claude`:
         // plain `claude` would answer from whatever account ~/.claude is logged into, if any.
+        // Codex's counterpart is `exec fork`: `exec resume` would continue the live thread itself
+        // and write the question into the conversation the terminal is in the middle of. And
+        // `--ephemeral`, or the fork's rollout — same cwd, newest — becomes what the card is
+        // attributed to (`CodexSession.currentRollout`) until the real thread writes again.
         let tool = spec.agent == "codex"
-            ? spec.command + #" exec resume "$FV_SID" "$FV_Q""#
+            ? spec.command + #" exec fork --ephemeral "$FV_SID" "$FV_Q""#
             : spec.command + #" -p --resume "$FV_SID" --fork-session "$FV_Q""#
         let p = Process()
         p.executableURL = URL(fileURLWithPath: FV.userShell)
@@ -292,6 +296,9 @@ final class RemoteServer {
     }
 
     /// Stop a terminal's web server and destroy its tmux session (called on Remove Terminal).
+    ///
+    /// The kill is a hangup, and an agent can survive one — so what was running is written down
+    /// first and finished off afterwards if it is still there (`ProcessReaper`).
     func stop(_ id: UUID) {
         if let inst = instances.removeValue(forKey: id) {
             if inst.proc.isRunning { inst.proc.terminate() }
@@ -301,7 +308,10 @@ final class RemoteServer {
                                          target: AuditTarget(kind: "terminal", id: id.uuidString),
                                          data: ["port": .int(inst.port)])
         }
-        runTmuxSync(["kill-session", "-t", RemoteServer.sessionName(for: id)])
+        let session = RemoteServer.sessionName(for: id)
+        let plan = reapPlan(["list-panes", "-s", "-t", session], label: session, terminal: id)
+        runTmuxSync(["kill-session", "-t", session])
+        if let plan { reaper.reap(plan, auditor: AppAudit.shared.auditor) }
     }
 
     /// On quit, stop the web servers (free the ports) but LEAVE the tmux sessions running, so an
@@ -321,9 +331,24 @@ final class RemoteServer {
     /// which is exactly what "close everything" has to mean after a relaunch left some behind.
     func killAllSessions() {
         stopAll()                       // the ttyd processes that were serving those sessions
+        let plan = reapPlan(["list-panes", "-a"], label: "all sessions", terminal: nil)
         runTmuxSync(["kill-server"])
+        if let plan { reaper.reap(plan, auditor: AppAudit.shared.auditor) }
         sessionCache = []
         sessionCacheAt = .distantPast   // the 2s cache would otherwise report the dead as live
+    }
+
+    /// Block until every close has been seen through (see `ProcessReaper`). Quitting needs it: the
+    /// checks run on timers, and those die with the app.
+    func waitForReaping() { reaper.waitForPending(timeout: 10) }
+
+    /// Write down what is running in these panes, before the kill that is supposed to end it.
+    private func reapPlan(_ listPanes: [String], label: String, terminal: UUID?) -> ProcessReaper.Plan? {
+        guard let tmuxPath else { return nil }
+        let out = Self.spawnTmux(tmuxPath, listPanes + ["-F", "#{pane_pid}"],
+                                 timeout: Self.tmuxTimeout, capture: true)
+        let panes = out.split(whereSeparator: \.isNewline).compactMap { pid_t($0) }
+        return panes.isEmpty ? nil : ProcessReaper.plan(panes: panes, label: label, terminal: terminal)
     }
 
     // MARK: - Setup
@@ -447,6 +472,7 @@ final class RemoteServer {
     /// Ordering within one terminal is the whole contract of `send-keys` + `Enter`; see `writeQueue`.
     private var writeQueues: [String: DispatchQueue] = [:]
     private let ledger = WriteLedger()
+    private let reaper = ProcessReaper()
 
     /// Long enough that a busy tmux still completes, short enough that a wedged one is an
     /// inconvenience rather than a hang.

@@ -426,9 +426,7 @@ Pitfalls I hit doing it the hard way — avoid them:
   `-u`/`FLEETVIEW_URL` to *every* command in the sequence, and report the URL alongside the name.
 
 Every command works against a remote instance, the history ones included: they run on that machine
-and read its files. See the [[fleetview-peers]] skill for the details — what `ask` costs over there,
-how `whoami` and `subagent` pick "your" project, a FleetView running headless on an SSH-only Mac —
-and the safety notes: there's no auth, so `send` lands in someone's live, permission-bypassed session.
+and read its files. There's no auth, so `send` lands in someone's live, permission-bypassed session.
 
 ## Cautions
 

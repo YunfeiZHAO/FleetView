@@ -62,10 +62,9 @@ final class SearchModel: ObservableObject {
         let session: String
         let when: String
         var hits: [SearchIndex.Hit]
-        /// What to call this group in the header. Normally the project name says enough; in archive
-        /// mode every row is the same project, and the thing that tells them apart is the name the
-        /// card had.
-        var title: String? = nil
+        /// The removed card this transcript last lived in — archive mode only. There every row is
+        /// the same project, and what tells them apart is the card: its name and its last prompt.
+        var card: TerminalArchive? = nil
     }
 
     /// The level above a session. Answers "how many projects matched, and which one do I want" —
@@ -116,6 +115,9 @@ final class SearchModel: ObservableObject {
     /// The hit currently being opened — resolving a fork can take a moment, and a click with no
     /// feedback reads as a dead button.
     @Published var opening: Int64?
+    /// What `opening` is doing: resuming at the latest rather than at a step. Only the button that
+    /// was pressed shows the spinner.
+    @Published var openingLatest = false
     @Published var failure: String?
 
     private var pending: DispatchWorkItem?
@@ -205,7 +207,8 @@ final class SearchModel: ObservableObject {
     /// wrong: inside the board's ScrollView a plain gesture loses to the scroll.
     ///
     /// The hit is the transcript's last node, which is what resuming a whole conversation means
-    /// when what you are holding is a file rather than a search result.
+    /// when what you are holding is a file rather than a search result. It is not what the row
+    /// shows: the list draws the card the group carries, and the hit is what the right side reads.
     private func runArchiveSearch(_ q: String) {
         guard let app else { groups = []; projectGroups = []; total = 0; return }
         let rows = archiveProject.map { app.archived(inProject: $0) } ?? app.terminalArchive
@@ -219,15 +222,15 @@ final class SearchModel: ObservableObject {
         // removing that card archives a second row pointing at the same file. Left alone, the same
         // path is looked up twice and yields two hits with the *same* rowid — `group` merges them
         // into one session holding duplicate ids, and a ForEach over duplicate ids is undefined.
-        // The name would also have been decided by whichever row happened to be last.
+        // The card shown would also have been decided by whichever row happened to be last.
         //
         // (Two cards merely sharing a *name* need none of this: their ids and transcripts differ,
         // so they are two rows that happen to read alike, which is what they are.)
-        var names: [String: String] = [:]
+        var cards: [String: TerminalArchive] = [:]
         var paths: [String] = []
         for r in matched.sorted(by: { $0.removedAt > $1.removedAt }) {
-            guard let p = r.transcriptPath, names[p] == nil else { continue }
-            names[p] = r.name
+            guard let p = r.transcriptPath, cards[p] == nil else { continue }
+            cards[p] = r
             paths.append(p)
         }
         failure = nil
@@ -236,9 +239,9 @@ final class SearchModel: ObservableObject {
             let hits = paths.compactMap { SearchIndex.lastHit(path: $0) }
             // Built immutably: a `var` mutated inside a detached task is an error under Swift 6.
             let sessions = Self.group(hits).map { g -> Group in
-                var titled = g
-                titled.title = names[g.id]
-                return titled
+                var carded = g
+                carded.card = cards[g.id]
+                return carded
             }
             let ms = Date().timeIntervalSince(started) * 1000
             await MainActor.run { [weak self] in
@@ -462,11 +465,70 @@ final class SearchModel: ObservableObject {
 
     // MARK: - Open
 
+    /// The conversation back as it stands now — at its newest message, in the card that held it —
+    /// rather than at the hit.
+    ///
+    /// The path `project-manager restore` takes (`AppState.restoreConversation`): a card already
+    /// showing it is raised, since a second agent on one session would fight the first for the
+    /// transcript; a closed one is reopened; a removed one comes back under its own name and uuid;
+    /// only failing all of those is a new card made. Nothing is forked — the newest message is the
+    /// session's own tip, and a plain `--resume` lands there.
+    func resumeLatest(_ hit: SearchIndex.Hit, in state: AppState) {
+        guard opening == nil else { return }
+        opening = hit.id
+        openingLatest = true
+        failure = nil
+        Task.detached(priority: .userInitiated) {
+            let found = Self.latestFile(of: hit)      // a Codex lookup walks every rollout
+            await MainActor.run {
+                self.opening = nil
+                self.openingLatest = false
+                guard let found else { self.failure = L(.searchNoLatest); return }
+                let (status, body) = state.restoreConversation(path: found.path, sid: found.sid,
+                                                               newName: SearchOpen.label(hit))
+                if status.hasPrefix("200") {
+                    self.preview = nil
+                    state.closeSearch()
+                } else {
+                    self.failure = (body["error"] as? String) ?? status
+                    FV.log("search resume-latest failed: \(status) \(self.failure ?? "")")
+                }
+            }
+        }
+    }
+
+    /// The file a conversation continues in, which is not always the one the hit was read from.
+    ///
+    /// A subagent's transcript is filed under its conversation (`<sid>/subagents/agent-*.jsonl`),
+    /// and resuming *it* would bring back the subagent rather than the card. A reverted Codex
+    /// thread is several files under one id, and it carries on in the newest
+    /// (`AppState.conversationFile` knows which).
+    nonisolated private static func latestFile(of hit: SearchIndex.Hit) -> (path: String, sid: String)? {
+        let fm = FileManager.default
+        func stem(_ p: String) -> String { ((p as NSString).lastPathComponent as NSString).deletingPathExtension }
+        switch hit.src {
+        case .claude:
+            let dir = URL(fileURLWithPath: hit.path).deletingLastPathComponent()
+            if dir.lastPathComponent == "subagents" {
+                let main = dir.deletingLastPathComponent().path + ".jsonl"
+                if fm.fileExists(atPath: main) { return (main, stem(main)) }
+            }
+            return fm.fileExists(atPath: hit.path) ? (hit.path, stem(hit.path)) : nil
+        case .codex:
+            let sid = CodexTree.sessionId(fromRollout: hit.path)
+            if !sid.isEmpty, case .found(let p, let s) = AppState.conversationFile(sid.lowercased()) {
+                return (p, s)
+            }
+            return fm.fileExists(atPath: hit.path) ? (hit.path, sid) : nil
+        }
+    }
+
     /// Resolve a hit into a resumed terminal. Runs the fork off the main actor — synthesising a
     /// long chain takes hundreds of milliseconds, and for a big Codex rollout several seconds.
     func open(_ hit: SearchIndex.Hit, in state: AppState, joinClusterOf card: UUID? = nil) {
         guard opening == nil else { return }
         opening = hit.id
+        openingLatest = false
         failure = nil
         let subPool = state.subPool(forConversation: hit)
         Task.detached(priority: .userInitiated) {

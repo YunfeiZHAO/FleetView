@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Only this app's own scheme. The page renders files from projects, and nothing in one of them
+     may fetch from the network or run script on this origin: markdown-it is set to html:false and
+     links go to Swift, so this is the backstop. CodeMirror injects its styles inline. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src fvfile:; style-src fvfile: 'unsafe-inline'; img-src fvfile: data:; connect-src fvfile:; font-src fvfile:">
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<div id="cm"></div>
+<div id="preview" style="display:none"><article id="article" class="md"></article><nav id="toc" class="toc"></nav></div>
+<div id="info"></div>
+<div id="changes" style="display:none"></div>
+<div id="compare" style="display:none">
+  <div class="cmpbar"><span id="compareText"></span><span class="sp"></span><button id="compareCancel"></button><button id="compareSave" class="pri"></button></div>
+  <div id="compareBody"></div>
+</div>
+<script src="editor.js"></script>
+</body>
+</html>

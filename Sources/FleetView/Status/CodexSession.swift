@@ -31,19 +31,34 @@ enum CodexSession {
     /// Its own cache rather than `CodexTree.meta`'s, which the tree panel empties whenever a rollout
     /// appears — every few seconds during a multi-agent run — while this is asked once a second for
     /// every Codex terminal.
-    private static var headCache: [String: (cwd: String, isWorker: Bool)] = [:]
+    private static var headCache: [String: (cwd: String, isWorker: Bool, typedInto: Bool)] = [:]
     private static let lock = NSLock()
 
     static func rolloutCwd(_ path: String) -> String? { rolloutHead(path)?.cwd }
 
-    private static func rolloutHead(_ path: String) -> (cwd: String, isWorker: Bool)? {
+    private static func rolloutHead(_ path: String) -> (cwd: String, isWorker: Bool, typedInto: Bool)? {
         lock.lock()
         if let c = headCache[path] { lock.unlock(); return c }
         lock.unlock()
 
         guard let m = CodexTree.meta(path) else { return nil }
-        lock.lock(); headCache[path] = (m.cwd, m.isWorker); lock.unlock()
-        return (m.cwd, m.isWorker)
+        let head = (m.cwd, m.isWorker, isTUI(path))
+        lock.lock(); headCache[path] = head; lock.unlock()
+        return head
+    }
+
+    /// Was this rollout written by the interactive CLI — the only thing a terminal on the board
+    /// runs? `codex exec` (`"source":"exec"`), the desktop app and workers file rollouts in the same
+    /// folders and the same cwds, and code_sense's batch scripts start `exec` runs all day: a Codex
+    /// card opened there was handed whichever of those had been written last as its conversation.
+    /// Read from the head's first few kilobytes, where `source` sits ahead of the instructions; a
+    /// head that does not say is taken as the CLI's, as older builds did not.
+    private static func isTUI(_ path: String) -> Bool {
+        guard let h = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return true }
+        defer { try? h.close() }
+        guard let data = try? h.read(upToCount: 8192),
+              let r = data.range(of: Data(#""source":"#.utf8)) else { return true }
+        return data[r.upperBound...].starts(with: Data(#""cli""#.utf8))
     }
 
     /// The last walk, and when it was taken. The scan stats every rollout under `~/.codex/sessions`
@@ -119,19 +134,31 @@ enum CodexSession {
     /// `home` narrows it to what that CLI can be writing — a `codex` and an `sp-codex` terminal in
     /// one folder file into different places, and neither can be writing the other's rollout. nil
     /// when the card has not said which it runs.
+    ///
+    /// `since`, when the terminal's Codex is known to have started then: only a rollout written
+    /// to after that can be the one it is writing. Without it a Codex opened a moment ago — nothing
+    /// said yet, so no rollout of its own — was handed the newest one left in its folder, some other
+    /// conversation, and the web chat showed it as this card's.
     static func currentRollout(cwd: String, excluding claimed: Set<String>,
-                               home: AgentHome? = nil) -> String? {
+                               home: AgentHome? = nil, since: Date? = nil) -> String? {
         guard !cwd.isEmpty else { return nil }
         for r in recentRollouts(home: home) where !claimed.contains(r.path) {
+            if let since, r.mtime < since { break }        // newest first: the rest are older still
             let path = r.path
             // Never a worker. Workers share the cwd of the conversation that spawned them, are
             // written to constantly while a run is going and are claimed by no terminal, so they
             // always won this — and a Codex terminal idle in that directory took a busy worker's
             // turn for its own and showed "working" until the whole run was over.
-            guard let head = rolloutHead(path), !head.isWorker, head.cwd == cwd else { continue }
+            guard let head = rolloutHead(path), !head.isWorker, head.typedInto, head.cwd == cwd else { continue }
             return path
         }
         return nil
+    }
+
+    /// When a file was last written, for telling a conversation that went on after its terminal's
+    /// Codex started from one that ended before.
+    static func modified(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
     }
 
     // MARK: - What it is doing

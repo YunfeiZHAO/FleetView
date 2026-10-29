@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FleetView editor page — harness</title>
+<!-- The editor page outside the app: a fake bridge stands in for Swift and serves a few files from
+     memory, so the page can be clicked through in any browser (and driven headless). Build first:
+     ./build.sh — then open this file. Every message the page sends is listed under `window.sent`. -->
+<link rel="stylesheet" href="dist/editor.css">
+<style>
+  body { display: grid; grid-template-rows: auto 1fr; }
+  #bar { position: fixed; left: 0; right: 0; top: 0; height: 34px; z-index: 9; display: flex; gap: 6px; align-items: center;
+    padding: 0 10px; background: #000; font: 12px -apple-system, sans-serif; }
+  #bar button { padding: 3px 9px; }
+  #cm, #preview, #info, #compare { top: 34px !important; }
+</style>
+<script>
+const FILES = {
+  "/repo/Sources/App/Store.swift": {
+    head: `import Foundation
+
+/// Keeps the board on disk.
+struct Store {
+    let url: URL
+
+    func load() throws -> Board {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(Board.self, from: data)
+    }
+}
+`,
+    disk: `import Foundation
+
+/// Keeps the board on disk, one file for everything.
+struct Store {
+    let url: URL
+    var lastSaved: Date? = nil   // when the board last reached the disk
+
+    func load() throws -> Board {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(Board.self, from: data)
+    }
+}
+`},
+  "/repo/README.md": {
+    head: null,
+    disk: `# Sample project
+
+A short paragraph with \`inline code\`, a [link to the store](Sources/App/Store.swift) and an
+[external one](https://example.com).
+
+## Install
+
+\`\`\`bash
+brew install tmux ttyd
+./scripts/package_app.sh --install
+\`\`\`
+
+## Layout
+
+| folder | what |
+|---|---|
+| Sources/ | the app |
+| docs/ | notes |
+
+- one
+- two
+  - nested
+- three
+
+> A quote.
+
+### Details
+
+More text.
+`},
+};
+const TABS = {};
+window.sent = [];
+window.fvBridge = {
+  post(msg) {
+    window.sent.push(msg);
+    if (msg.type === "save" || msg.type === "saveMerged") {
+      const f = FILES[TABS[msg.tab]];
+      if (window.conflictNext) { window.conflictNext = false; return Promise.resolve({conflict: true}); }
+      // `saveDelay`: a slow disk, to see saves queue up behind each other.
+      return new Promise(r => setTimeout(() => { f.disk = msg.text; r({ok: true}); }, window.saveDelay || 0));
+    }
+    return Promise.resolve(null);
+  },
+  async fetchText(url) {
+    const c = /^fvfile:\/\/app\/(changes|patch|blob)\/([^/]+)(?:\/(\d+))?(?:\/([ab]))?$/.exec(url);
+    if (c) {
+      const set = window.CHANGES[decodeURIComponent(c[2])];
+      if (!set) return {ok: false, status: 404, text: "", headers: {}};
+      if (c[1] === "changes") return {ok: true, status: 200, text: JSON.stringify(set.data), headers: {}};
+      const f = set.files[+c[3]];
+      if (c[1] === "patch") return f.binary ? {ok: false, status: 415, text: "", headers: {}} : {ok: true, status: 200, text: f.patch, headers: {}};
+      return {ok: true, status: 200, text: c[4] === "a" ? f.a : f.b, headers: {}};
+    }
+    const m = /^fvfile:\/\/app\/(doc|head|disk)\/(.+)$/.exec(url);
+    if (!m) return {ok: false, status: 404, text: "", headers: {}};
+    // `fetchDelay`: a slow read, to type while a reload is on its way.
+    if (window.fetchDelay && m[1] !== "head") await new Promise(r => setTimeout(r, window.fetchDelay));
+    const f = FILES[TABS[decodeURIComponent(m[2])]];
+    const text = m[1] === "head" ? f.head : f.disk;
+    if (text == null) return {ok: false, status: 404, text: "", headers: {}};
+    const headers = {"x-fv-version": "v" + text.length + ":" + text.slice(-8)};
+    if (f.readOnly) headers["x-fv-readonly"] = "mixed-eol";
+    return {ok: true, status: 200, text, headers};
+  },
+};
+// A commit with three files, as the Swift side would serve it.
+window.CHANGES = {
+  c1: {
+    data: {title: "a1b2c3d Fix the store", kind: "commit", a: "9f8e7d6", b: "a1b2c3d", focus: -1, more: 0,
+      commit: {sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", short: "a1b2c3d", parents: ["9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"],
+               author: "Tess", date: 1793001600, refs: ["HEAD -> main"], coAuthors: ["Claude <noreply@anthropic.com>"], agent: "claude",
+               message: "Fix the store\n\nKeep the last save time.\n\nCo-Authored-By: Claude <noreply@anthropic.com>"},
+      files: [
+        {i: 0, path: "Sources/App/Store.swift", rel: "Sources/App/Store.swift", status: "M", add: 2, del: 1, binary: false, dir: false, lang: "swift"},
+        {i: 1, path: "docs/new.md", rel: "docs/new.md", status: "A", add: 3, del: 0, binary: false, dir: false, lang: "markdown"},
+        {i: 2, path: "logo.png", rel: "logo.png", status: "M", binary: true, dir: false, lang: "plain"},
+      ]},
+    files: [
+      {patch: "diff --git a/Sources/App/Store.swift b/Sources/App/Store.swift\nindex 1..2 100644\n--- a/Sources/App/Store.swift\n+++ b/Sources/App/Store.swift\n@@ -3,4 +3,5 @@ struct Store {\n     var items: [String] = []\n-    var saved = false\n+    var saved: Date?\n+    /* a comment */ var count = 0\n     func load() {}\n }\n",
+       a: "import Foundation\n\nstruct Store {\n    var items: [String] = []\n    var saved = false\n    func load() {}\n}\n",
+       b: "import Foundation\n\nstruct Store {\n    var items: [String] = []\n    var saved: Date?\n    /* a comment */ var count = 0\n    func load() {}\n}\n"},
+      {patch: "@@ -0,0 +1,3 @@\n+# New\n+\n+Text.\n", a: "", b: "# New\n\nText.\n"},
+      {binary: true},
+    ],
+  },
+};
+window.openTab = (tab, path, lang, extra = {}) => { TABS[tab] = path; return fv.open(tab, {path, lang, ...extra}); };
+</script>
+<script src="dist/editor.js"></script>
+</head>
+<body>
+<div id="bar">
+  <button onclick="openTab('a','/repo/Sources/App/Store.swift','swift')">Store.swift</button>
+  <button onclick="openTab('b','/repo/README.md','markdown',{mode:'preview'})">README (preview)</button>
+  <button onclick="fv.setMode(Object.keys(TABS).pop()==='b'?'b':'a','source')">source</button>
+  <button onclick="FILES['/repo/Sources/App/Store.swift'].disk += '\n// appended by an agent\n'; fv.reload('a')">agent edit</button>
+  <button onclick="fv.compare('a')">compare</button>
+</div>
+<div id="cm"></div>
+<div id="preview" style="display:none"><article id="article" class="md"></article><nav id="toc" class="toc"></nav></div>
+<div id="info"></div>
+<div id="changes" style="display:none"></div>
+<div id="compare" style="display:none">
+  <div class="cmpbar"><span id="compareText"></span><span class="sp"></span><button id="compareCancel"></button><button id="compareSave" class="pri"></button></div>
+  <div id="compareBody"></div>
+</div>
+<script>fv.init({lang: "zh", colors: {}});</script>
+</body>
+</html>

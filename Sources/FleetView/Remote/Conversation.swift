@@ -415,9 +415,22 @@ enum Conversation {
         var byUuid: [String: [String: Any]] = [:]
         var order: [String] = []
         var leaf: String?
+        // Records a compaction carried into the session it started. It keeps the newest few
+        // verbatim, but leaves them where they were in the old chain — only one not yet flushed is
+        // written after the boundary, onto the summary — so the last one left behind has no child
+        // on disk and looks like the tip of an abandoned branch. It is not: the conversation went
+        // on, past the compaction. Taken for a tip, it froze a web chat at the moment of the
+        // compaction while the session ran on for another hour (see TreeGraph's `continuesFrom`).
+        var carried = Set<String>()
 
         for r in records {
             if (r["type"] as? String) == "last-prompt", let l = r["leafUuid"] as? String { leaf = l }
+            if (r["subtype"] as? String) == "compact_boundary" {
+                if let l = r["logicalParentUuid"] as? String { carried.insert(l) }
+                if let kept = (r["compactMetadata"] as? [String: Any])?["preservedMessages"] as? [String: Any] {
+                    carried.formUnion((kept["allUuids"] as? [String]) ?? (kept["uuids"] as? [String]) ?? [])
+                }
+            }
             guard let u = r["uuid"] as? String else { continue }
             byUuid[u] = r
             order.append(u)
@@ -427,7 +440,7 @@ enum Conversation {
             }
         }
         guard !order.isEmpty else { return nil }
-        let leaves = order.filter { children[$0] == nil }
+        let leaves = order.filter { children[$0] == nil && !carried.contains($0) }
         info.branches = children.values.filter { $0.count > 1 }.count
 
         var tip: String?
@@ -460,7 +473,13 @@ enum Conversation {
         return path.isEmpty ? nil : path
     }
 
-    /// Text of the most recent real user prompt on a branch (skipping tool results and subagents).
+    /// Text of the most recent real user prompt on a branch (skipping tool results, subagents, and
+    /// what Claude itself writes into the user role).
+    ///
+    /// The injected ones have to be skipped or the live branch stops matching the prompt that
+    /// started it, and the match falls to some older leaf instead: a background task finishing
+    /// lands as a `<task-notification>` user record (`promptSource: "system"`), a compaction as its
+    /// summary (`isCompactSummary`). Same rule as TreeGraph's `injected`.
     private static func latestUserText(from leafUuid: String, parent: [String: String],
                                        byUuid: [String: [String: Any]]) -> String? {
         var u: String? = leafUuid
@@ -469,13 +488,18 @@ enum Conversation {
             seen.insert(cur)
             if let r = byUuid[cur], (r["type"] as? String) == "user",
                (r["isSidechain"] as? Bool) != true,
+               (r["isMeta"] as? Bool) != true,
+               (r["isCompactSummary"] as? Bool) != true,
+               (r["promptSource"] as? String) != "system",
                let msg = r["message"] as? [String: Any] {
-                if let s = msg["content"] as? String, !trim(s).isEmpty { return s }
-                if let blocks = msg["content"] as? [[String: Any]] {
-                    for b in blocks where (b["type"] as? String) == "text" {
-                        if let t = b["text"] as? String, !trim(t).isEmpty { return t }
-                    }
+                var text: String?
+                if let s = msg["content"] as? String, !trim(s).isEmpty { text = s }
+                if text == nil, let blocks = msg["content"] as? [[String: Any]] {
+                    text = blocks.lazy.filter { ($0["type"] as? String) == "text" }
+                        .compactMap { $0["text"] as? String }.first { !trim($0).isEmpty }
                 }
+                // Older builds mark a notice only by its wrapper.
+                if let text, !text.hasPrefix("<task-notification") { return text }
             }
             u = parent[cur]
         }

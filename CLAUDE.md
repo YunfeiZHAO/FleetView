@@ -13,10 +13,13 @@ operational files from being swept into a commit by whoever runs `git add -A` ne
 |---|---|
 | `Sources/FleetView/` | the app (SwiftUI, AppKit, the embedded HTTP server, the web page) |
 | `Sources/FleetViewAudit/` | the audit engine — Foundation only, deliberately no SwiftUI/AppKit/AppState |
+| `Sources/FleetViewFiles/` | the file window's logic: exact text round-trips, saving, read-only git — Foundation only |
+| `Editor/` | the file window's editor page (CodeMirror); `Editor/build.sh` rebuilds `Editor/dist/`, which is committed |
 | `Tests/FleetViewAuditTests/` | `swift run FleetViewAuditTests` (not `swift test` — see Package.swift) |
 | `docs/design/` | design notes, dated |
+| `docs/问题与修复/` | incident records, dated: symptom, root cause, fix, how it was verified (index in its README) |
 | `scripts/`, `examples/` | **ignored by default** — see below |
-| `~/.fleetview/` | all runtime state: `state.json`, `archive.json` (removed cards), logs, `ui/panel.html`, `sessions/`, `search.db` |
+| `~/.fleetview/` | all runtime state: `state.json`, `archive.json` (removed cards), `triggers.json` (agents' last-reported crons), logs, `ui/panel.html`, `sessions/`, `search.db` |
 
 ### scripts/ and examples/ are whitelisted, not open
 
@@ -74,7 +77,11 @@ directory outside the repo when you have one.
   setting is the one exception, and it deliberately does not apply to the update handoff.
 - **Closing a terminal destroys its session.** Closing the window, Close All Terminals and Remove
   Terminal all kill the tmux session — a card that says "closed" means the agent behind it is
-  stopped. Clicking a closed card reopens it and types `--resume` for the session it last had
+  stopped. The kill is only a hangup, and an agent can survive one (a Claude under `sp-claude` spun
+  for 46 hours that way), so `ProcessReaper` writes the pane's processes down before the kill and
+  SIGTERM/SIGKILLs whatever is left after it — sparing anything that calls itself a daemon, which
+  agents start on purpose to outlive them; see
+  [`docs/问题与修复/2026-10-22-agent-outlives-closed-card.md`](docs/问题与修复/2026-10-22-agent-outlives-closed-card.md). Clicking a closed card reopens it and types `--resume` for the session it last had
   (`AppState.reopenTerminal`), which is what keeps that recoverable. `project-manager restore
   <session-id>` does the same from a session id, for a removed card too (`restoreConversation`).
   The only things that reattach to a still-live session are `reconnectLiveTerminals()` on launch
@@ -87,6 +94,15 @@ directory outside the repo when you have one.
   `CodexHookInstaller.stripFence` must only ever remove our own `[[hooks.*]]` tables. Stripping the
   whole fence untrusted every hook on each launch and Codex stopped reporting without a word — see
   [`docs/design/2026-10-01-codex-worker-hooks.md`](docs/design/2026-10-01-codex-worker-hooks.md).
+- **The file window (📁 in a project's header) never takes git's index lock, and never writes a
+  file with `Data.write(.atomic)`.** Agents commit in the same repositories all day; porcelain
+  `git diff` rewrites `.git/index` even with `--no-optional-locks` (measured), and an agent's commit
+  then fails on `index.lock`. Git goes through `GitReader` — read-only commands only — and saves go
+  through `FileSave`, which keeps symlinks, hard links, modes and xattrs and refuses to overwrite a
+  file an agent changed since it was opened. The web `/save` uses it too. See
+  [`docs/design/2026-10-26-file-browser-editor.md`](docs/design/2026-10-26-file-browser-editor.md).
+  The editor page is `Editor/` (CodeMirror); change it there and run `Editor/build.sh`. To look at
+  the window without launching the app: `FV_SNAPSHOT_FILES=<folder> FleetView --snapshot <dir>`.
 - Two agent backends, two transcript formats: Claude
   `~/.claude/projects/<slug>/…` (branches via `parentUuid`), Codex
   `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (branches via `forked_from_id`). Anything that

@@ -14,6 +14,8 @@ struct SearchPanel: View {
     @EnvironmentObject var state: AppState
     @ObservedObject var model: SearchModel
     @FocusState private var focused: Bool
+    /// The message under the pointer in a conversation, which is the one offering "resume from here".
+    @State private var hoveredStep: Int64?
 
     /// One selectable row: a project to open, a thing on the board, or one message that matched.
     enum Item: Identifiable {
@@ -223,7 +225,9 @@ struct SearchPanel: View {
             switch item {
             case .project(let p): projectRow(p, on: on)
             case .fleet(let f): fleetRow(f, on: on)
-            case .hit(let h, let g): hitRow(h, group: g, on: on)
+            case .hit(let h, let g):
+                if let card = g.card { cardRow(card, hit: h, on: on) }
+                else { hitRow(h, on: on) }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -281,7 +285,7 @@ struct SearchPanel: View {
         }
     }
 
-    private func hitRow(_ hit: SearchIndex.Hit, group: SearchModel.Group, on: Bool) -> some View {
+    private func hitRow(_ hit: SearchIndex.Hit, on: Bool) -> some View {
         let isPrompt = hit.role == .user
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: isPrompt ? "person" : "sparkles")
@@ -295,18 +299,46 @@ struct SearchPanel: View {
                 Text(highlighted(snippet(hit.body), base: on ? Theme.onSecondaryContainer : Theme.onSurface))
                     .font(.fvBody).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // No project here: messages are listed only where the list folds, under their
+                // project's row.
                 HStack(spacing: 6) {
                     AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 10)
-                    // The project is the row above when the list folds; say it only where it doesn't.
-                    if let title = group.title ?? (model.folds ? nil : projectName(group.project)) {
-                        Text(title).lineLimit(1)
-                        Text("·")
-                    }
                     Text(shortDate(hit.ts))
                 }
                 .font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
             }
         }
+    }
+
+    /// A removed card, drawn as the card it was: its name, then what it was last asked. The
+    /// conversation is the right side's job. Drawn as the conversation's last message instead, the
+    /// list read as a project's history with no cards in it — the names were a grey line under
+    /// each message, and the name is what you came looking for.
+    private func cardRow(_ card: TerminalArchive, hit: SearchIndex.Hit, on: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 13)
+                .frame(width: 24, height: 24)
+                .background(on ? Theme.surfaceContainerHigh : Theme.surfaceContainerHighest)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(highlighted(card.name, base: on ? Theme.onSecondaryContainer : Theme.onSurface))
+                        .font(.fvTitleSmall).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(shortDate(hit.ts)).font(.fvLabelSmall).monospacedDigit()
+                }
+                // The prompt as the card showed it, behind its "›". A card that never recorded one
+                // falls back to where its conversation ended.
+                HStack(alignment: .top, spacing: 6) {
+                    if !card.lastPrompt.isEmpty { Text("›").font(.fvMonoBody) }
+                    Text(highlighted(snippet(card.lastPrompt.isEmpty ? hit.body : card.lastPrompt),
+                                     base: Theme.onSurfaceVariant))
+                        .font(.fvBodySmall).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .foregroundColor(Theme.onSurfaceVariant)
     }
 
     private func message(_ text: String, icon: String, tint: Color) -> some View {
@@ -327,8 +359,8 @@ struct SearchPanel: View {
         switch selected {
         case .project(let p)?:
             projectDetail(p)
-        case .hit(let hit, _)?:
-            conversation(hit)
+        case .hit(let hit, let g)?:
+            conversation(hit, card: g.card)
         case .fleet(let f)?:
             fleetDetail(f)
         case nil:
@@ -337,11 +369,14 @@ struct SearchPanel: View {
     }
 
     /// The conversation around the hit, read from the index. Nothing is written until it is opened.
-    @ViewBuilder private func conversation(_ hit: SearchIndex.Hit) -> some View {
+    /// Headed by the removed card it belonged to when there is one — the list's project row already
+    /// says the project.
+    @ViewBuilder private func conversation(_ hit: SearchIndex.Hit, card: TerminalArchive?) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 AgentMark(kind: hit.src == .claude ? .claude : .codex, size: 13)
-                Text(projectName(hit.project)).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                Text(card?.name ?? projectName(hit.project)).font(.fvTitleSmall).foregroundColor(Theme.onSurface)
+                    .lineLimit(1)
                 Text(shortDate(hit.ts)).font(.fvLabelSmall).foregroundColor(Theme.onSurfaceVariant)
                 Spacer()
                 if let p = model.preview, p.id == hit.id {
@@ -354,7 +389,7 @@ struct SearchPanel: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 14) {
                             ForEach(p.context) { msg in
-                                bubble(msg, isHit: msg.id == hit.id).id(msg.id)
+                                step(msg, isHit: msg.id == hit.id).id(msg.id)
                             }
                         }
                         .padding(.horizontal, 24).padding(.vertical, 8)
@@ -376,12 +411,60 @@ struct SearchPanel: View {
                 if let failure = model.failure {
                     Text(failure).font(.fvLabelSmall).foregroundColor(Theme.warn).lineLimit(1)
                 }
-                primaryButton(model.opening == hit.id ? L(.searchOpening) : L(.searchOpenNew),
-                              icon: "arrow.up.right.square", busy: model.opening == hit.id) {
-                    model.open(hit, in: state)
-                }
+                resumeButtons(hit)
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
+        }
+    }
+
+    /// The two ways back into a conversation: as it is now, in its own card, or from a step of it in
+    /// a new one. Return takes whichever is likelier to be meant — in the drawer of removed cards
+    /// that is the card coming back, everywhere else it is the place the search landed on.
+    @ViewBuilder private func resumeButtons(_ hit: SearchIndex.Hit) -> some View {
+        let busy = model.opening == hit.id
+        let latest = button(busy && model.openingLatest ? L(.searchOpening) : L(.searchResumeLatest),
+                            icon: "arrow.uturn.forward", busy: busy && model.openingLatest,
+                            primary: model.mode == .archive) {
+            model.resumeLatest(hit, in: state)
+        }.help(L(.searchResumeLatestHelp))
+        let here = button(busy && !model.openingLatest ? L(.searchOpening) : L(.searchResumeHere),
+                          icon: "arrow.up.right.square", busy: busy && !model.openingLatest,
+                          primary: model.mode != .archive) {
+            model.open(hit, in: state)
+        }.help(L(.searchResumeHereHelp))
+        if model.mode == .archive { here; latest } else { latest; here }
+    }
+
+    /// A message, and on hover the way to resume the conversation from it — any step, not only
+    /// the one the search landed on. It sits beside the bubble, on the side the bubble leaves open,
+    /// and keeps its place while hidden so the list does not shift under the pointer.
+    private func step(_ msg: SearchIndex.Hit, isHit: Bool) -> some View {
+        let isPrompt = msg.role == .user
+        let busy = model.opening == msg.id && !model.openingLatest
+        let shown = hoveredStep == msg.id || busy
+        let resume = Button { model.open(msg, in: state) } label: {
+            HStack(spacing: 4) {
+                if busy { ProgressView().controlSize(.small).scaleEffect(0.5).frame(width: 12, height: 12) }
+                else { Image(systemName: "arrow.uturn.backward").font(.system(size: 10)) }
+                Text(L(.searchResumeStep)).font(.fvLabelSmall)
+            }
+            .foregroundColor(Theme.primary)
+            .padding(.horizontal, 10).frame(height: 24)
+            .background(Theme.surfaceContainerHighest).clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L(.searchResumeStepHelp))
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .disabled(model.opening != nil)
+        return HStack(alignment: .bottom, spacing: 8) {
+            if isPrompt { resume }
+            bubble(msg, isHit: isHit)
+            if !isPrompt { resume }
+        }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredStep = msg.id } else if hoveredStep == msg.id { hoveredStep = nil }
         }
     }
 
@@ -393,17 +476,16 @@ struct SearchPanel: View {
             .lineSpacing(3)
             .textSelection(.enabled)
             .lineLimit(isHit ? nil : 12)
-        return HStack {
-            if isPrompt { Spacer(minLength: 60) }
-            text
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isPrompt ? Theme.primaryContainer
-                            : (isHit ? Theme.surfaceContainerHighest : Color.clear))
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18)
-                    .strokeBorder(isHit ? Theme.primary : Color.clear, lineWidth: 1.5))
-            if !isPrompt { Spacer(minLength: 40) }
-        }
+        // No spacers of its own: `step` lays it out, with the resume button between the bubble
+        // and the empty side.
+        return text
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(isPrompt ? Theme.primaryContainer
+                        : (isHit ? Theme.surfaceContainerHighest : Color.clear))
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(isHit ? Theme.primary : Color.clear, lineWidth: 1.5))
+            .frame(maxWidth: .infinity, alignment: isPrompt ? .trailing : .leading)
     }
 
     private func fleetDetail(_ f: SearchModel.FleetHit) -> some View {
@@ -446,20 +528,30 @@ struct SearchPanel: View {
 
     private func primaryButton(_ title: String, icon: String, busy: Bool,
                                _ action: @escaping () -> Void) -> some View {
+        button(title, icon: icon, busy: busy, primary: true, action)
+    }
+
+    /// The filled button is the one Return presses, and the only one that says so.
+    private func button(_ title: String, icon: String, busy: Bool, primary: Bool,
+                        _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14) }
                 else { Image(systemName: icon).font(.system(size: 13)) }
                 Text(title).font(.fvLabel)
-                Text("↵").font(.fvLabelSmall).padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Theme.onPrimary.opacity(0.18)).clipShape(RoundedRectangle(cornerRadius: 5))
+                if primary {
+                    Text("↵").font(.fvLabelSmall).padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Theme.onPrimary.opacity(0.18)).clipShape(RoundedRectangle(cornerRadius: 5))
+                }
             }
-            .foregroundColor(Theme.onPrimary)
-            .padding(.leading, 16).padding(.trailing, 12).frame(height: 40)
-            .background(Theme.primary).clipShape(Capsule())
+            .foregroundColor(primary ? Theme.onPrimary : Theme.primary)
+            .padding(.leading, 16).padding(.trailing, primary ? 12 : 16).frame(height: 40)
+            .background(primary ? Theme.primary : Color.clear)
+            .overlay(Capsule().strokeBorder(primary ? Color.clear : Theme.outline, lineWidth: 1))
+            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(busy)
+        .disabled(busy || model.opening != nil)
     }
 
     // MARK: - Actions
@@ -481,7 +573,9 @@ struct SearchPanel: View {
     private func openSelected() {
         switch selected {
         case .project(let p)?: withAnimation(.easeOut(duration: 0.15)) { model.toggle(p) }
-        case .hit(let h, _)?: model.open(h, in: state)
+        case .hit(let h, _)?:
+            // What the filled button does (see `resumeButtons`).
+            if model.mode == .archive { model.resumeLatest(h, in: state) } else { model.open(h, in: state) }
         case .fleet(let f)?: openFleet(f)
         case nil: break
         }

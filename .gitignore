@@ -38,3 +38,7 @@ examples/*
 
 # Scratch space for anything an agent needs to write inside the repo.
 .scratch/
+
+# The editor page's build dependencies. Its built output (Editor/dist/) is committed, so neither
+# `swift build` nor package_app.sh needs Node; only Editor/build.sh does.
+Editor/node_modules/

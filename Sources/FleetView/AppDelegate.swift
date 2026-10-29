@@ -30,6 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Closing the dashboard while terminal windows remain keeps the app alive.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Unsaved edits in a file window are asked about before quitting. The self-updater has asked
+    /// already, before it started the swap that is waiting for this process to go.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !SelfUpdate.isHandingOff, FileWindows.shared.hasUnsaved else { return .terminateNow }
+        FileWindows.shared.settleUnsaved(reason: L(.filesUnsavedQuit)) { go in
+            NSApp.reply(toApplicationShouldTerminate: go)
+        }
+        return .terminateLater
+    }
+
     // Tear down web servers and the FleetView tmux server so nothing is left listening after quit.
     func applicationWillTerminate(_ notification: Notification) {
         AppStartup.stop(state)
@@ -108,9 +118,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    @objc private func terminalFontBigger()  { state.setTerminalFontSize(state.terminalFontSize + 1) }
-    @objc private func terminalFontSmaller() { state.setTerminalFontSize(state.terminalFontSize - 1) }
-    @objc private func terminalFontActual()  { state.setTerminalFontSize(TerminalWindowController.defaultFontSize) }
+    // In front of a file window the same keys size its text instead: changing every terminal's font
+    // from a window that shows none of them would be a surprise.
+    @objc private func terminalFontBigger() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: 1) { return }
+        state.setTerminalFontSize(state.terminalFontSize + 1)
+    }
+    @objc private func terminalFontSmaller() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: -1) { return }
+        state.setTerminalFontSize(state.terminalFontSize - 1)
+    }
+    @objc private func terminalFontActual() {
+        if FileWindows.shared.zoom(NSApp.keyWindow, by: nil) { return }
+        state.setTerminalFontSize(TerminalWindowController.defaultFontSize)
+    }
 
     @objc private func uninstallHooks() {
         HookInstaller.uninstall()

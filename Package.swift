@@ -15,11 +15,19 @@ let package = Package(
             name: "FleetViewAudit",
             path: "Sources/FleetViewAudit"
         ),
+        // The file window's logic that does not need a window: reading and writing text exactly,
+        // the read-only git runner and its parsers, quick-open matching. Foundation only, like the
+        // audit engine, so the test executable can exercise it without an app.
+        .target(
+            name: "FleetViewFiles",
+            path: "Sources/FleetViewFiles"
+        ),
         .executableTarget(
             name: "FleetView",
             dependencies: [
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 "FleetViewAudit",
+                "FleetViewFiles",
             ],
             path: "Sources/FleetView"
         ),
@@ -31,7 +39,7 @@ let package = Package(
         // which keeps the tests runnable here and one edit away from real XCTest later.
         .executableTarget(
             name: "FleetViewAuditTests",
-            dependencies: ["FleetViewAudit"],
+            dependencies: ["FleetViewAudit", "FleetViewFiles"],
             path: "Tests/FleetViewAuditTests"
         ),
     ]

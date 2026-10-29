@@ -9,6 +9,9 @@ enum FV {
     /// Removed cards, kept per project (`AppState.terminalArchive`). Out of state.json because it is
     /// most of its size and changes far less often than the rest (see `AppState.persist`).
     static var archiveFile: URL { supportDir.appendingPathComponent("archive.json") }
+    /// The trigger lists agents last reported (`AppState.triggerReports`). A cache, kept out of
+    /// state.json on purpose: losing it costs a badge until the agent's next turn, not the board.
+    static var triggersFile: URL { supportDir.appendingPathComponent("triggers.json") }
     static var portFile: URL { supportDir.appendingPathComponent("port") }
     static var hookScript: URL { supportDir.appendingPathComponent("hook.sh") }
     static var logFile: URL { supportDir.appendingPathComponent("fleetview.log") }

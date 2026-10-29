@@ -1,0 +1,99 @@
+import Foundation
+
+/// "Recently changed": what moved in the project lately, newest first, with who did it when known.
+///
+/// Built from three things that are already at hand, never from a walk of the project: the files
+/// git reports as changed, the files in directories the watcher reported since the window opened,
+/// and the agents' own record of what they wrote (FileEdits). A file's time is its modification
+/// time; its author is the card whose write is recorded at that time, and nobody otherwise.
+extension FileBrowserModel {
+    /// Look at the files in directories that just changed (a bounded number), for ones modified since
+    /// the window opened. At most every 3 s: an agent writing into one folder all afternoon is one
+    /// look every 3 s, not one per write.
+    func observe(_ dirs: Set<String>) {
+        observePending.formUnion(dirs)
+        if observePending.count > 200 { observePending = Set(observePending.prefix(200)) }
+        guard observeTimer == nil else { return }
+        let wait = max(0, observedAt.addingTimeInterval(3).timeIntervalSinceNow)
+        let t = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.observeTimer = nil
+            self.observedAt = Date()
+            let dirs = self.observePending
+            self.observePending.removeAll()
+            self.observeNow(dirs)
+        }
+        observeTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: t)
+    }
+
+    private func observeNow(_ dirs: Set<String>) {
+        let root = self.root, since = openedAt
+        let list = Array(dirs.prefix(30))
+        Task {
+            let found = await onUtility { () -> [String: Date] in
+                var out: [String: Date] = [:]
+                let fm = FileManager.default
+                for d in list {
+                    let abs = d.isEmpty ? root : root + "/" + d
+                    guard let names = try? fm.contentsOfDirectory(atPath: abs) else { continue }
+                    for n in names.prefix(400) where n != ".DS_Store" {
+                        let p = abs + "/" + n
+                        guard let a = try? fm.attributesOfItem(atPath: p), (a[.type] as? FileAttributeType) == .typeRegular,
+                              let m = a[.modificationDate] as? Date, m >= since else { continue }
+                        out[d.isEmpty ? n : d + "/" + n] = m
+                    }
+                }
+                return out
+            }
+            guard !found.isEmpty else { return }
+            self.observedChanges.merge(found) { max($0, $1) }
+            if self.observedChanges.count > 300 {
+                let keep = self.observedChanges.sorted { $0.value > $1.value }.prefix(200)
+                self.observedChanges = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+            }
+            self.refreshRecent(after: 0.3)
+        }
+    }
+
+    /// Rebuild the list soon — and no sooner than 3 s after the last time: each build stats every
+    /// candidate.
+    func refreshRecent(after delay: TimeInterval = 0.8) {
+        recentTimer?.cancel()
+        let wait = max(delay, recentBuiltAt.addingTimeInterval(3).timeIntervalSinceNow)
+        let t = DispatchWorkItem { [weak self] in self?.buildRecent() }
+        recentTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: t)
+    }
+
+    private func buildRecent() {
+        guard visible else { return }
+        recentBuiltAt = Date()
+        let root = self.root
+        var candidates = Set(marks.compactMap { $0.value == .deleted || untrackedDirs.contains($0.key) ? nil : $0.key }.prefix(200))
+        candidates.formUnion(observedChanges.keys)
+        let edits = FileEdits.shared.recent(under: root)
+        for e in edits { candidates.insert(String(e.path.dropFirst(root.count + 1))) }
+        let list = Array(candidates)
+        Task {
+            let times = await onUtility { () -> [(String, Date)] in
+                list.compactMap { rel -> (String, Date)? in
+                    guard let a = try? FileManager.default.attributesOfItem(atPath: root + "/" + rel),
+                          (a[.type] as? FileAttributeType) == .typeRegular,
+                          let m = a[.modificationDate] as? Date else { return nil }
+                    return (rel, m)
+                }
+            }
+            let byPath = Dictionary(edits.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+            // "Lately" is the last three days: an untracked file from last month is uncommitted, not recent.
+            let since = Date().addingTimeInterval(-3 * 86_400)
+            let out = times.filter { $0.1 >= since }.sorted { $0.1 > $1.1 }.prefix(8).map { rel, m -> Recent in
+                // The recorded write is the author only if nothing touched the file well after it.
+                let e = byPath[root + "/" + rel]
+                let by = e.flatMap { $0.at >= m.addingTimeInterval(-120) ? $0.terminalName : nil }
+                return Recent(path: rel, at: m, by: by)
+            }
+            if Array(out) != self.recent { self.recent = Array(out) }
+        }
+    }
+}

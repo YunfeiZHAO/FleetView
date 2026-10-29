@@ -192,7 +192,13 @@ enum SearchIndex {
     /// `event_msg`, the old reading consumed those rollouts whole and stored nothing, leaving
     /// `done` at EOF: every one of those sessions would have stayed permanently invisible to search,
     /// with no error anywhere to say so. Bumping this re-reads them.
-    private static let parserGeneration: Int32 = 2
+    ///
+    /// 3: a revert's segment (`…-<thread>_<rollout>.jsonl`) was indexed under a name that is no
+    /// uuid — the last five dash groups of it — so its hits opened nothing. Re-read, they carry the
+    /// rollout's id, the address the tree and treeflow use. Only those files are re-read: resetting
+    /// every rollout would cost a 13 GB pass, and would also undo `excludeCopiedPrefix` on the
+    /// forks treeflow wrote, bringing back every prompt they copied as a duplicate hit.
+    private static let parserGeneration: Int32 = 3
 
     private static func migrate(_ db: OpaquePointer) {
         var stmt: OpaquePointer?
@@ -210,9 +216,11 @@ enum SearchIndex {
         // this would run, and fail, on every launch.) So the FTS side is dropped whole and rebuilt
         // from the bodies in `msg`, which is what storing them buys. Only Codex *transcripts* are
         // re-read; Claude's 12 GB is never touched, because its reading did not change.
+        // A segment's filename has `_` after `rollout-`; nothing else in a Codex path does.
+        let which = current < 2 ? "src = 1" : "src = 1 AND path GLOB '*/rollout-*_*.jsonl'"
         let reset = """
-            DELETE FROM msg WHERE path IN (SELECT path FROM file WHERE src = 1);
-            UPDATE file SET done = 0, prompts = 0 WHERE src = 1;
+            DELETE FROM msg WHERE path IN (SELECT path FROM file WHERE \(which));
+            UPDATE file SET done = 0, prompts = 0 WHERE \(which);
             DROP TABLE IF EXISTS msg_fts;
             CREATE VIRTUAL TABLE msg_fts
                 USING fts5(seg, content='', tokenize='unicode61 remove_diacritics 2');
@@ -593,9 +601,10 @@ enum SearchIndex {
         var out = Parsed()
         out.prompts = promptsBefore
         // The filename carries the session uuid, so numbering never has to wait for session_meta
-        // (an incremental read starts past it).
-        let sid = codexSessionId(url)
-        out.session = sid
+        // (an incremental read starts past it). Hits group under the thread; the address names the
+        // file, which after an Esc Esc is a segment of the thread with an id of its own (CodexTree).
+        out.session = CodexTree.sessionId(fromRollout: url.path)
+        let sid = CodexTree.rolloutId(fromRollout: url.path)
         out.consumed = forEachLine(url, from: from, wanted: wantCodex) { line in
             guard let obj = json(line), let payload = obj["payload"] as? [String: Any] else { return }
             if out.project.isEmpty, let cwd = payload["cwd"] as? String { out.project = cwd }
@@ -629,15 +638,6 @@ enum SearchIndex {
             }
         }
         return out
-    }
-
-    /// `rollout-2026-07-19T02-14-32-<uuid>.jsonl` → `<uuid>`.
-    private static func codexSessionId(_ url: URL) -> String {
-        let name = url.deletingPathExtension().lastPathComponent
-        // The uuid is the last five dash-separated groups.
-        let parts = name.split(separator: "-")
-        guard parts.count >= 5 else { return name }
-        return parts.suffix(5).joined(separator: "-")
     }
 
     // MARK: - Query

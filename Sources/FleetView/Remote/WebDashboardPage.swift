@@ -271,6 +271,13 @@ enum WebDashboardPage {
      it; the vertical padding is a finger's worth of target that the row's height hides. */
   .card .uid{flex:none;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-size:11px;
     line-height:16px;font-weight:500;color:var(--sub);cursor:pointer;padding:6px 0;margin:-6px 0;white-space:nowrap}
+  /* Something will make this agent act on its own (see AgentTrigger on the Mac): a schedule, or
+     background work that wakes it. Always shown — a card that looks idle with a cron behind it is
+     what this is for — and its own target: a tap opens the list, it never opens the terminal. */
+  .card .trig{flex:none;display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;
+    border:1px solid color-mix(in srgb,var(--accent) 60%,transparent);border-radius:999px;color:var(--accent);
+    font-size:11px;line-height:16px;font-weight:500;font-variant-numeric:tabular-nums;cursor:pointer}
+  .card.tint .trig,.card.idle.fresh .trig{color:inherit;border-color:color-mix(in srgb,currentColor 50%,transparent)}
   /* The fill is the state, on every copy of a card: the one lifted into 进行中 and the one in its
      project look the same, so either answers the same glance. Running and finished each get a loud
      first ten seconds — `fresh`, which paintFresh sets and the markup never carries: a run that has
@@ -935,6 +942,46 @@ enum WebDashboardPage {
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);background:var(--codeBg);
     border:1px solid var(--outlineVariant);border-radius:12px;outline:none;tab-size:4}
   textarea.fbedit:focus{border-color:var(--accent)}
+  /* The trigger list: a sheet from the right on a wide screen, from the bottom on a phone. */
+  #trig{display:none;position:fixed;inset:0;z-index:60}
+  #trig.on{display:block}
+  #trig .tscrim{position:absolute;inset:0;background:var(--scrim)}
+  #trig .tsheet{position:absolute;top:0;right:0;bottom:0;width:min(440px,100vw);display:flex;flex-direction:column;
+    background:var(--panel);box-shadow:0 0 24px rgba(0,0,0,.35)}
+  @media (max-width:640px){ #trig .tsheet{top:auto;left:0;width:auto;max-height:86dvh;border-radius:16px 16px 0 0} }
+  #trig .thead{display:flex;align-items:center;gap:10px;padding:12px 8px 10px 20px;border-bottom:1px solid var(--outlineVariant)}
+  #trig .thead b{font-size:16px;line-height:24px;font-weight:500}
+  #trig .thead .tname{flex:1;min-width:0;font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #trig .thead button{flex:none;width:40px;height:40px;border:0;background:none;color:var(--sub);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;border-radius:999px}
+  #triglist{overflow:auto;padding:12px 16px calc(24px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+  #triglist .tnote{font-size:12px;line-height:18px;color:var(--sub);margin:2px 0 12px}
+  #triglist .tsec{font-size:12px;line-height:16px;font-weight:500;color:var(--sub);margin:14px 0 8px}
+  #triglist .tsec span{color:var(--outline);margin-left:6px}
+  .trow{display:flex;gap:12px;align-items:flex-start;background:var(--card);border-radius:12px;padding:12px;margin-bottom:8px}
+  .trow.busy{opacity:.7}
+  .trow .ti{flex:none;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;
+    background:var(--secondaryContainer);color:var(--onSecondaryContainer)}
+  .trow .tm{flex:1;min-width:0}
+  .trow .tt{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .trow .tt b{font-size:14px;line-height:20px;font-weight:500}
+  .trow .tg{font-size:11px;line-height:16px;font-weight:500;color:var(--sub);border:1px solid var(--outlineVariant);
+    border-radius:999px;padding:0 6px}
+  .trow .tid{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--sub);
+    margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .trow .tmeta{font-size:12px;line-height:18px;color:var(--sub);margin-top:3px}
+  .trow .tbody{margin-top:8px;padding:10px;border-radius:8px;background:var(--bg);cursor:pointer}
+  .trow .ttext{font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .trow .tcode{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--sub);
+    margin-top:6px;white-space:pre-wrap;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .trow .tbody.open .ttext,.trow .tbody.open .tcode{display:block;-webkit-line-clamp:unset}
+  .trow .tdel{flex:none;width:36px;height:36px;margin:-4px -4px 0 0;border:0;background:none;color:var(--sub);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;border-radius:999px}
+  @media (hover:hover){ .trow .tdel:hover{color:var(--red);background:var(--redSoft)} }
+  .trow .tbusy{font-size:12px;line-height:18px;font-weight:500;color:var(--accent);margin-top:8px}
+  #triglist .tempty{text-align:center;color:var(--sub);font-size:12px;line-height:18px;padding:36px 12px}
+  #triglist .tempty b{display:block;color:var(--text);font-size:14px;line-height:20px;font-weight:500;margin-bottom:4px}
   /* iOS zooms the page into any field under 16px the moment it is focused. */
   @media (pointer:coarse){ textarea.fbedit{font-size:16px} }
 </style>
@@ -1048,7 +1095,53 @@ enum WebDashboardPage {
   <div id="fbbody"></div>
 </div>
 
+<div id="trig">
+  <div class="tscrim" onclick="closeTrig()"></div>
+  <div class="tsheet" role="dialog" aria-modal="true">
+    <div class="thead"><b data-i18n="trig.title"></b><span class="tname" id="trigname"></span>
+      <button onclick="closeTrig()" data-i18n-title="common.back" data-i18n-aria="common.back"><i data-ic="x"></i></button></div>
+    <div id="triglist"></div>
+  </div>
+</div>
+
 <script>
+/* ---------- requests that cannot hang ----------
+   On a bad line the page used to drop off and stay off until it was reloaded. Nothing here had a
+   deadline: a request sent just before the network went away — or before the phone moved to
+   another network, or slept — waits for an answer on a connection that no longer exists, and a
+   browser lets a page have six connections to one host. The polls below fire every second or two,
+   so six such requests piled up within seconds, and every request after them, the ping that
+   decides "offline" included, queued behind them for good. Reloading worked only because it threw
+   the six away. So every request gets a deadline and can be dropped on demand (`abortAll`), and
+   the polls never overlap themselves (`poll`). `timeout:0` opts out, for the few requests whose
+   answer must not be guessed at: a send, whose failure path puts the text back to be sent again,
+   and a save. */
+const FETCH_DEADLINE=12000;
+const inflight=new Set();
+const fetchNoDeadline=window.fetch.bind(window);
+window.fetch=function(input,init){
+  init=Object.assign({},init);
+  const ms=init.timeout===undefined?FETCH_DEADLINE:init.timeout; delete init.timeout;
+  if(!ms) return fetchNoDeadline(input,init);
+  const ctl=new AbortController(), theirs=init.signal;
+  if(theirs){ if(theirs.aborted) ctl.abort(); else theirs.addEventListener('abort',()=>ctl.abort(),{once:true}); }
+  init.signal=ctl.signal;
+  inflight.add(ctl);
+  /* Left running after the headers arrive: the body can stall too, and aborting a request that
+     has finished is a no-op. */
+  setTimeout(()=>{ ctl.abort(); inflight.delete(ctl); },ms);
+  return fetchNoDeadline(input,init);
+};
+function abortAll(){ for(const c of inflight) c.abort(); inflight.clear(); }
+/* Run `fn` every `ms`, skipping a beat while the last run is still out — at most one request per
+   poll on the wire, however slow the line. */
+function poll(fn,ms,now=true){
+  let busy=false;
+  const run=async()=>{ if(busy) return; busy=true; try{ await fn(); }catch(e){} finally{ busy=false; } };
+  if(now) run();
+  return setInterval(run,ms);
+}
+
 /* ---------- words ----------
    Every word the page shows lives here, once per language, key for key — the markup and the code
    below only ever name a key. Two tables side by side rather than strings scattered through 2,000
@@ -1134,7 +1227,26 @@ const I18N={
     'net.tsRelayVia':'Tailscale 中转（{relay}）','net.public':'外网','net.offline':'离线',
     'net.toastOff':'连不上 Mac，正在重试','net.toastOffLast':'连不上 Mac，正在重试（上次：{route}）',
     'net.latency':'延迟 {ms} ms','net.latencyRange':'延迟 {ms} ms（最近 {n} 次 {lo}–{hi} ms）',
-    'net.node':'本设备：{node}','net.refreshed':'看板 {s} 秒前刷新'
+    'net.node':'本设备：{node}','net.refreshed':'看板 {s} 秒前刷新',
+    'net.reconnecting':'正在重连…','net.reconnected':'已重新连接','net.back':'已重新连上 Mac',
+    'toast.attachedTo':'文件已附加到「{name}」的输入框',
+    'trig.title':'触发器','trig.chip':'{n} 个触发器 · 点击查看',
+    'trig.secCron':'定时任务','trig.secBg':'后台任务 · 结束或有动静时唤醒 agent','trig.secLaunchd':'launchd 定时',
+    'trig.every':'每 {n} 分钟','trig.hourly':'每小时 {m}','trig.daily':'每天 {t}','trig.weekdays':'工作日 {t}',
+    'trig.once':'{t} 一次','trig.interval':'每 {t}',
+    'trig.next':'下次 {t}','trig.nextAbout':'下次约 {t}','trig.fired':'已触发 {n} 次，上次 {t}','trig.neverFired':'还没触发过',
+    'trig.created':'创建于 {t}','trig.expires':'{t} 自动过期','trig.reason':'原因：{t}',
+    'trig.wakeup':'/loop 唤醒','trig.recurring':'重复','trig.oneShot':'一次性',
+    'trig.del':'删除这个触发器','trig.stop':'停止这个后台任务',
+    'trig.confirmAgent':'FleetView 会给 agent 发一条消息，让它自己取消（会话内的定时任务只有它能删）。确定吗？',
+    'trig.confirmLaunchd':'会卸载这个 launchd 任务，并把 plist 移到废纸篓。确定吗？',
+    'trig.cancelling':'已发给 agent，等它执行…','trig.removing':'正在移除…','trig.sent':'已发给 agent',
+    'trig.removed':'已移除','trig.failed':'没能删除：连不上 Mac',
+    'trig.reportedAt':'agent 上次上报：{t}（每轮结束时上报）',
+    'trig.neverReported':'还没收到这个 agent 的上报——Claude 会在下一轮结束时报告。',
+    'trig.notRunning':'agent 没在运行，会话内的定时和后台任务都已随进程结束。',
+    'trig.codexNote':'Codex 没有会话内的定时任务，这里只会列出指向它的 launchd 任务。',
+    'trig.none':'没有触发器','trig.noneDetail':'这个终端的 agent 没有定时或后台任务，也没有 launchd 任务指向它。'
   },
   en:{
     'common.loading':'Loading…','common.back':'Back','common.retry':'Retry',
@@ -1220,7 +1332,27 @@ const I18N={
     'net.tsRelayVia':'Tailscale relay ({relay})','net.public':'Internet','net.offline':'Offline',
     'net.toastOff':'Can’t reach the Mac — retrying','net.toastOffLast':'Can’t reach the Mac — retrying (last: {route})',
     'net.latency':'Latency {ms} ms','net.latencyRange':'Latency {ms} ms (last {n}: {lo}–{hi} ms)',
-    'net.node':'This device: {node}','net.refreshed':'Board refreshed {s}s ago'
+    'net.node':'This device: {node}','net.refreshed':'Board refreshed {s}s ago',
+    'net.reconnecting':'Reconnecting…','net.reconnected':'Reconnected','net.back':'Back in touch with the Mac',
+    'toast.attachedTo':'Attached to {name}’s message box',
+    'trig.title':'Triggers','trig.chip':{one:'1 trigger · tap to see',other:'{n} triggers · tap to see'},
+    'trig.secCron':'Scheduled','trig.secBg':'Background work · wakes the agent when it reports','trig.secLaunchd':'launchd jobs',
+    'trig.every':'every {n} min','trig.hourly':'hourly at {m}','trig.daily':'daily at {t}','trig.weekdays':'weekdays at {t}',
+    'trig.once':'once, {t}','trig.interval':'every {t}',
+    'trig.next':'next {t}','trig.nextAbout':'next ~{t}','trig.fired':{one:'fired once, last {t}',other:'fired {n}×, last {t}'},
+    'trig.neverFired':'not fired yet',
+    'trig.created':'created {t}','trig.expires':'expires {t}','trig.reason':'why: {t}',
+    'trig.wakeup':'/loop wakeup','trig.recurring':'recurring','trig.oneShot':'one-shot',
+    'trig.del':'Delete this trigger','trig.stop':'Stop this background task',
+    'trig.confirmAgent':'FleetView will send the agent a message asking it to cancel this itself — only it can reach its session schedule. Go ahead?',
+    'trig.confirmLaunchd':'This unloads the launchd job and moves its plist to the Trash. Go ahead?',
+    'trig.cancelling':'Sent to the agent — waiting for it…','trig.removing':'Removing…','trig.sent':'Sent to the agent',
+    'trig.removed':'Removed','trig.failed':'Couldn’t delete: can’t reach the Mac',
+    'trig.reportedAt':'Last reported by the agent {t} (at the end of each turn)',
+    'trig.neverReported':'Nothing reported yet — Claude reports at the end of its next turn.',
+    'trig.notRunning':'No agent is running; session schedules and background work ended with it.',
+    'trig.codexNote':'Codex has no session scheduler; only launchd jobs that name this terminal can appear here.',
+    'trig.none':'No triggers','trig.noneDetail':'Its agent has nothing scheduled or running in the background, and no launchd job names it.'
   }
 };
 /* The device's language, read once: a page that switched halfway through a session would show both.
@@ -1254,6 +1386,8 @@ function applyI18n(root){
 applyI18n(document);
 
 let curUrl='',curId='',state=null,dragging=false,curView='chat',chatTimer=null,termLoaded=false,curInfo={},sentAt=0,stickBottom=false,flyNext=false;
+/* The position a conversation is to open at, until it has been put there (see goTo). */
+let pendingPos=null, settle=null, chatTouched=0, liveSeen=false;
 
 /* ---------- icons and status shapes ----------
    Line icons are Lucide's geometry (the library the design names for the web side), inlined so the
@@ -1274,6 +1408,13 @@ const IC={
   inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   plus:'<path d="M5 12h14M12 5v14"/>',
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  'alarm-clock':'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3M6.38 18.7 4 21M17.64 18.67 20 21"/>',
+  hourglass:'<path d="M5 22h14M5 2h14M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/>',
+  repeat:'<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  'calendar-clock':'<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5M16 2v4M8 2v4M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/>',
+  'circle-stop':'<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
   circle:'<circle cx="12" cy="12" r="8"/>',
   copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
@@ -1462,14 +1603,79 @@ function cachePut(id,j){
    the first live payload rather than being restored stale. */
 function showCached(c){
   const el=document.getElementById('chat');
-  el.dataset.sig=''; el.scrollTop=0;
-  sentGhost=null; stickBottom=true; flyNext=true;
+  el.dataset.sig='';
+  sentGhost=null; stickBottom=false; flyNext=true;     // where it lands is pendingPos's to say
   curInfo=Object.assign({},c.info,{status:'',pendingTool:'',pendingText:''});
   document.getElementById('stickyq').classList.remove('on');
   document.getElementById('perm').classList.remove('on');
   renderChat(c.messages,c.note);
   renderInfo(curInfo);
 }
+/* ---------- each card keeps its own place and its own unsent text ----------
+   One composer and one scroll used to serve every card. A draft typed for one terminal was still
+   in the box when you opened another — and Send would have given it to that one. And a
+   conversation reopened from this device's cache was scrolled to its end while the overlay was
+   still hidden, which a browser may ignore: it then opened wherever the cached list began, which
+   is 150 messages back, the middle of the conversation. Now each card reopens where you left it:
+   at the latest message if that is where you were, else at the message you were reading. */
+const POS_KEY='fv_pos', DRAFT_KEY='fv_draft', PER_CARD_MAX=60;
+function cardMap(key){ try{ return JSON.parse(localStorage.getItem(key)||'{}')||{}; }catch(e){ return {}; } }
+function cardPut(key,id,val){
+  if(!id)return;
+  const m=cardMap(key);
+  if(val==null) delete m[id]; else m[id]=Object.assign({t:Date.now()},val);
+  for(const x of Object.keys(m).sort((a,b)=>(m[b].t||0)-(m[a].t||0)).slice(PER_CARD_MAX)) delete m[x];
+  try{ localStorage.setItem(key,JSON.stringify(m)); }catch(e){}
+}
+/* Where the chat is being read: its end, or the message at the top of the view and how far down
+   it sits. A message rather than a pixel offset, because the list is a window onto the last 150
+   messages that slides as new ones arrive — an offset would point at something else next time. */
+function readingAt(el){
+  if(el.scrollHeight-el.scrollTop-el.clientHeight<120) return {bottom:true};
+  const top=el.getBoundingClientRect().top;
+  for(const n of el.querySelectorAll('.msg[data-k]')){
+    const r=n.getBoundingClientRect();
+    if(r.bottom>top) return {k:n.dataset.k,off:r.top-top};
+  }
+  return {bottom:true};
+}
+/* Put the view back there. False when that message is not in the list on screen. */
+function goTo(el,at){
+  if(!at||at.bottom){ el.scrollTop=el.scrollHeight; return true; }
+  const n=el.querySelector('.msg[data-k="'+at.k+'"]');      // msgKey is [a-z0-9]: safe in a selector
+  if(!n) return false;
+  el.scrollTop+=n.getBoundingClientRect().top-el.getBoundingClientRect().top-at.off;
+  return true;
+}
+/* Arrived at: hold it there for a moment, while late layout (fonts, the viewport settling, the
+   header's height) moves things under it — unless you have started scrolling yourself. */
+function settleAt(el,at){
+  const since=performance.now();
+  settle={at,since};
+  for(const ms of [0,120,400,1000]) setTimeout(()=>{
+    if(settle&&settle.since===since&&chatTouched<since&&curId) goTo(el,at);
+  },ms);
+}
+function savePos(){
+  const el=document.getElementById('chat');
+  if(!curId||pendingPos||!el.querySelector('.msg')) return;   // nothing of its own on screen yet
+  cardPut(POS_KEY,curId,readingAt(el));
+}
+function saveDraft(){
+  if(!curId)return;
+  const v=document.getElementById('inputtext').value;
+  cardPut(DRAFT_KEY,curId,v?{v}:null);
+}
+function loadDraft(id){
+  const ta=document.getElementById('inputtext');
+  ta.value=(cardMap(DRAFT_KEY)[id]||{}).v||'';
+  autoGrow(ta); syncSendBtn();
+}
+['wheel','touchstart','keydown','mousedown'].forEach(ev=>
+  document.getElementById('chat').addEventListener(ev,()=>{ chatTouched=performance.now(); },{passive:true}));
+window.addEventListener('pagehide',()=>{ savePos(); saveDraft(); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden){ savePos(); saveDraft(); } });
+
 /* Where the board was when you opened a terminal, so closing one puts you back there instead of at
    the top of the list — on a phone, three projects up.
    The offset has to be taken *before* the lock: `body.locked` is `position:fixed`, which collapses
@@ -1502,12 +1708,16 @@ function unlockBoard(id){
   if(r.top<8||r.bottom>window.innerHeight-8) card.scrollIntoView({block:'center'});
 }
 function openTerm(id,name){
+  if(curId&&curId!==id){ savePos(); saveDraft(); }          // leaving one card for another
   curId=id;curUrl='';termLoaded=false;chatFails=0;termGone=false;
+  // Shown before anything is drawn into it: a pane that is not laid out cannot be scrolled.
+  document.getElementById('term').classList.add('show');
+  pendingPos=cardMap(POS_KEY)[id]||{bottom:true}; settle=null; liveSeen=false;
   const cached=cacheGet(id);
   if(cached&&cached.messages&&cached.messages.length) showCached(cached); else showSkeleton();
+  loadDraft(id);
   document.getElementById('termname').textContent=name;
   document.getElementById('termframe').src='about:blank';
-  document.getElementById('term').classList.add('show');
   closeDrawer(); showTermHead();            // every conversation opens with its header and no drawer
   lockBoard();                              // stop the page scrolling behind the overlay
   syncViewport();
@@ -1588,6 +1798,7 @@ swipeBack('term','chat','pre.code,.mbody,#presets,#keys,#inputbar,#drawer,#tabs'
    long-press to copy, a code preview scrolls sideways, and a PDF is an iframe that pans itself. */
 swipeBack('fb','fbbody','#fbpath,#fbcrumbs,pre,iframe,textarea,.fbtools,table',()=>fbClose());
 function closeTerm(){
+  savePos(); saveDraft();
   closeDrawer(); showTermHead();
   document.getElementById('stickyq').classList.remove('on');
   document.getElementById('term').classList.remove('show');
@@ -1595,7 +1806,7 @@ function closeTerm(){
   syncViewport();                          // drop the keyboard-era height/offset
   document.getElementById('termframe').src='about:blank';
   document.getElementById('termerr').classList.remove('on');
-  curId='';termLoaded=false;stopChatPoll();
+  curId='';termLoaded=false;stopChatPoll();pendingPos=null;settle=null;
   beaconSelect('','');
   termSyncHash();
 }
@@ -1690,7 +1901,7 @@ async function popTerm(){await ensureTerm();if(curUrl)window.open(curUrl,'_blank
 
 /* ---------- conversation view ---------- */
 const TOOLICON={terminal:'terminal',edit:'pencil',read:'file-text',search:'search',web:'globe',task:'bot',other:'dot'};
-function startChatPoll(){stopChatPoll();chatTimer=setInterval(loadChat,3000);}
+function startChatPoll(){stopChatPoll();chatTimer=poll(loadChat,3000,false);}
 function stopChatPoll(){if(chatTimer){clearInterval(chatTimer);chatTimer=null;}}
 /* Consecutive failures, so a persistent one can be told apart from a slow one. It used to be
    neither: renderChat lives inside the try and the catch was empty, so the skeleton was only ever
@@ -1723,7 +1934,22 @@ async function loadChat(){
     // A plain shell has no conversation — show its scrollback instead, which is the thing you
     // actually want to read remotely (and unlike the terminal mirror, this scrolls on touch).
     if(curInfo.shell) await renderShell();
-    else { renderChat(j.messages||[],j.note); cachePut(want,j); }
+    else {
+      renderChat(j.messages||[],j.note); cachePut(want,j);
+      // The first live list is the last word on where to open. If what you were reading is not in
+      // it — it has scrolled out of the last 150 since — the latest is the next best place: the
+      // cached copy may have found it, but holding on to a message that is about to vanish would
+      // leave you at whatever the list now starts with.
+      if(!liveSeen&&(j.messages||[]).length){
+        liveSeen=true;
+        const el=document.getElementById('chat'), at=pendingPos||(settle&&settle.at);
+        const untouched=!settle||chatTouched<settle.since;
+        if(at&&!at.bottom&&untouched&&!el.querySelector('.msg[data-k="'+at.k+'"]')){
+          goTo(el,{bottom:true}); settleAt(el,{bottom:true});
+        }
+        pendingPos=null;
+      }
+    }
     renderInfo(curInfo);
     renderPerm(curInfo);
     syncSendBtn();
@@ -1924,8 +2150,10 @@ function syncSendBtn(){
   btn.dataset.stop=stop?'1':'';
 }
 function jumpLatest(){ const el=document.getElementById('chat'); el.scrollTop=el.scrollHeight; }
+let posSaveT=0;
 document.getElementById('chat').addEventListener('scroll',()=>{
   const el=document.getElementById('chat');
+  clearTimeout(posSaveT); posSaveT=setTimeout(savePos,300);
   document.getElementById('jump').classList.toggle('on', el.scrollHeight-el.scrollTop-el.clientHeight>300);
   updateStickyPrompt();
 });
@@ -2161,7 +2389,7 @@ function msgHTML(m){
       (m.ok===false?'<span style="color:var(--red)" title="'+tr('chat.failed')+'">'+ic('x','s16')+'</span>':'')+'</div>'+
       (det?'<div class="mbody">'+det+'</div>':'')+'</div>';
   }
-  return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'">'+
+  return '<div class="msg '+(m.role==='user'?'user':'asst')+(m.sub?' sub':'')+(m.queued?' queued':'')+'" data-k="'+msgKey(m)+'">'+
     '<span class="cp" data-copy="1">'+tr('chat.copy')+'</span>'+
     (m.sub?'<div class="tag">'+tr('chat.subagent')+'</div>':'')+
     (m.ts?'<span class="when">'+hhmm(m.ts)+'</span>':'')+
@@ -2189,6 +2417,8 @@ function renderChat(msgs,note){
             ':'+(st.status||'')+':'+(st.pendingText||'');
   if(el.dataset.sig===sig)return;      // unchanged → don't rebuild at all
   const nearBottom=stickBottom||el.scrollHeight-el.scrollTop-el.clientHeight<120;
+  // Read before the rebuild: the message you are on, to hold it still while the window slides.
+  const reading=pendingPos||nearBottom?null:readingAt(el);
   // Remember which cards the user expanded and restore them after the rebuild — otherwise reading a
   // long tool output is impossible. Keyed by content, not position: messages get appended and old
   // ones drop off the front, so any index-based anchor drifts.
@@ -2206,7 +2436,11 @@ function renderChat(msgs,note){
     for(let i=from;i<n;i++){ all[i].classList.add('fly');
       all[i].style.animationDelay=((i-from)*20)+'ms'; }
   }
-  if(nearBottom){el.scrollTop=el.scrollHeight;stickBottom=false;}
+  if(pendingPos){
+    if(goTo(el,pendingPos)){ settleAt(el,pendingPos); pendingPos=null; }
+  }else if(nearBottom) el.scrollTop=el.scrollHeight;
+  else if(reading) goTo(el,reading);
+  stickBottom=false;
   updateStickyPrompt();
 }
 async function key(k){if(!curId)return;try{await fetch('/key?id='+curId+'&k='+encodeURIComponent(k));}catch(e){}}
@@ -2246,7 +2480,7 @@ function usePreset(id){
   const at=ta.value.length; ta.setSelectionRange(at,at);
   closeDrawer();
   autoGrow(ta); ta.focus();
-  syncSendBtn();
+  syncSendBtn(); saveDraft();
 }
 async function addNote(){const c=prompt(tr('notes.addPrompt'));
   if(c&&c.trim()){await fetch('/note?add='+encodeURIComponent(c.trim()));await refreshState();renderPresets();}}
@@ -2502,7 +2736,8 @@ async function sendText(){
      message interrupted the turn instead of sending — so it took two taps. */
   if(!t){ key(document.getElementById('sendbtn').dataset.stop?'Escape':'Enter'); return; }
   closeDrawer();
-  ta.value='';autoGrow(ta);
+  const owner=curId;
+  ta.value='';autoGrow(ta);saveDraft();pendingPos=null;
   showSent(t);                       // don't wait a round trip to acknowledge the send
   stickBottom=true; jumpLatest();    // follow your own message down, wherever you were reading
   markSent();                       // the hook is a beat behind; don't sit on 'idle' meanwhile
@@ -2510,14 +2745,18 @@ async function sendText(){
      again if it had not — Codex takes text followed at once by Enter as a paste and turns that Enter
      into a newline. "stuck" is the one case that needs you: the text is typed but never ran, which
      on the board looks exactly like an agent ignoring you. An older Mac answers without "submit". */
-  const req=fetch('/type?id='+encodeURIComponent(curId)+'&enter=1&wait=1&text='+encodeURIComponent(t));
+  const req=fetch('/type?id='+encodeURIComponent(curId)+'&enter=1&wait=1&text='+encodeURIComponent(t),{timeout:0});
   setTimeout(loadChat,400);
   try{
     const r=await (await req).json();
     if(r&&r.submit==='stuck'){ sentAt=0; renderInfo(curInfo);
       toast(tr('toast.stuck'),5000); }
-  }catch(e){ ta.value=t; autoGrow(ta); sentAt=0; renderInfo(curInfo);
-             if(sentGhost){ sentGhost.node.remove(); sentGhost=null; } }
+  }catch(e){
+    // Back to the card it was written for, which may no longer be the one on screen.
+    if(curId===owner){ ta.value=t; autoGrow(ta); saveDraft(); sentAt=0; renderInfo(curInfo);
+                       if(sentGhost){ sentGhost.node.remove(); sentGhost=null; } }
+    else cardPut(DRAFT_KEY,owner,{v:t});
+  }
 }
 /* ---------- files an agent sent (the outbox) ----------
    The mirror of the attach button: `fleetview-send` drops a file in ~/.fleetview/outbox and it
@@ -2728,6 +2967,7 @@ function uploadOne(f,label){
 async function attachFiles(files){
   const list=[...files];
   if(!list.length)return;
+  const owner=curId;                 // an upload outlasts a switch to another card
   const btn=document.getElementById('imgbtn');
   // The attach control is a tile now; only its label changes, or the icon would be wiped with it.
   const lab=btn.querySelector('.tl')||btn;
@@ -2750,7 +2990,13 @@ async function attachFiles(files){
   uprogHide();
   btn.disabled=false;
   if(lab.textContent==='…') lab.textContent=was;
-  if(paths.length) insertAtCursor(document.getElementById('inputtext'), paths.join(' ')+' ');
+  if(!paths.length) return;
+  const text=paths.join(' ')+' ';
+  if(curId===owner){ insertAtCursor(document.getElementById('inputtext'),text); saveDraft(); return; }
+  const d=(cardMap(DRAFT_KEY)[owner]||{}).v||'';
+  cardPut(DRAFT_KEY,owner,{v:d+(d&&!/\s$/.test(d)?' ':'')+text});
+  const term=((state&&state.terminals)||[]).find(x=>x.id===owner);
+  toast(tr('toast.attachedTo',{name:term?term.name:owner.slice(0,8)}),2400);
 }
 /* Land the path where the cursor is, so a caption typed around it survives. */
 function insertAtCursor(ta,text){
@@ -2842,7 +3088,7 @@ function markSent(){ sentAt=performance.now(); curInfo.status='working'; renderI
 document.getElementById('inputtext').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}
 });
-document.getElementById('inputtext').addEventListener('input',e=>{autoGrow(e.target);syncSendBtn();});
+document.getElementById('inputtext').addEventListener('input',e=>{autoGrow(e.target);syncSendBtn();saveDraft();});
 
 /* ---------- project file browser ----------
    The project's own directory, walked from the phone. What it is for: an agent cites a file, and
@@ -3030,7 +3276,7 @@ async function fbLoadMd(path,mode,scrollTo){
   const body=document.getElementById('fbbody');
   if(!fbDoc) body.innerHTML='<div class="fbnote">'+tr('common.loading')+'</div>';
   let r,text;
-  try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store'}); text=await r.text(); }
+  try{ r=await fetch('/read?path='+encodeURIComponent(path),{cache:'no-store',timeout:60000}); text=await r.text(); }
   catch(e){ body.innerHTML='<div class="fbnote">'+tr('fb.readFailed')+'</div>'; return; }
   if(fbFile!==path) return;                      // walked away while it loaded
   if(!r.ok){ body.innerHTML='<div class="fbnote">'+esc(text)+'</div>'; return; }
@@ -3106,7 +3352,7 @@ async function fbSave(force){
   try{
     r=await fetch('/save?path='+encodeURIComponent(d.path)+'&base='+encodeURIComponent(d.version)+(force?'&force=1':''),
                   {method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},
-                   body:d.crlf?text.replace(/\n/g,'\r\n'):text});
+                   body:d.crlf?text.replace(/\n/g,'\r\n'):text,timeout:0});
     j=await r.json().catch(()=>({}));
   }catch(e){ toast(tr('toast.saveNoMac')); return; }
   if(fbDoc!==d) return;
@@ -3136,6 +3382,119 @@ document.addEventListener('keydown',e=>{
   else if(fbDoc.mode==='edit'&&(k==='z'||k==='y')){ e.preventDefault(); fbStep(k==='y'||e.shiftKey?1:-1); }
 });
 window.addEventListener('beforeunload',e=>{ if(fbDirty()){ e.preventDefault(); e.returnValue=''; } });
+
+// ---------- triggers ----------
+/* What will make one terminal's agent act on its own (GET /triggers): the Mac's TriggersPanel,
+   as a sheet. Re-read every few seconds while it is open, so a cancellation sent to the agent
+   is seen to land. Times arrive as seconds from now and are turned into this device's clock. */
+let trigId=null, trigItems=[], trigTimer=null, trigOpen=new Set();
+function openTrig(id){
+  trigId=id; trigItems=[]; trigOpen=new Set();
+  const t=((state&&state.terminals)||[]).find(x=>x.id===id);
+  document.getElementById('trigname').textContent=t?t.name:'';
+  document.getElementById('triglist').innerHTML='<div class="tnote">'+tr('common.loading')+'</div>';
+  document.getElementById('trig').classList.add('on');
+  loadTrig();
+  clearInterval(trigTimer); trigTimer=poll(loadTrig,5000,false);
+}
+function closeTrig(){
+  trigId=null; clearInterval(trigTimer); trigTimer=null;
+  document.getElementById('trig').classList.remove('on');
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&trigId){ e.preventDefault(); closeTrig(); } });
+async function loadTrig(){
+  const id=trigId; if(!id)return;
+  let j=null;
+  try{ const r=await fetch('/triggers?id='+encodeURIComponent(id),{cache:'no-store'}); j=await r.json(); }catch(e){}
+  if(trigId!==id||!j)return;
+  renderTrig(j);
+}
+function trigClock(d){
+  const p=n=>String(n).padStart(2,'0'), now=new Date();
+  const hm=p(d.getHours())+':'+p(d.getMinutes());
+  return d.toDateString()===now.toDateString()?hm:(d.getMonth()+1)+'-'+d.getDate()+' '+hm;
+}
+function trigAt(sec){ return trigClock(new Date(Date.now()+sec*1000)); }
+function trigAgo(sec){ return trigClock(new Date(Date.now()-sec*1000)); }
+function trigSpan(s){
+  s=Math.max(0,Math.round(s)); if(s<60)return s+'s';
+  const m=Math.floor(s/60); if(m<60)return m+'m';
+  const h=Math.floor(m/60); if(h<24)return m%60?h+'h'+(m%60)+'m':h+'h';
+  return Math.floor(h/24)+'d';
+}
+function trigWords(it){
+  const s=it.shape, p=n=>String(n).padStart(2,'0');
+  if(s){
+    if(s.k==='every')return tr('trig.every',{n:s.n});
+    if(s.k==='hourly')return tr('trig.hourly',{m:s.m.map(x=>':'+p(x)).join(' ')});
+    if(s.k==='daily')return tr('trig.daily',{t:p(s.h)+':'+p(s.m)});
+    if(s.k==='weekdays')return tr('trig.weekdays',{t:p(s.h)+':'+p(s.m)});
+    if(s.k==='once')return tr('trig.once',{t:s.mo+'-'+s.d+' '+p(s.h)+':'+p(s.m)});
+  }
+  if(it.schedule)return it.schedule;
+  if(it.interval)return tr('trig.interval',{t:trigSpan(it.interval)});
+  return it.type||it.id;
+}
+function trigRow(it,i){
+  const icon=it.kind==='cron'?(it.wakeup?'rotate-cw':(it.recurring===false?'alarm-clock':'repeat'))
+    :it.kind==='launchd'?'calendar-clock':(it.type==='monitor'?'activity':it.type==='subagent'?'users':'hourglass');
+  const tags=it.kind==='cron'?[it.wakeup?tr('trig.wakeup'):tr(it.recurring===false?'trig.oneShot':'trig.recurring')]
+    :(it.kind==='background'&&it.status?[it.status]:[]);
+  const idl=it.kind==='cron'?[it.schedule,it.id].filter(Boolean).join('  ·  '):it.id;
+  const meta=[];
+  if(it.next>=0) meta.push(tr(it.lag>0?'trig.nextAbout':'trig.next',{t:trigAt(it.next)+' ('+trigSpan(it.next)+')'}));
+  if(it.kind==='cron'){
+    meta.push(it.fires>0&&it.lastFire>=0?tr('trig.fired',{n:it.fires,t:trigAgo(it.lastFire)}):tr('trig.neverFired'));
+    if(it.created>=0) meta.push(tr('trig.created',{t:trigAgo(it.created)}));
+    if(it.expires>=0) meta.push(tr('trig.expires',{t:trigAt(it.expires)}));
+  }
+  const code=it.kind!=='cron'&&it.command&&it.command!==it.text?it.command:'';
+  const act=it.cancelling
+    ?''
+    :`<button class="tdel" onclick="delTrig(${i})" title="${tr(it.kind==='background'?'trig.stop':'trig.del')}">${ic(it.kind==='background'?'circle-stop':'trash','s16')}</button>`;
+  return `<div class="trow${it.cancelling?' busy':''}"><span class="ti">${ic(icon,'s16')}</span><div class="tm">`+
+    `<div class="tt"><b>${esc(trigWords(it))}</b>${tags.map(x=>`<span class="tg">${esc(x)}</span>`).join('')}</div>`+
+    `<div class="tid">${esc(idl)}</div>`+
+    (meta.length?`<div class="tmeta">${esc(meta.join(' · '))}</div>`:'')+
+    (it.reason?`<div class="tmeta">${esc(tr('trig.reason',{t:it.reason}))}</div>`:'')+
+    (it.text||code?`<div class="tbody${trigOpen.has(it.key)?' open':''}" onclick="trigToggle(${i},this)">${it.text?`<div class="ttext">${esc(it.text)}</div>`:''}${code?`<div class="tcode">${esc(code)}</div>`:''}</div>`:'')+
+    (it.cancelling?`<div class="tbusy">${tr(it.kind==='launchd'?'trig.removing':'trig.cancelling')}</div>`:'')+
+    `</div>${act}</div>`;
+}
+function renderTrig(j){
+  document.getElementById('trigname').textContent=j.name||'';
+  trigItems=j.items||[];
+  const note=j.agent==='codex'?tr('trig.codexNote')
+    :!j.agentRunning?(j.agent==='claude'?tr('trig.notRunning'):'')
+    :j.reported<0?tr('trig.neverReported'):tr('trig.reportedAt',{t:trigAgo(j.reported)});
+  let out=note?`<div class="tnote">${esc(note)}</div>`:'';
+  if(!trigItems.length){
+    out+=`<div class="tempty"><b>${tr('trig.none')}</b>${tr('trig.noneDetail')}</div>`;
+  }else{
+    for(const [kind,key] of [['cron','trig.secCron'],['background','trig.secBg'],['launchd','trig.secLaunchd']]){
+      const rows=trigItems.map((it,i)=>[it,i]).filter(([it])=>it.kind===kind);
+      if(!rows.length)continue;
+      out+=`<div class="tsec">${tr(key)}<span>${rows.length}</span></div>`+rows.map(([it,i])=>trigRow(it,i)).join('');
+    }
+  }
+  document.getElementById('triglist').innerHTML=out;
+}
+/* A prompt opened to be read stays open across the refresh, so it is remembered by key. */
+function trigToggle(i,el){
+  const it=trigItems[i]; if(!it)return;
+  if(trigOpen.has(it.key)) trigOpen.delete(it.key); else trigOpen.add(it.key);
+  el.classList.toggle('open',trigOpen.has(it.key));
+}
+async function delTrig(i){
+  const it=trigItems[i], id=trigId; if(!it||!id)return;
+  if(!confirm(tr(it.kind==='launchd'?'trig.confirmLaunchd':'trig.confirmAgent')))return;
+  try{
+    const r=await fetch('/trigger/cancel?id='+encodeURIComponent(id)+'&key='+encodeURIComponent(it.key)+(it.wakeup?'&wakeup=1':''),{cache:'no-store'});
+    const j=await r.json();
+    toast(j.error?j.error:tr(it.kind==='launchd'?'trig.removed':'trig.sent'),2400);
+  }catch(e){ toast(tr('trig.failed'),2400); }
+  loadTrig();
+}
 
 // ---------- create / actions ----------
 async function newTerm(pid){try{await fetch('/new?projectId='+encodeURIComponent(pid));setTimeout(tick,300);}catch(e){}}
@@ -3191,6 +3550,7 @@ function onDown(e){
   // pointerdown, so by the time a click fires the tap has already been taken as "open this
   // terminal", and stopPropagation on the click is too late to call it back.
   if(e.target.closest('.uid'))return;
+  if(e.target.closest('.trig'))return;           // the same for the trigger chip: it opens its list
   const card=e.target.closest('.card');if(!card)return;
   drag.id=card.dataset.id;drag.name=card.dataset.name;drag.cluster=card.dataset.cluster==='1';
   drag.done=card.dataset.done==='1';drag.canopen=card.dataset.canopen==='1';drag.win=card.dataset.win;drag.card=card;
@@ -3310,12 +3670,13 @@ function card(t){
   const extra=(t.done?`<span class="mk" title="${tr('card.marked')}">${ic('bookmark','s14')}</span>`:'')+
     (t.window==='hidden'?`<span class="hid" title="${tr('card.hidden')}">${ic('eye-off','s14')}</span>`:'');
   const tok=t.tokens>0?`<span class="ls" title="${tr('common.tokens',{n:t.tokens})}">${short(t.tokens)}</span>`:'';
+  const trig=t.trig>0?`<span class="trig" role="button" title="${tr('trig.chip',{n:t.trig})}" onclick="event.stopPropagation();openTrig('${t.id}')">${ic(t.trigTimed>0?'alarm-clock':'hourglass','s12')}${t.trig}</span>`:'';
   const uid=t.id.toLowerCase();
   return `<div class="${cls}" data-id="${t.id}" data-name="${esc(t.name)}" data-cluster="${t.clusterId?'1':'0'}" data-canopen="${t.canOpen?'1':'0'}" data-done="${t.done?'1':'0'}" data-win="${t.window||'none'}">
     <div class="hd">${cardGlyph(t.status)}<span class="nm ts">${esc(t.name)}</span>${extra}${time}</div>
     <div class="pr bs"><span class="sig">${t.status==='shell'?'$':'›'}</span><span class="tx">${t.prompt?esc(t.prompt):'—'}</span></div>
     <div class="ft"><span class="uid" role="button" data-short="${uid.slice(0,4)}…" onclick="event.stopPropagation();uidTap(this,'${t.id}')"
-      title="${tr('card.idTitle',{id:uid.slice(0,8)})}">${uid.slice(0,4)}…</span>${agentMark(t.agent)}${tok}</div>
+      title="${tr('card.idTitle',{id:uid.slice(0,8)})}">${uid.slice(0,4)}…</span>${agentMark(t.agent)}${tok}${trig}</div>
   </div>`;
 }
 /* The id chip, as on the Mac card: a click copies the terminal's id (what `project-manager` takes),
@@ -3779,7 +4140,7 @@ window.addEventListener('hashchange',()=>{
   if(termOpen()) closeTerm();
   if(state) openPendingTerm(state);
 });
-tick();setInterval(tick,1500);
+poll(tick,1500);
 // A tab opened by the file browser's ↗, or one reloaded while it was open, lands on that folder or file.
 { const m=location.hash.match(/^#fb=(.+)$/); if(m){ try{ fbOpenPath(decodeURIComponent(m[1])); }catch(e){} } }
 
@@ -3797,7 +4158,9 @@ async function ping(){
     const r=await fetch('/ping',{cache:'no-store',signal:ctl.signal});
     const j=await r.json();
     net.rtts.push(performance.now()-t0); if(net.rtts.length>5) net.rtts.shift();
+    const wasOff=net.fails>=2;
     net.fails=0; net.via=j;
+    if(wasOff) recovered();
   }catch(e){
     // Gone: what the line was like before says nothing about it once it is back.
     if(++net.fails>=2) net.rtts=[];
@@ -3829,22 +4192,53 @@ function renderNet(){
     el.title=netRoute()+(ms==null?'':' · '+Math.round(ms)+' ms');
   }
 }
-/* Tapping the bars says what they mean: a phone has no hover for the title. */
+/* Tapping the bars reconnects, then says what they mean (a phone has no hover for the title).
+   Reconnecting on every tap rather than only when they read offline: the terminal tab is ttyd's
+   own connection, to another port, and it can be dead — "Press ⏎ to Reconnect", with no ⏎ a phone
+   can reach — while every ping here is fine. */
 function netToast(){
-  const ms=netMedian(), route=netRoute();
-  if(net.fails>=2){ toast(route?tr('net.toastOffLast',{route:route}):tr('net.toastOff'),3500); return; }
-  const parts=[route||tr('net.aria')];
+  // Read before reconnecting, which starts the latency samples over.
+  const off=net.fails>=2, ms=netMedian(), route=netRoute(), rtts=[...net.rtts];
+  reconnect(true);
+  if(off){ toast(tr('net.reconnecting'),3500); return; }
+  const parts=[tr('net.reconnected'),route||tr('net.aria')];
   if(ms!=null){
-    const lo=Math.round(Math.min(...net.rtts)), hi=Math.round(Math.max(...net.rtts));
-    parts.push(net.rtts.length>1?tr('net.latencyRange',{ms:Math.round(ms),n:net.rtts.length,lo:lo,hi:hi})
-                                 :tr('net.latency',{ms:Math.round(ms)}));
+    const lo=Math.round(Math.min(...rtts)), hi=Math.round(Math.max(...rtts));
+    parts.push(rtts.length>1?tr('net.latencyRange',{ms:Math.round(ms),n:rtts.length,lo:lo,hi:hi})
+                            :tr('net.latency',{ms:Math.round(ms)}));
   }
   if(net.via&&net.via.node) parts.push(tr('net.node',{node:net.via.node}));
   if(net.stateAt) parts.push(tr('net.refreshed',{s:Math.max(0,Math.round((Date.now()-net.stateAt)/1000))}));
   toast(parts.join(' · '),4500);
 }
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) ping(); });
-renderNet();ping();setInterval(ping,2000);
+/* Everything in flight is dropped, so nothing new waits behind a request stuck on a dead
+   connection, and what the page shows is asked for again now rather than at the next beat. */
+let manualAt=0;
+function reconnect(manual){
+  abortAll();
+  if(manual){ manualAt=Date.now(); net.rtts=[]; renderNet(); }
+  ping(); tick();
+  if(termOpen()){
+    if(curView==='chat') loadChat();
+    else if(manual) retryTerm();       // a fresh ttyd page, which connects again on load
+  }
+}
+/* The line came back by itself. ttyd may have given up on its socket while it was gone, and a
+   fresh page is the only reliable way back in, so the terminal tab is reloaded too. */
+function recovered(){
+  abortAll(); tick();
+  if(termOpen()){ if(curView==='chat') loadChat(); else retryTerm(); }
+  if(Date.now()-manualAt<20000) toast(tr('net.back'),2500);
+}
+/* A phone that slept or changed networks comes back with every connection it had dead, and none of
+   them says so. Reconnecting costs one round of requests; waiting costs up to the deadline. */
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ hiddenAt=Date.now(); return; }
+  if(hiddenAt&&Date.now()-hiddenAt>5000) reconnect(false); else ping();
+});
+window.addEventListener('online',()=>reconnect(false));
+renderNet();poll(ping,2000);
 
 // ---------- agent-authored dynamic panel (top region) ----------
 let panelMtime=-1;
@@ -3865,11 +4259,11 @@ async function pollPanel(){
     }else{el.classList.remove('show');panelMtime=-1;}
   }catch(e){}
 }
-pollPanel();setInterval(pollPanel,1500);
+poll(pollPanel,1500);
 /* On its own timer, not inside tick(): tick() stops while a conversation is open, and a file that
    arrives while you are reading one is exactly when you want to be told. Slower, because handing a
    file over is a human-paced event. */
-loadFiles();setInterval(loadFiles,4000);
+poll(loadFiles,4000);
 </script>
 </body>
 </html>
