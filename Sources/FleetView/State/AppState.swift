@@ -2426,7 +2426,7 @@ final class AppState: ObservableObject {
             guard let s = query["id"], let id = UUID(uuidString: s), let act = query["do"] else {
                 return ("400 Bad Request", "application/json", Data(#"{"error":"bad id"}"#.utf8))
             }
-            webAction(id, act, name: query["name"])
+            webAction(id, act, name: query["name"], query: query)
             return ("200 OK", "application/json", Data(#"{"ok":true}"#.utf8))
         case "/type":
             guard let s = query["id"], let id = UUID(uuidString: s) else {
@@ -2688,20 +2688,49 @@ final class AppState: ObservableObject {
     }
 
     /// Perform a card action requested from the web (mirrors the desktop drag-to-act zones).
-    private func webAction(_ id: UUID, _ act: String, name: String?) {
+    private func webAction(_ id: UUID, _ act: String, name: String?, query: [String: String] = [:]) {
         // Wrapped so that an action naming a terminal that no longer exists still leaves a trace:
         // it changes nothing, so the state diff alone would show a silent no-op.
+        let onto = query["card"].map { "card \($0)" } ?? query["cluster"].map { "cluster \($0)" }
+            ?? query["project"].map { "project \($0)" }
         audited(AuditIntent("web.action",
                             categories: ["web"],
                             target: auditTarget(terminal: id),
-                            data: AuditValue.compact(["do": .string(act), "name": name.map { .string($0) }]),
+                            data: AuditValue.compact(["do": .string(act), "name": name.map { .string($0) },
+                                                      "onto": onto.map { .string($0) }]),
                             message: "web action \(act)")) {
-            performWebAction(id, act, name: name)
+            performWebAction(id, act, name: name, query: query)
         }
     }
 
-    private func performWebAction(_ id: UUID, _ act: String, name: String?) {
+    /// What a card dropped on the web board lands on — the desktop's rules (`clusterTarget`) over
+    /// the thing the page says it was dropped on. Decided here rather than trusted from the page:
+    /// the page aims at a board drawn a poll ago, and this is what makes "drop it there" mean the
+    /// same thing on both boards.
+    private func webDrop(_ id: UUID, _ query: [String: String]) -> ClusterDrop? {
+        guard let src = terminals.first(where: { $0.id == id }) else { return nil }
+        func joining(_ cluster: UUID) -> ClusterDrop? {
+            if cluster == src.clusterId { return nil }
+            guard let owner = members(ofCluster: cluster).first?.projectId else { return nil }
+            return owner == src.projectId ? .cluster(cluster) : .project(owner)
+        }
+        if let c = query["cluster"].flatMap(UUID.init(uuidString:)) { return joining(c) }
+        if let t = query["card"].flatMap(UUID.init(uuidString:)), t != id,
+           let target = terminals.first(where: { $0.id == t }) {
+            if target.projectId != src.projectId { return .project(target.projectId) }
+            if let c = target.clusterId { return joining(c) }   // a grouped card means its group
+            return .card(t)
+        }
+        if let p = query["project"].flatMap(UUID.init(uuidString:)), p != src.projectId,
+           project(p) != nil {
+            return .project(p)
+        }
+        return nil
+    }
+
+    private func performWebAction(_ id: UUID, _ act: String, name: String?, query: [String: String] = [:]) {
         switch act {
+        case "drop":         if let drop = webDrop(id, query) { applyClusterDrop(id, drop) }
         case "done":         toggleSubtaskDone(id)
         case "duplicate":    duplicateTerminal(id)
         case "remove":       removeTerminal(id)
