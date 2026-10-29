@@ -3,7 +3,7 @@
 | 字段 | 内容 |
 |---|---|
 | 发现日期 | 2026-10-30 |
-| 状态 | 已修复（未部署） |
+| 状态 | 已修复（build 238 部署） |
 | 影响 | 在网页上复制（duplicate）一张 Claude 卡片后，点进新卡片，chat 页面是空的，终端里却有完整的历史。在新卡片里发出第一条消息之前，一直是这样 |
 | 对应代码版本 | `f58e285` |
 | 修复 | `Models.swift`：`TerminalSession.forkedFrom`（Optional）；`AppState.swift`：`duplicateTerminal` 记下它，`transcriptPath(for:)` 在 fork 还没有自己的文件时用它，`SessionStart` 只要不是这次 fork，就清掉它 |
