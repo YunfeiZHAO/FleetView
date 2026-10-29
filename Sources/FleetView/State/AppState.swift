@@ -1443,6 +1443,7 @@ final class AppState: ObservableObject {
         let tmuxPath = remote.tmuxPath
         let srcSession = RemoteServer.sessionName(for: id)
         let srcTranscript = hookSessionPath(for: id) ?? src.transcriptPath
+        if let i = terminals.firstIndex(where: { $0.id == newT.id }) { terminals[i].forkedFrom = srcTranscript }
         let termCwd = src.cwd
         let srcSubPool = src.subPool
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2209,6 +2210,9 @@ final class AppState: ObservableObject {
             }
             // A new process holds none of the old one's crons or background work.
             if ev.source == "startup" || ev.source == "resume" { forgetReportedTriggers(uid) }
+            // Any session but the fork itself is past it: a `/clear` in a fork that has its own file
+            // by then must read as the empty conversation it is, not as the one it was forked from.
+            if ev.source != "fork" { terminals[idx].forkedFrom = nil }
             if ev.source == "startup" {
                 terminals[idx].lastPrompt = ""                    // brand-new session, no prompt yet
             } else if let tp = ev.transcriptPath {
@@ -2596,7 +2600,13 @@ final class AppState: ObservableObject {
         // It names a session whose file does not exist yet: Claude has started and nothing has
         // been said, so there is no conversation — and above all not someone else's. Guessing past
         // this point handed a fresh card the newest unclaimed transcript in its folder.
-        if reportedSessionPath(for: id) != nil { return nil }
+        //
+        // Except a fork, which has said nothing new but carries a whole conversation: until its
+        // first message it is the one it was forked from, and that is what its terminal shows.
+        if reportedSessionPath(for: id) != nil {
+            if let origin = t.forkedFrom, FileManager.default.fileExists(atPath: origin) { return origin }
+            return nil
+        }
         if let tp = t.transcriptPath, FileManager.default.fileExists(atPath: tp) { return tp }
         // A plain shell has no conversation at all — never guess one for it, or it would inherit
         // some unrelated session from the same project.
