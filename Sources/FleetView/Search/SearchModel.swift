@@ -115,6 +115,9 @@ final class SearchModel: ObservableObject {
     /// The hit currently being opened — resolving a fork can take a moment, and a click with no
     /// feedback reads as a dead button.
     @Published var opening: Int64?
+    /// What `opening` is doing: resuming at the latest rather than at a step. Only the button that
+    /// was pressed shows the spinner.
+    @Published var openingLatest = false
     @Published var failure: String?
 
     private var pending: DispatchWorkItem?
@@ -462,11 +465,70 @@ final class SearchModel: ObservableObject {
 
     // MARK: - Open
 
+    /// The conversation back as it stands now — at its newest message, in the card that held it —
+    /// rather than at the hit.
+    ///
+    /// The path `project-manager restore` takes (`AppState.restoreConversation`): a card already
+    /// showing it is raised, since a second agent on one session would fight the first for the
+    /// transcript; a closed one is reopened; a removed one comes back under its own name and uuid;
+    /// only failing all of those is a new card made. Nothing is forked — the newest message is the
+    /// session's own tip, and a plain `--resume` lands there.
+    func resumeLatest(_ hit: SearchIndex.Hit, in state: AppState) {
+        guard opening == nil else { return }
+        opening = hit.id
+        openingLatest = true
+        failure = nil
+        Task.detached(priority: .userInitiated) {
+            let found = Self.latestFile(of: hit)      // a Codex lookup walks every rollout
+            await MainActor.run {
+                self.opening = nil
+                self.openingLatest = false
+                guard let found else { self.failure = L(.searchNoLatest); return }
+                let (status, body) = state.restoreConversation(path: found.path, sid: found.sid,
+                                                               newName: SearchOpen.label(hit))
+                if status.hasPrefix("200") {
+                    self.preview = nil
+                    state.closeSearch()
+                } else {
+                    self.failure = (body["error"] as? String) ?? status
+                    FV.log("search resume-latest failed: \(status) \(self.failure ?? "")")
+                }
+            }
+        }
+    }
+
+    /// The file a conversation continues in, which is not always the one the hit was read from.
+    ///
+    /// A subagent's transcript is filed under its conversation (`<sid>/subagents/agent-*.jsonl`),
+    /// and resuming *it* would bring back the subagent rather than the card. A reverted Codex
+    /// thread is several files under one id, and it carries on in the newest
+    /// (`AppState.conversationFile` knows which).
+    nonisolated private static func latestFile(of hit: SearchIndex.Hit) -> (path: String, sid: String)? {
+        let fm = FileManager.default
+        func stem(_ p: String) -> String { ((p as NSString).lastPathComponent as NSString).deletingPathExtension }
+        switch hit.src {
+        case .claude:
+            let dir = URL(fileURLWithPath: hit.path).deletingLastPathComponent()
+            if dir.lastPathComponent == "subagents" {
+                let main = dir.deletingLastPathComponent().path + ".jsonl"
+                if fm.fileExists(atPath: main) { return (main, stem(main)) }
+            }
+            return fm.fileExists(atPath: hit.path) ? (hit.path, stem(hit.path)) : nil
+        case .codex:
+            let sid = CodexTree.sessionId(fromRollout: hit.path)
+            if !sid.isEmpty, case .found(let p, let s) = AppState.conversationFile(sid.lowercased()) {
+                return (p, s)
+            }
+            return fm.fileExists(atPath: hit.path) ? (hit.path, sid) : nil
+        }
+    }
+
     /// Resolve a hit into a resumed terminal. Runs the fork off the main actor — synthesising a
     /// long chain takes hundreds of milliseconds, and for a big Codex rollout several seconds.
     func open(_ hit: SearchIndex.Hit, in state: AppState, joinClusterOf card: UUID? = nil) {
         guard opening == nil else { return }
         opening = hit.id
+        openingLatest = false
         failure = nil
         let subPool = state.subPool(forConversation: hit)
         Task.detached(priority: .userInitiated) {

@@ -57,7 +57,7 @@ enum SearchOpen {
     }
 
     /// A short terminal name from the hit's text, so the card is recognisable on the board.
-    private static func label(_ hit: SearchIndex.Hit) -> String {
+    static func label(_ hit: SearchIndex.Hit) -> String {
         let flat = hit.body.replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return "⌕ " + String(flat.prefix(12))

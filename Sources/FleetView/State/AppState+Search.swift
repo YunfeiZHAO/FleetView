@@ -71,7 +71,9 @@ extension AppState {
     /// the card that held it had been called. A card still on the board wins over the drawer, and
     /// newer wins over older. A fork (a node short of the end, written out as a new session) is
     /// marked " ⑂", as a duplicated card is; a plain resume is the same conversation and keeps the
-    /// name unchanged. nil when no card ever held it, and the hit's own text is all there is.
+    /// name unchanged — though while the card it came from is still on the board or in the drawer,
+    /// `newTerminal` puts the time after it, because names are unique (see `TerminalNames`). nil
+    /// when no card ever held it, and the hit's own text is all there is.
     func inheritedName(for hit: SearchIndex.Hit, forked: Bool) -> String? {
         let (live, archived) = holders(of: hit)
         guard let name = live?.name ?? archived?.name, !name.isEmpty else { return nil }

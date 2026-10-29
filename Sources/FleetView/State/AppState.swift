@@ -11,6 +11,11 @@ final class AppState: ObservableObject {
     /// Terminals that have been removed, newest first. The board forgets a card the moment it is
     /// removed; this is what remembers the name, uuid and session it had (see `TerminalArchive`).
     @Published var terminalArchive: [TerminalArchive] = []
+    /// The highest default number each project name has handed out (`<name>-<n>`). Stored rather
+    /// than recounted, because what is on the board and in the drawer is not the whole history:
+    /// the drawer keeps no shell-only card and only so many per project, and a count of either
+    /// started again at 1 once they emptied — eight different cards were called FleetView-2.
+    var terminalNumbers: [String: Int] = [:]
     @Published var clusters: [Cluster] = []
     @Published var selectedProjectId: UUID? = nil   // nil == All Projects
     @Published var sidebarWidth: Double = 236
@@ -643,6 +648,7 @@ final class AppState: ObservableObject {
         var terminalFontSize: Double?
         var terminalArchive: [TerminalArchive]?
         var showRecentStrip: Bool?
+        var terminalNumbers: [String: Int]?
 
         /// Every field decoded on its own, and a field that will not decode is dropped rather than
         /// taken as a corrupt file.
@@ -673,6 +679,7 @@ final class AppState: ObservableObject {
             terminalFontSize = get(.terminalFontSize, Double.self)
             terminalArchive = get(.terminalArchive, [TerminalArchive].self)
             showRecentStrip = get(.showRecentStrip, Bool.self)
+            terminalNumbers = get(.terminalNumbers, [String: Int].self)
         }
 
         init(projects: [Project], terminals: [TerminalSession], clusters: [Cluster],
@@ -680,7 +687,7 @@ final class AppState: ObservableObject {
              tasksCollapsed: Bool?, notesCollapsed: Bool?, treePanelWidth: Double?,
              showOnlyMarked: Bool?, closeTerminalsOnQuit: Bool?, collapsedProjects: [UUID]?,
              terminalFontSize: Double?, terminalArchive: [TerminalArchive]?,
-             showRecentStrip: Bool?) {
+             showRecentStrip: Bool?, terminalNumbers: [String: Int]?) {
             self.projects = projects; self.terminals = terminals; self.clusters = clusters
             self.selectedProjectId = selectedProjectId; self.sidebarWidth = sidebarWidth
             self.notes = notes; self.tasksCollapsed = tasksCollapsed
@@ -688,6 +695,7 @@ final class AppState: ObservableObject {
             self.showOnlyMarked = showOnlyMarked; self.closeTerminalsOnQuit = closeTerminalsOnQuit
             self.collapsedProjects = collapsedProjects; self.terminalFontSize = terminalFontSize
             self.terminalArchive = terminalArchive; self.showRecentStrip = showRecentStrip
+            self.terminalNumbers = terminalNumbers
         }
 
         /// This with the soft fields blanked: what is left is what a crash must not lose. Soft is
@@ -767,6 +775,7 @@ final class AppState: ObservableObject {
         showOnlyMarked = p.showOnlyMarked ?? false
         showRecentStrip = p.showRecentStrip ?? true
         closeTerminalsOnQuit = p.closeTerminalsOnQuit ?? false
+        terminalNumbers = p.terminalNumbers ?? [:]
         // Clamped on the way in as well as on the way out: state.json is a file on disk that people
         // do edit, and a 400pt terminal is a window with one character in it.
         if let s = p.terminalFontSize {
@@ -846,7 +855,8 @@ final class AppState: ObservableObject {
                           // Still carried here while archive.json does not hold it, so that a
                           // failed write can never be what drops it.
                           terminalArchive: savedArchive == terminalArchive ? nil : terminalArchive,
-                          showRecentStrip: showRecentStrip)
+                          showRecentStrip: showRecentStrip,
+                          terminalNumbers: terminalNumbers.isEmpty ? nil : terminalNumbers)
         if p == savedState {
             softSaveWork?.cancel()
             softSaveWork = nil
@@ -1007,10 +1017,16 @@ final class AppState: ObservableObject {
         }
         return audited(AuditIntent("terminal.create",
                                    data: ["name_source": .string(name == nil ? "auto" : "user")])) {
-            var t = TerminalSession(projectId: projectId,
-                                    name: name ?? defaultTerminalName(for: proj),
+            let unique = TerminalNames.unique(name ?? defaultTerminalName(for: proj), at: Date(),
+                                              taken: takenTerminalNames(except: id))
+            var t = TerminalSession(projectId: projectId, name: unique,
                                     clusterId: clusterId, cwd: cwd ?? proj.path, autoRunClaude: autoRunClaude)
             if let id { t.id = id }
+            // Counted when a card is made, not when a name is offered: the new-terminal sheet asks
+            // for the default and may be cancelled, or the name typed over with one of the user's.
+            if let n = TerminalNames.defaultNumber(unique, project: proj.name) {
+                terminalNumbers[proj.name] = max(terminalNumbers[proj.name] ?? 0, n)
+            }
             t.status = .shell
             terminals.append(t)
             openWindow(for: t)
@@ -1565,8 +1581,9 @@ final class AppState: ObservableObject {
     func renameTerminal(_ id: UUID, to name: String) {
         audited(AuditIntent("terminal.rename")) {
             guard let idx = terminals.firstIndex(where: { $0.id == id }) else { return }
-            terminals[idx].name = name
-            controllers[id]?.setTitle(name)
+            let unique = TerminalNames.unique(name, at: Date(), taken: takenTerminalNames(except: id))
+            terminals[idx].name = unique
+            controllers[id]?.setTitle(unique)
             save()
         }
     }
@@ -2889,8 +2906,68 @@ final class AppState: ObservableObject {
         save()
     }
 
+    /// The next `<project>-<n>`: one past the highest the project has ever had, so a number is
+    /// never given to a second card. Read, not reserved — see `newTerminal`.
+    ///
+    /// Numbered per project *name*, not per project: names are one namespace, and two folders
+    /// called `src` would otherwise each hand out `src-1`.
     private func defaultTerminalName(for proj: Project) -> String {
-        "\(proj.name)-\(terminals.filter { $0.projectId == proj.id }.count + 1)"
+        // The board and the drawer as well as the counter: every card from before the counter
+        // existed is only there, and so is a name someone typed in the default's shape.
+        let seen = terminals.map(\.name) + terminalArchive.map(\.name)
+        let highest = seen.compactMap { TerminalNames.defaultNumber($0, project: proj.name) }.max() ?? 0
+        let taken = takenTerminalNames(except: nil)
+        var n = max(highest, terminalNumbers[proj.name] ?? 0) + 1
+        while taken.contains(TerminalNames.key("\(proj.name)-\(n)")) { n += 1 }
+        return "\(proj.name)-\(n)"
+    }
+
+    /// Every name a card holds, as `TerminalNames.key`s: on the board and in the drawer, since both
+    /// are where a card is looked up by name. `except` is the card being named — renaming a card to
+    /// its own name, or a removed card coming back under its own uuid, is not a clash.
+    func takenTerminalNames(except id: UUID?) -> Set<String> {
+        var taken = Set<String>()
+        for t in terminals where t.id != id { taken.insert(TerminalNames.key(t.name)) }
+        for a in terminalArchive where a.id != id { taken.insert(TerminalNames.key(a.name)) }
+        return taken
+    }
+
+    /// Give every name that more than one card holds back to one of them (`TerminalNames`).
+    ///
+    /// Who keeps it: a card on the board over one in the drawer — the board's are the names in use,
+    /// and renaming one would change a window title under the user — then the earliest. The rest
+    /// get the time their conversation began (the transcript's creation, falling back to when the
+    /// card was last active or removed), which is what tells two `tasks` apart.
+    ///
+    /// Run after the audit log has started, so each rename is on record.
+    func deduplicateTerminalNames() {
+        func began(_ transcript: String?) -> Date? {
+            guard let transcript else { return nil }
+            return (try? FileManager.default.attributesOfItem(atPath: transcript))?[.creationDate] as? Date
+        }
+        let archive = terminalArchive.indices.sorted { terminalArchive[$0].removedAt < terminalArchive[$1].removedAt }
+        let claims = terminals.map { t in
+            TerminalNames.Claim(id: t.id, name: t.name,
+                                since: began(t.transcriptPath) ?? t.lastActivity ?? Date())
+        } + archive.map { i in
+            let a = terminalArchive[i]
+            return TerminalNames.Claim(id: a.id, name: a.name, since: began(a.transcriptPath) ?? a.removedAt)
+        }
+        let renamed = TerminalNames.deduplicated(claims)
+        guard renamed.contains(where: { $0 != nil }) else { return }
+        audited(AuditIntent("terminal.deduplicate_names",
+                            data: ["renamed": .int(renamed.compactMap { $0 }.count)])) {
+            for (k, name) in renamed.enumerated() {
+                guard let name else { continue }
+                if k < terminals.count {
+                    terminals[k].name = name
+                    controllers[terminals[k].id]?.setTitle(name)
+                } else {
+                    terminalArchive[archive[k - terminals.count]].name = name
+                }
+            }
+            save()
+        }
     }
 
     private func pruneClusters() {
@@ -2982,7 +3059,7 @@ extension AppState {
         guard wanted.count >= 8, wanted.allSatisfy({ $0.isHexDigit || $0 == "-" }) else {
             return ("400 Bad Request", ["error": "give a session id: a uuid, or at least its first 8 characters"])
         }
-        var path: String, sid: String
+        let path: String, sid: String
         switch Self.conversationFile(wanted) {
         case .missing:
             return ("404 Not Found", ["error": "no Claude or Codex conversation \(wanted) on this Mac"])
@@ -2992,6 +3069,15 @@ extension AppState {
         case .found(let p, let s):
             path = p; sid = s
         }
+        return restoreConversation(path: path, sid: sid)
+    }
+
+    /// The same, for a conversation whose file is already known — a search result's "resume at
+    /// the latest", which is this card coming back rather than a fork of it. `newName` is for the
+    /// last resort, a card that never existed: what search calls it reads better than an id.
+    func restoreConversation(path found: String, sid foundSid: String,
+                             newName: String? = nil) -> (status: String, body: [String: Any]) {
+        var path = found, sid = foundSid
         var resolvedFrom: String?
         if CodexTree.isWorkerRollout(path), let main = CodexTree.mainLineRollout(of: path) {
             resolvedFrom = sid
@@ -3067,7 +3153,7 @@ extension AppState {
         guard !folder.isEmpty, let pid = boardProject(containing: folder) else {
             return ("422 Unprocessable Entity", ["error": "could not tell which folder \(sid) ran in"])
         }
-        guard let t = newTerminal(projectId: pid, name: "↺ " + String(sid.prefix(8))) else {
+        guard let t = newTerminal(projectId: pid, name: newName ?? "↺ " + String(sid.prefix(8))) else {
             return ("500 Internal Server Error", ["error": "could not open a terminal"])
         }
         bring(t.id, kind: nil, subPool: nil, lastPrompt: nil)

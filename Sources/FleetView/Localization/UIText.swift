@@ -203,6 +203,13 @@ enum UIText {
     case searchNMessages(Int)
     case searchOpening
     case searchOpenNew
+    case searchResumeHere
+    case searchResumeLatest
+    case searchResumeStep
+    case searchResumeStepHelp
+    case searchResumeHereHelp
+    case searchResumeLatestHelp
+    case searchNoLatest
     case searchJumpTerminal
     case searchSwitchProject
     case searchSelect

@@ -10,6 +10,9 @@ enum AppStartup {
         // Start auditing right after load, before anything can mutate state: the first snapshot is
         // the baseline every later diff is measured against.
         AppAudit.shared.start(state)
+        // After the audit baseline, so the renames are on record; before any window or web view is
+        // made, so none of them is titled with a name about to change.
+        state.deduplicateTerminalNames()
 
         // Live status via Claude Code hooks (reversible; no-ops for terminals FleetView didn't launch).
         HookInstaller.install()
